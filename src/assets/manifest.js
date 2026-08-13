@@ -8,39 +8,44 @@ const ASSET_MANIFEST = {
   tier: 'intermediate',
 
   // === BACKGROUNDS ===
+  // Paths are relative to Vite's publicDir (public/), not the src/assets/ folder — files in
+  // publicDir are copied verbatim into dist/ on build and served at the same root-relative
+  // path in both dev and prod. A src/-relative string path (the old value here) only ever
+  // resolved in `npm run dev`, where Vite happens to serve the whole project root; `vite build`
+  // never bundled it, so every one of these 404'd in production. See git history / HANDOFF.md.
   apartment: {
-    file: 'src/assets/media/apartment.png',
+    file: 'media/apartment.png',
     procedural: null,
     size: { w: 800, h: 600 }
   },
   listingsBoard: {
-    file: 'src/assets/media/listings-board.png',
+    file: 'media/listings-board.png',
     procedural: null,
     size: { w: 800, h: 600 }
   },
   workLocation: {
-    file: 'src/assets/media/work-location.png',
+    file: 'media/work-location.png',
     procedural: null,
     size: { w: 800, h: 600 }
   },
 
   // === CHARACTER ===
   character: {
-    file: 'src/assets/media/character.png',
+    file: 'media/character.png',
     procedural: drawCharacter,
     size: { w: 32, h: 64 }
   },
 
   // === UI ICONS ===
   uiIcons: {
-    file: 'src/assets/media/ui-icons.png',
+    file: 'media/ui-icons.png',
     procedural: null,
     size: { w: 128, h: 32 },  // 4 icons × 32px
     frames: 4,
     frameWidth: 32
   },
   items: {
-    file: 'src/assets/media/items.png',
+    file: 'media/items.png',
     procedural: null,
     size: { w: 128, h: 32 },  // 4 icons × 32px
     frames: 4,
@@ -60,12 +65,12 @@ const ASSET_MANIFEST = {
 
   // === FILE REFERENCES ===
   files: {
-    apartment: 'src/assets/media/apartment.png',
-    listingsBoard: 'src/assets/media/listings-board.png',
-    workLocation: 'src/assets/media/work-location.png',
-    character: 'src/assets/media/character.png',
-    uiIcons: 'src/assets/media/ui-icons.png',
-    items: 'src/assets/media/items.png'
+    apartment: 'media/apartment.png',
+    listingsBoard: 'media/listings-board.png',
+    workLocation: 'media/work-location.png',
+    character: 'media/character.png',
+    uiIcons: 'media/ui-icons.png',
+    items: 'media/items.png'
   }
 };
 
