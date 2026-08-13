@@ -3,7 +3,7 @@ import { InputManager } from '../engine/input.js';
 import * as audio from '../engine/audio.js';
 import { generateDailyGigs, gigEnergyCost, travelCost } from './gigs.js';
 import { getNode, resolveChoice } from './choices.js';
-import { createQTE } from './qte.js';
+import { createQTE, QTE_READY_DURATION } from './qte.js';
 import { rollDailyEvents, generateMorningFlavor } from './events.js';
 import { rollWeather } from './weather.js';
 import { UI } from '../ui/screens.js';
@@ -11,7 +11,7 @@ import * as screens from '../ui/screens.js';
 import { renderHUD } from '../ui/hud.js';
 import { renderListings } from '../ui/listings.js';
 import { TUTORIAL_STEPS, renderTutorial } from '../ui/tutorial.js';
-import { spawnBurst, updateFX, renderFX } from '../ui/fx.js';
+import { spawnBurst, spawnFloatingText, triggerShake, triggerTint, getShakeOffset, updateFX, renderFX, renderTint } from '../ui/fx.js';
 
 export const UPGRADES = [
   { name: 'Better Shoes', cost: 50, effect: 'Travel costs -1 energy', apply: (state) => { state.energyPerTravel = Math.max(1, (state.energyPerTravel || 3) - 1); } },
@@ -57,6 +57,12 @@ export class Game {
     this.message = '';
     this.bgmStarted = false;
     this.restDay = false;
+    this.settingsOpen = false;
+    this.hudTooltip = null;
+    this.hudTooltipT = 0;
+    this.qteFxFired = false;
+    this.qteEndTimer = 0;
+    this.qteReadyT = 0;
     // Morning intro state. On mid-day reload we start "ready" (no re-rolled
     // events); ticker/events only play on a fresh morning via beginMorning().
     this.ticker = { lines: [], idx: 0, t: 0 };
@@ -196,6 +202,8 @@ export class Game {
     this.node = null;
     if (this.currentGig.hasQTE) {
       this.qte = createQTE(this.currentGig, this.state);
+      this.qteFxFired = false;
+      this.qteReadyT = 0; // brief "GET READY" beat before input goes live — see update()
     } else {
       this.finishGig(null);
     }
@@ -216,6 +224,7 @@ export class Game {
         payout = Math.round(payout * 0.7);
         s.reputation -= 0.2;
         s.stress += 10;
+        spawnFloatingText(229, 20, '+stress', { color: '#e74c3c', size: 14 });
       }
     }
 
@@ -228,6 +237,8 @@ export class Game {
       s.stress += 15;
       scamText = kept < 0.1 ? 'The client vanished without paying. Scammed!' : 'The client short-changed you with a shrug.';
       audio.playStress();
+      triggerShake(7, 0.28);
+      triggerTint('#e74c3c', 0.3);
     }
 
     // steady-work event: double pay
@@ -267,6 +278,10 @@ export class Game {
     if (payout > 0) {
       audio.playCashIn();
       spawnBurst(400, 182, { color: '#2ecc71', count: 18 });   // sparkle on the payout counter
+      spawnFloatingText(400, 160, `+$${payout}`, { color: '#2ecc71', size: 20 });
+    }
+    if (s.reputation > this.snapshot.rep) {
+      spawnBurst(344, 28, { color: '#f1c40f', count: 10, speed: 70 }); // sparkle over the HUD rep stars
     }
     s.save();
   }
@@ -399,6 +414,10 @@ export class Game {
 
   update(dt) {
     updateFX(dt);
+    if (this.hudTooltip) {
+      this.hudTooltipT += dt;
+      if (this.hudTooltipT > 3) { this.hudTooltip = null; this.hudTooltipT = 0; }
+    }
     if (this.phase === 'MORNING' && !this.tutorialVisible()) {
       if (this.ticker.idx < this.ticker.lines.length) {
         this.ticker.t += dt;
@@ -417,14 +436,24 @@ export class Game {
       this.travelT = Math.min(2, this.travelT + dt);
     }
     if (this.phase === 'GIG' && this.qte && !this.tutorialVisible()) {
-      this.qte.update(dt);
-      if (this.qte.done) {
-        const result = this.qte.result;
-        if (!this.qteEndTimer) this.qteEndTimer = 0;
-        this.qteEndTimer += dt;
-        if (this.qteEndTimer > 0.8) {
-          this.qteEndTimer = 0;
-          this.finishGig(result);
+      // A short "GET READY" beat before input goes live — the mechanic doesn't spring on the
+      // player the instant the modal opens. gigScreen() renders the countdown during this window.
+      if (this.qteReadyT < QTE_READY_DURATION) {
+        this.qteReadyT += dt;
+      } else {
+        this.qte.update(dt);
+        if (this.qte.done && !this.qteFxFired) {
+          this.qteFxFired = true;
+          if (this.qte.result.success) triggerTint('#2ecc71', 0.22);
+          else { triggerShake(8, 0.3); triggerTint('#e74c3c', 0.28); }
+        }
+        if (this.qte.done) {
+          const result = this.qte.result;
+          this.qteEndTimer += dt;
+          if (this.qteEndTimer > 0.8) {
+            this.qteEndTimer = 0;
+            this.finishGig(result);
+          }
         }
       }
     }
@@ -435,7 +464,10 @@ export class Game {
 
   render(ctx) {
     UI.begin();
-    ctx.clearRect(0, 0, 800, 600);
+    const off = getShakeOffset();
+    ctx.save();
+    ctx.translate(off.x, off.y);
+    ctx.clearRect(-10, -10, 820, 620); // slightly oversized to cover the shake offset at the edges
 
     switch (this.phase) {
       case 'MORNING': screens.apartmentScreen(ctx, this); break;
@@ -447,9 +479,12 @@ export class Game {
       case 'GAMEOVER': screens.gameOverScreen(ctx, this); break;
     }
 
-    if (this.phase !== 'GAMEOVER') renderHUD(ctx, this.state);
+    if (this.phase !== 'GAMEOVER') renderHUD(ctx, this);
+    if (this.settingsOpen) screens.settingsModal(ctx, this);
     renderFX(ctx);
     if (this.tutorialVisible()) renderTutorial(ctx, this);
+    ctx.restore();
+    renderTint(ctx); // screen-space wash, drawn outside the shake translate on purpose
 
     this.processInput();
   }
@@ -480,8 +515,8 @@ export class Game {
         // events with choices fall through to their buttons
       }
       if (this.phase === 'GIG' && this.qte && !this.qte.done) {
-        this.qte.handleTap(click);
-        continue;
+        if (this.qteReadyT >= QTE_READY_DURATION) this.qte.handleTap(click);
+        continue; // still swallow the tap during the ready beat — it shouldn't fall through to UI
       }
       if (UI.handleClick(click)) audio.playClick();
     }

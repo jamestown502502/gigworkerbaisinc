@@ -5,12 +5,13 @@ import { drawCharacter, renderCustomizer } from './character.js';
 import { travelCost } from '../game/gigs.js';
 import { UPGRADES } from '../game/loop.js';
 import { drawText, drawWrapped, roundRectPath } from './text.js';
-import { playError } from '../engine/audio.js';
+import { playError, applyAudioSettings } from '../engine/audio.js';
+import { QTE_READY_DURATION } from '../game/qte.js';
 
 // ---------- immediate-mode UI ----------
 export const UI = {
   hotspots: [],
-  begin() { this.hotspots = []; },
+  begin() { this.hotspots.length = 0; }, // reuse the array instead of allocating a new one every frame
   register(x, y, w, h, onClick) { this.hotspots.push({ x, y, w, h, onClick }); },
   handleClick(pt) {
     for (let i = this.hotspots.length - 1; i >= 0; i--) {
@@ -86,6 +87,24 @@ export function drawBackground(ctx, key, dim = 0.5) {
   drawSprite(ctx, key, 0, 0, 800, 600);
   ctx.fillStyle = `rgba(8, 6, 4, ${dim})`;
   ctx.fillRect(0, 0, 800, 600);
+}
+
+// All 12 GIG_TEMPLATES used to render against one generic work-location.png regardless of
+// type — a water-slide-testing gig and an IKEA-assembly gig looked identical. Swap in a
+// per-category background instead.
+const WORK_BG_BY_TYPE = { physical: 'workPhysical', service: 'workService', creative: 'workCreative', weird: 'workWeird' };
+export function workBackgroundKey(gig) {
+  return (gig && WORK_BG_BY_TYPE[gig.type]) || 'workLocation';
+}
+
+const WEATHER_OVERLAY_BY_ID = { rainy: 'weatherRainy', hot: 'weatherHot', cold: 'weatherCold', sunny: 'weatherSunny', perfect: 'weatherPerfect' };
+// Drawn at reduced alpha over whatever's already on screen — not an opaque background swap.
+export function drawWeatherOverlay(ctx, weather) {
+  const key = weather && WEATHER_OVERLAY_BY_ID[weather.id];
+  if (!key) return;
+  ctx.globalAlpha = 0.28;
+  drawSprite(ctx, key, 0, 0, 800, 600);
+  ctx.globalAlpha = 1;
 }
 
 function messageBar(ctx, game) {
@@ -220,7 +239,8 @@ function eventModal(ctx, game) {
 export function travelScreen(ctx, game) {
   const s = game.state;
   const gig = game.currentGig;
-  drawBackground(ctx, 'workLocation', 0.5);
+  drawBackground(ctx, workBackgroundKey(gig), 0.5);
+  drawWeatherOverlay(ctx, s.weather);
 
   panel(ctx, 150, 180, 500, 240);
   drawText(ctx, `Traveling to: ${gig.title}`, 400, 218, { size: 20, weight: 'bold', color: '#ffffff', align: 'center' });
@@ -249,7 +269,8 @@ export function travelScreen(ctx, game) {
 // ---------- GIG (choice tree or QTE) ----------
 export function gigScreen(ctx, game) {
   const gig = game.currentGig;
-  drawBackground(ctx, 'workLocation', 0.55);
+  drawBackground(ctx, workBackgroundKey(gig), 0.55);
+  drawWeatherOverlay(ctx, game.state.weather);
 
   // gig title ribbon
   ctx.fillStyle = TYPE_COLORS[gig.type] || '#8b4513';
@@ -261,6 +282,16 @@ export function gigScreen(ctx, game) {
     drawText(ctx, game.qte.name, 400, 130, { size: 22, weight: 'bold', color: '#f1c40f', align: 'center' });
     drawText(ctx, game.qte.hint, 400, 154, { size: 15, color: '#e0e0e0', align: 'center' });
     game.qte.render(ctx);
+    if (game.qteReadyT < QTE_READY_DURATION) {
+      // Telegraph: the mechanic doesn't spring on the player the instant this modal opens —
+      // input is gated (see Game.update()/processInput()) until this beat finishes.
+      const pulse = 1 + 0.08 * Math.sin(game.qteReadyT * 14);
+      ctx.save();
+      ctx.translate(400, 316);
+      ctx.scale(pulse, pulse);
+      drawText(ctx, 'GET READY', 0, 0, { size: 30, weight: 'bold', color: '#ffffff', align: 'center', outline: true });
+      ctx.restore();
+    }
     if (game.qte.done && game.qte.result) {
       drawText(ctx, game.qte.result.success ? 'NICE!' : 'FUMBLED...', 400, 320, {
         size: 34, weight: 'bold', color: game.qte.result.success ? '#2ecc71' : '#e74c3c', align: 'center', outline: true,
@@ -414,7 +445,7 @@ function shopPanel(ctx, game, x, y, w, h) {
     const uy = y + 44 + i * 68;
     drawText(ctx, `${up.name} — $${up.cost}`, x + 18, uy + 15, { size: 14, weight: 'bold', color: '#f0f0f0' });
     drawText(ctx, up.effect, x + 18, uy + 32, { size: 11, color: '#a89878' });
-    button(ctx, x + w - 78, uy + 2, 60, 34, 'Buy', {
+    button(ctx, x + w - 78, uy + 2, 64, 40, 'Buy', {
       color: '#2c6e49',
       disabled: s.cash < up.cost,
       fontSize: 13,
@@ -465,6 +496,54 @@ function billsModal(ctx, game) {
     color: allPaid ? '#2c6e49' : '#7a3020',
     onClick: () => game.closeBills(),
   });
+}
+
+// ---------- SETTINGS (global overlay — opened from the HUD gear icon, any phase) ----------
+function volumeRow(ctx, game, x, y, label, key) {
+  const s = game.state.settings;
+  drawText(ctx, `${label} — ${Math.round(s[key] * 100)}%`, x, y, { size: 14, color: '#c9a876' });
+  const barX = x, barY = y + 14, barW = 220;
+  ctx.fillStyle = '#3a2d1f';
+  ctx.fillRect(barX, barY, barW, 12);
+  ctx.fillStyle = '#e07030';
+  ctx.fillRect(barX, barY, barW * s[key], 12);
+  const step = (delta) => {
+    s[key] = Math.max(0, Math.min(1, Math.round((s[key] + delta) * 10) / 10));
+    applyAudioSettings();
+    game.state.save();
+  };
+  button(ctx, barX + barW + 14, barY - 14, 40, 40, '-', { fontSize: 16, onClick: () => step(-0.1) });
+  button(ctx, barX + barW + 58, barY - 14, 40, 40, '+', { fontSize: 16, onClick: () => step(0.1) });
+}
+
+function toggleRow(ctx, x, y, label, get, set) {
+  drawText(ctx, label, x, y + 20, { size: 15, color: '#f0f0f0' });
+  button(ctx, x + 250, y, 90, 40, get() ? 'ON' : 'OFF', {
+    color: get() ? '#2c6e49' : '#3a3128',
+    fontSize: 14,
+    onClick: () => set(!get()),
+  });
+}
+
+export function settingsModal(ctx, game) {
+  const s = game.state.settings;
+  ctx.fillStyle = 'rgba(6, 4, 2, 0.85)';
+  ctx.fillRect(0, 0, 800, 600);
+  panel(ctx, 190, 90, 420, 420, { alpha: 0.98 });
+  drawText(ctx, 'SETTINGS', 400, 128, { size: 24, weight: 'bold', color: '#ffd700', align: 'center' });
+
+  let y = 168;
+  volumeRow(ctx, game, 224, y, 'Master Volume', 'masterVolume'); y += 56;
+  volumeRow(ctx, game, 224, y, 'Music Volume', 'musicVolume'); y += 56;
+  volumeRow(ctx, game, 224, y, 'SFX Volume', 'sfxVolume'); y += 68;
+
+  toggleRow(ctx, 224, y, 'Mute All', () => s.muted, (v) => { s.muted = v; applyAudioSettings(); game.state.save(); }); y += 46;
+  toggleRow(ctx, 224, y, 'Reduce Timing Pressure', () => s.reduceTimingPressure, (v) => { s.reduceTimingPressure = v; game.state.save(); }); y += 34;
+  drawWrapped(ctx, 'Widens quick-time-event windows and slows their timers. Off by default.', 224, y, 340, 16, {
+    size: 11, color: '#8a7a63',
+  });
+
+  button(ctx, 300, 460, 200, 46, 'Close', { color: '#2c6e49', onClick: () => { game.settingsOpen = false; } });
 }
 
 // ---------- GAME OVER ----------

@@ -5,14 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Gig Worker Simulator</title>
   <style>
-    html, body { margin: 0; padding: 0; background: #1d150d; height: 100%; }
+    html, body {
+      margin: 0; padding: 0; background: #1d150d; height: 100%;
+      overscroll-behavior: none; /* kill pull-to-refresh / rubber-band scroll during QTEs */
+      touch-action: manipulation; /* belt-and-suspenders on top of the viewport meta above */
+    }
     #game {
       display: flex;
       align-items: center;
       justify-content: center;
       min-height: 100vh;
+      /* keep the canvas clear of a notch/home-indicator on the sides+bottom */
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+      box-sizing: border-box;
     }
-    #game canvas { max-width: 100vw; max-height: 100vh; }
+    #game canvas { max-width: 100%; max-height: 100%; touch-action: none; }
   </style>
 </head>
 <body>

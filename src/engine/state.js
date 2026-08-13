@@ -36,16 +36,40 @@ export class GameState {
     this.listingsLockedToday = false;
     this.eventTravelMod = 0;
     this.eventOutdoorEnergyMod = 0;
+    // Preferences, not run state — survive `reset()` (see reset() below), same pattern as the
+    // other Bennett AI Solutions games (Semester Zero, Leaves of Deceit).
+    this.settings = {
+      masterVolume: 1,
+      musicVolume: 0.35,
+      sfxVolume: 1,
+      muted: false,
+      reduceTimingPressure: false,
+    };
     this.load();
   }
   save() { localStorage.setItem('gigWorkerState', JSON.stringify(this)); }
   load() {
     const saved = localStorage.getItem('gigWorkerState');
-    if (saved) Object.assign(this, JSON.parse(saved));
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      Object.assign(this, parsed);
+      // A save from before `settings` existed (or a partially-written one) shouldn't leave
+      // any field undefined — backfill against the constructor defaults already set above.
+      this.settings = { ...this.settings, ...(parsed.settings || {}) };
+    } catch {
+      // Corrupted/malformed localStorage — keep the fresh-constructor defaults already on
+      // `this` rather than crashing the whole game on boot.
+      console.warn('gigWorkerState in localStorage was corrupted — starting a fresh save.');
+      localStorage.removeItem('gigWorkerState');
+    }
   }
   reset() {
+    const settings = this.settings;
     localStorage.removeItem('gigWorkerState');
     Object.assign(this, new GameState());
+    this.settings = settings;
+    this.save();
   }
   clamp() {
     this.cash = Math.max(0, this.cash);

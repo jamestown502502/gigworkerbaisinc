@@ -36,6 +36,14 @@ export function renderListings(ctx, game) {
     drawText(ctx, `${wthr.emoji} ${wthr.name} — ${notes[wthr.id]}`, 400, 94, { size: 12, weight: 'bold', color: wthr.color, align: 'center' });
   }
 
+  // Telegraph consequences before they bite: high stress makes quick-time events noticeably
+  // harder (see difficultyFactor() in qte.js) — say so before the player is mid-QTE finding out.
+  if (s.stress > 60 && s.todayGigs.some((g) => g.hasQTE)) {
+    drawText(ctx, "⚠ Your stress is high — timed challenges will feel a lot harder today.", 400, wthr && wthr.id !== 'sunny' ? 110 : 94, {
+      size: 12, weight: 'bold', color: '#ff6b5e', align: 'center',
+    });
+  }
+
   const gigs = s.todayGigs;
   if (gigs.length === 0) {
     ctx.fillStyle = 'rgba(30, 22, 14, 0.92)';

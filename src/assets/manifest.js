@@ -29,6 +29,22 @@ const ASSET_MANIFEST = {
     size: { w: 800, h: 600 }
   },
 
+  // Per-category work backgrounds (Gemini-generated, reference-matched to work-location.png
+  // for a consistent painted style) — a "Water Slide Tester" gig no longer renders against the
+  // exact same background as "Assemble IKEA Furniture". Wired in screens.js off gig.type.
+  workPhysical: { file: 'media/work-physical.png', procedural: null, size: { w: 800, h: 600 } },
+  workService:  { file: 'media/work-service.png', procedural: null, size: { w: 800, h: 600 } },
+  workCreative: { file: 'media/work-creative.png', procedural: null, size: { w: 800, h: 600 } },
+  workWeird:    { file: 'media/work-weird.png', procedural: null, size: { w: 800, h: 600 } },
+
+  // Weather overlays — drawn at reduced alpha on top of a background (see drawWeatherOverlay
+  // in screens.js), not composited as opaque images. Replaces the emoji-only weather display.
+  weatherRainy:   { file: 'media/weather-rainy.png', procedural: null, size: { w: 800, h: 600 } },
+  weatherHot:     { file: 'media/weather-hot.png', procedural: null, size: { w: 800, h: 600 } },
+  weatherCold:    { file: 'media/weather-cold.png', procedural: null, size: { w: 800, h: 600 } },
+  weatherSunny:   { file: 'media/weather-sunny.png', procedural: null, size: { w: 800, h: 600 } },
+  weatherPerfect: { file: 'media/weather-perfect.png', procedural: null, size: { w: 800, h: 600 } },
+
   // === CHARACTER ===
   character: {
     file: 'media/character.png',
@@ -68,6 +84,15 @@ const ASSET_MANIFEST = {
     apartment: 'media/apartment.png',
     listingsBoard: 'media/listings-board.png',
     workLocation: 'media/work-location.png',
+    workPhysical: 'media/work-physical.png',
+    workService: 'media/work-service.png',
+    workCreative: 'media/work-creative.png',
+    workWeird: 'media/work-weird.png',
+    weatherRainy: 'media/weather-rainy.png',
+    weatherHot: 'media/weather-hot.png',
+    weatherCold: 'media/weather-cold.png',
+    weatherSunny: 'media/weather-sunny.png',
+    weatherPerfect: 'media/weather-perfect.png',
     character: 'media/character.png',
     uiIcons: 'media/ui-icons.png',
     items: 'media/items.png'

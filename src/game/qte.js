@@ -5,12 +5,21 @@
 import { playTick, playSuccess, playFail } from '../engine/audio.js';
 import { drawText } from '../ui/text.js';
 
+// Brief "GET READY" beat before a QTE's own update()/handleTap() go live — shared with
+// loop.js (gates input) and screens.js (renders the countdown). Lives here, not in loop.js,
+// so both can import it without a loop.js <-> screens.js circular dependency.
+export const QTE_READY_DURATION = 0.8;
+
 function difficultyFactor(state) {
   const stressPenalty = state.stress / 150;                    // up to +0.66
   const energyPenalty = (80 - Math.min(state.energy, 80)) / 200; // up to +0.4
   let d = Math.min(1.9, 1 + stressPenalty + energyPenalty);
   d *= 1 + (100 - (state.health ?? 100)) / 200;                // low health = harder (softened)
-  return Math.min(1.8, d);                                     // hard cap: tough, never impossible
+  d = Math.min(1.8, d);                                        // hard cap: tough, never impossible
+  // Accessibility toggle (Settings): widen all windows / slow timers by scaling difficulty
+  // down rather than adding a second code path per QTE type.
+  if (state.settings?.reduceTimingPressure) d = 1 + (d - 1) * 0.45;
+  return d;
 }
 
 const AREA = { x: 100, y: 110, w: 600, h: 400 };
@@ -43,7 +52,10 @@ class RhythmTap {
   handleTap() {
     if (this.done || this.tapped) return;
     const diff = Math.abs(this.radius - 40);
+    // Grace zone: a near-miss outside the scoring window still counts for something instead of
+    // an instant zero — a small forgiveness buffer around the hit window, not a second hit window.
     if (diff < 14) { this.endRound(Math.round(100 - (diff / 14) * 50)); playTick(); }
+    else if (diff < 28) { this.endRound(Math.round(20 - ((diff - 14) / 14) * 15)); playTick(); }
     else this.endRound(0);
   }
   endRound(score) {

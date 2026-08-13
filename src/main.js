@@ -4,6 +4,7 @@ import { setupGameCanvas } from './engine/canvas.js';
 import { InputManager } from './engine/input.js';
 import { GameState } from './engine/state.js';
 import { Game } from './game/loop.js';
+import { initAudio } from './engine/audio.js';
 
 export const imageCache = {};
 const USE_FILE_ASSETS = true;
@@ -59,18 +60,33 @@ async function boot() {
   await loadAssets();
 
   const state = new GameState();
+  initAudio(state.settings);
   const game = new Game(state);
   window.__game = game; // handy for debugging
 
   let last = performance.now();
+  let rafId = null;
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     game.update(dt);
     game.render(ctx);
-    requestAnimationFrame(frame);
+    rafId = requestAnimationFrame(frame);
   }
-  requestAnimationFrame(frame);
+  rafId = requestAnimationFrame(frame);
+
+  // Battery/hygiene: actually stop the loop while the tab is backgrounded, rather than relying
+  // on browser rAF throttling alone. `last` is re-stamped on resume so the first frame back
+  // doesn't see a multi-second dt (update(dt) clamps to 0.05s regardless, but there's no reason
+  // to spend that clamp on time that never should have counted).
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+    } else if (rafId === null) {
+      last = performance.now();
+      rafId = requestAnimationFrame(frame);
+    }
+  });
 }
 
 boot();

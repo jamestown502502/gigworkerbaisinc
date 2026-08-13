@@ -16,6 +16,10 @@ export const InputManager = {
     }
     canvas.addEventListener('touchstart', (e) => {
       e.preventDefault();
+      // Ignore a second finger landing mid-QTE — touches[0] is always the *first* still-active
+      // touch, so an extra finger touching elsewhere would otherwise re-fire a duplicate click
+      // at the first finger's (unchanged) position rather than doing nothing.
+      if (e.touches.length > 1) return;
       const touch = e.touches[0];
       const pt = this.toLogical(touch.clientX, touch.clientY);
       this.clicks.push({ ...pt, type: 'touch' });
