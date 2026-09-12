@@ -214,7 +214,7 @@ before/after doc `BAIS_GigWorker_BeforeAfter_QAPass_2026-09-12.md`.
   two visible strings may intersect) and a transitions test (every kind finishes ≤ 0.6 s and
   leaves no hotspot). Two tests skip on the iPhone project because Playwright's Windows WebKit
   build has no Web Audio and no mouse wheel — real iOS Safari has both.
-- `.github/workflows/ci.yml` runs unit → build → e2e on every push.
+- `.github/workflows/ci.yml` runs unit → build → e2e on every push. (Activated 2026-09-12 in commit `1c67de9`; it was parked under `ci/` for a few hours because the stored GitHub credential lacked the `workflow` OAuth scope.)
 - Dev hooks: `window.__game`, `window.__state`, `game.step(seconds)` (fixed 60 Hz ticks with
   render, so input is processed), `game.tap(x, y)`, `window.__textProbe`.
 

@@ -56,10 +56,13 @@ describe('results ledger (QA #3, #7)', () => {
 
 describe('energy gate (QA #1, #15)', () => {
   it('refuses a gig whose travel + work cost exceeds energy', () => {
-    const { game, state } = makeGame({ energy: 10 });
+    // The board is generated with unseeded randomness, so a fixed energy figure is not a fixed
+    // relationship to any gig's cost: CI drew a 9-energy gig against a hardcoded 10 and failed on
+    // the setup rather than on the behaviour. Price the gig first, then set energy one short of it.
+    const { game, state } = makeGame({ energy: 100, hoursLeft: 12 });
     const gig = generateDailyGigs(state).find((g) => !g.remote);
     const need = travelCost(gig, state) + gigEnergyCost(gig, state);
-    expect(need).toBeGreaterThan(10);
+    state.energy = need - 1;
     expect(game.acceptGig(gig)).toBe(false);
     expect(game.message).toMatch(/Not enough energy/);
     expect(game.phase).toBe('MORNING');
