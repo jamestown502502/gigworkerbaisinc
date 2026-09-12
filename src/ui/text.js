@@ -37,6 +37,15 @@ export function drawText(ctx, text, x, y, options = {}) {
   ctx.fillStyle = color;
   ctx.fillText(text, x, y, maxWidth);
 
+  // Text probe for the e2e overlap sweep: when a test installs `window.__textProbe`, every
+  // drawn string reports its approximate bounding box. Zero cost otherwise.
+  if (typeof globalThis !== 'undefined' && globalThis.__textProbe) {
+    const w = ctx.measureText(text).width;
+    const left = align === 'center' ? x - w / 2 : align === 'right' ? x - w : x;
+    const top = baseline === 'middle' ? y - size / 2 : baseline === 'top' ? y : y - size * 0.8;
+    globalThis.__textProbe.push({ text: String(text), x: left, y: top, w, h: size });
+  }
+
   ctx.shadowColor = 'transparent';
   ctx.shadowBlur = 0;
   ctx.shadowOffsetX = 0;

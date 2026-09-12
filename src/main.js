@@ -1,53 +1,23 @@
-// Bootstrap: canvas init → InputManager → state.load() → game loop
-import { ASSET_MANIFEST } from './assets/manifest.js';
+// Bootstrap: canvas init → InputManager → asset load (with a visible bar) → state.load() → loop
 import { setupGameCanvas } from './engine/canvas.js';
 import { InputManager } from './engine/input.js';
 import { GameState } from './engine/state.js';
 import { Game } from './game/loop.js';
-import { initAudio } from './engine/audio.js';
+import { initAudio, unlock as unlockAudio, contextState } from './engine/audio.js';
+import { loadAssets } from './engine/sprites.js';
+import { drawText, roundRectPath } from './ui/text.js';
 
-export const imageCache = {};
-const USE_FILE_ASSETS = true;
+export { drawSprite, imageCache } from './engine/sprites.js';
 
-async function loadAssets() {
-  const promises = [];
-  for (const [key, path] of Object.entries(ASSET_MANIFEST.files)) {
-    promises.push(new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => { imageCache[key] = img; resolve(); };
-      img.onerror = () => { console.warn(`Failed: ${path}`); resolve(); };
-      img.src = '/' + path;
-    }));
-  }
-  await Promise.all(promises);
-}
-
-// Draws a sprite from the manifest. Handles single images, horizontal strips,
-// and square N-frame grids (the generated icon sheets are 2x2 grids).
-export function drawSprite(ctx, key, x, y, w, h, frame = 0) {
-  const asset = ASSET_MANIFEST[key];
-  const img = USE_FILE_ASSETS ? imageCache[key] : null;
-  if (img) {
-    const frames = asset?.frames || 1;
-    let sx = 0, sy = 0, sw = img.naturalWidth, sh = img.naturalHeight;
-    if (frames > 1) {
-      if (img.naturalWidth >= img.naturalHeight * 2) {
-        // horizontal strip
-        sw = img.naturalWidth / frames;
-        sx = frame * sw;
-      } else {
-        // square grid (e.g. 2x2 for 4 frames)
-        const cols = Math.ceil(Math.sqrt(frames));
-        sw = img.naturalWidth / cols;
-        sh = img.naturalHeight / Math.ceil(frames / cols);
-        sx = (frame % cols) * sw;
-        sy = Math.floor(frame / cols) * sh;
-      }
-    }
-    ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
-  } else if (asset?.procedural) {
-    asset.procedural(ctx, x, y, w, h);
-  }
+function drawLoading(ctx, pct) {
+  ctx.fillStyle = '#1d150d';
+  ctx.fillRect(0, 0, 800, 600);
+  drawText(ctx, 'GIG WORKER SIMULATOR', 400, 250, { size: 28, weight: 'bold', color: '#ffd700', align: 'center', outline: true });
+  drawText(ctx, 'Loading the neighborhood...', 400, 290, { size: 15, color: '#c9a876', align: 'center' });
+  ctx.fillStyle = '#3a2d1f';
+  roundRectPath(ctx, 250, 320, 300, 14, 7); ctx.fill();
+  ctx.fillStyle = '#e07030';
+  roundRectPath(ctx, 250, 320, Math.max(14, 300 * pct), 14, 7); ctx.fill();
 }
 
 async function boot() {
@@ -55,14 +25,24 @@ async function boot() {
   const canvas = document.createElement('canvas');
   container.appendChild(canvas);
   const ctx = setupGameCanvas(canvas, 800, 600, true);
+  drawLoading(ctx, 0);
 
   InputManager.init(canvas);
-  await loadAssets();
+  // Real user-activation events only — see engine/input.js for why not touchstart.
+  const activate = () => unlockAudio();
+  InputManager.onActivate = activate;
+  for (const ev of ['pointerup', 'touchend', 'keydown', 'click']) window.addEventListener(ev, activate, { passive: true });
+  for (const ev of ['pointerup', 'touchend', 'click']) canvas.addEventListener(ev, activate, { passive: true });
+
+  await loadAssets((pct) => drawLoading(ctx, pct));
 
   const state = new GameState();
   initAudio(state.settings);
   const game = new Game(state);
-  window.__game = game; // handy for debugging
+  game.ctx = ctx;
+  window.__game = game;   // dev/e2e hook
+  window.__state = state;
+  window.__audioState = contextState;
 
   let last = performance.now();
   let rafId = null;
@@ -77,8 +57,7 @@ async function boot() {
 
   // Battery/hygiene: actually stop the loop while the tab is backgrounded, rather than relying
   // on browser rAF throttling alone. `last` is re-stamped on resume so the first frame back
-  // doesn't see a multi-second dt (update(dt) clamps to 0.05s regardless, but there's no reason
-  // to spend that clamp on time that never should have counted).
+  // doesn't see a multi-second dt.
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
@@ -87,6 +66,11 @@ async function boot() {
       rafId = requestAnimationFrame(frame);
     }
   });
+  window.__booted = true;
 }
 
-boot();
+boot().catch((err) => {
+  console.error('Boot failed', err);
+  const el = document.getElementById('game');
+  if (el) el.insertAdjacentHTML('beforeend', `<p style="color:#fff;font-family:system-ui;padding:16px">The game failed to start: ${String(err.message || err)}. Please reload.</p>`);
+});

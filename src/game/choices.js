@@ -1,3 +1,5 @@
+// Social gigs open with an emotional-intelligence beat (see qte.js ReadClient / ThreadGame):
+// a node with `minigame` runs that game first and then continues to `next`. Added 2026-09.
 export const CHOICE_TREES = {
   movingHelp: [
     { text: 'Client shows a truck packed floor-to-ceiling.', choices: [
@@ -19,7 +21,8 @@ export const CHOICE_TREES = {
     ]},
   ],
   cuddler: [
-    { text: 'A nervous elderly client offers tea. The apartment is tidy but lonely.', choices: [
+    { minigame: 'readclient', next: 'work' },
+    { id: 'work', text: 'A nervous elderly client offers tea. The apartment is tidy but lonely.', choices: [
       { text: 'Set clear boundaries first', result: { cash: 0, energy: 0, stress: -5, rep: 0.3 }, next: null },
       { text: 'Just chat for the hour', result: { cash: 0, energy: 5, stress: -10, rep: 0.1 }, next: null },
       { text: 'Try to upsell additional services', result: { cash: 0, energy: 0, stress: 10, rep: 0, chance: 0.4, failResult: { cash: 0, rep: -0.5 } }, next: null },
@@ -40,14 +43,16 @@ export const CHOICE_TREES = {
     ]},
   ],
   creativeGig: [
-    { text: 'Client loves the first draft. "Can you just add... a few small tweaks?"', choices: [
+    { minigame: 'textback', next: 'work' },
+    { id: 'work', text: 'Client loves the first draft. "Can you just add... a few small tweaks?"', choices: [
       { text: 'Agree to small tweaks — stay friendly', result: { cash: 0, energy: -5, stress: 5, rep: 0.2 }, next: null },
       { text: 'Say tweaks are billable at hourly rate', result: { cash: 30, energy: -5, stress: 0, rep: 0, chance: 0.6 }, next: null },
       { text: 'Politely decline, deliver as-is', result: { cash: 0, energy: 0, stress: -5, rep: -0.1 }, next: null },
     ]},
   ],
   furnitureAssembly: [
-    { text: 'The box contains 300 pieces and the instructions are in Swedish.', choices: [
+    { minigame: 'textback', next: 'work' },
+    { id: 'work', text: 'The box contains 300 pieces and the instructions are in Swedish.', choices: [
       { text: 'Methodical — sort every piece first', result: { cash: 0, energy: -12, stress: -5, rep: 0.2 }, next: null },
       { text: 'Wing it — you\'ve done this before', result: { cash: 0, energy: -8, stress: 5, rep: 0, chance: 0.8, failResult: { rep: -0.3 } }, next: null },
       { text: 'Use phone for AR assembly guide', result: { cash: 0, energy: -6, stress: 0, rep: 0.1 }, next: null },
@@ -68,14 +73,16 @@ export const CHOICE_TREES = {
     ]},
   ],
   photoGig: [
-    { text: 'Client\'s product is smaller and shinier than expected.', choices: [
+    { minigame: 'readclient', next: 'work' },
+    { id: 'work', text: 'Client\'s product is smaller and shinier than expected.', choices: [
       { text: 'Adjust lighting, shoot against dark BG', result: { cash: 0, energy: -5, stress: 0, rep: 0.2 }, next: null },
       { text: 'Suggest they hire a pro for this', result: { cash: 0, energy: 0, stress: 0, rep: 0.3 }, next: null },
       { text: 'Shoot as-is, offer to reshoot later', result: { cash: 0, energy: -8, stress: 5, rep: 0 }, next: null },
     ]},
   ],
   tutoring: [
-    { text: 'The student is struggling and embarrassed about it.', choices: [
+    { minigame: 'readclient', next: 'work' },
+    { id: 'work', text: 'The student is struggling and embarrassed about it.', choices: [
       { text: 'Start from basics, build confidence', result: { cash: 0, energy: -8, stress: -5, rep: 0.3 }, next: null },
       { text: 'Push through the homework fast', result: { cash: 0, energy: -5, stress: 5, rep: 0 }, next: null },
       { text: 'Use a creative metaphor to explain', result: { cash: 0, energy: -10, stress: -8, rep: 0.4 }, next: null },
