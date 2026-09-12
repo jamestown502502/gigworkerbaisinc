@@ -66,6 +66,10 @@ async function boot() {
       rafId = requestAnimationFrame(frame);
     }
   });
+  // The app's own boot duration (navigation start to first playable frame), for the e2e boot
+  // budget. Measured in-page so the assertion is about the game, not about Playwright's
+  // round-trips or how loaded the machine running the test happens to be.
+  window.__bootMs = Math.round(performance.now());
   window.__booted = true;
 }
 
