@@ -361,6 +361,34 @@ export class Breathe {
   }
 }
 
+// ---------- scenario decks ----------
+/** Every scenario in a pool plays once before any repeats, in a fresh shuffle each cycle, and a
+ *  new cycle never opens with the one just played. Kept on the save so a reload does not reset it.
+ *  Replaces a plain random pick, which with a pool of two replayed the same conversation about
+ *  every other time. */
+export function drawFromDeck(state, key, size) {
+  if (!state) return Math.floor(Math.random() * size);
+  const decks = state.eiDecks || (state.eiDecks = {});
+  let deck = decks[key];
+  if (!Array.isArray(deck) || deck.length === 0) {
+    deck = shuffled([...Array(size).keys()]);
+    const last = decks[`${key}Last`];
+    if (deck.length > 1 && deck[deck.length - 1] === last) [deck[0], deck[deck.length - 1]] = [deck[deck.length - 1], deck[0]];
+  }
+  const pick = deck.pop();
+  decks[key] = deck;
+  decks[`${key}Last`] = pick;
+  return pick < size ? pick : Math.floor(Math.random() * size);
+}
+
+/** A shuffled copy. Answer order is shuffled on every play: the best reply used to be the first
+ *  button in every scenario, which taught "tap the top one" instead of reading the person. */
+function shuffled(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+
 // ---------- Read the Client — in-gig emotional intelligence ----------
 export const READ_CLIENT_SCENARIOS = [
   { seed: 3, line: '"Look, can we just get this done? I have a call in twenty minutes and my kid\'s school already rang twice."',
@@ -405,6 +433,48 @@ export const READ_CLIENT_SCENARIOS = [
       { text: '"No time for coffee, let\'s get started."', good: false, effects: { rep: -0.1, stress: 2 } },
       { text: '"Sunday rate\'s double, just so you know."', good: false, effects: { rep: -0.3, stress: 3 } },
     ] },
+  { seed: 25, line: '"Movers bailed, the truck is due back at six, and I have to get my daughter at five. Where do we even start?"',
+    feeling: 'rushed', options: ['lonely', 'rushed', 'grateful', 'angry'],
+    responses: [
+      { text: '"Heavy things first while you go get her. I\'ll leave a list on the fridge."', good: true, effects: { rep: 0.3, stress: -3 } },
+      { text: '"Honestly, that timeline isn\'t realistic."', good: false, effects: { rep: -0.1, stress: 3 } },
+      { text: '"Calm down, it\'s just a move."', good: false, effects: { rep: -0.3, stress: 6 } },
+    ] },
+  { seed: 30, line: '"I watched three videos and I still can\'t get this shelf level. My dad could do this in his sleep."',
+    feeling: 'embarrassed', options: ['embarrassed', 'suspicious', 'rushed', 'grateful'],
+    responses: [
+      { text: '"These kits are badly designed. You got further than most people do."', good: true, effects: { rep: 0.3, stress: -3 } },
+      { text: '"Yeah, it\'s pretty easy once you know how."', good: false, effects: { rep: -0.2, stress: 3 } },
+      { text: 'Laugh and take the drill off them.', good: false, effects: { rep: -0.2, stress: 2 } },
+    ] },
+  { seed: 34, line: '"Why do you need to go in the bedroom? The listing only said the living room."',
+    feeling: 'suspicious', options: ['angry', 'suspicious', 'embarrassed', 'lonely'],
+    responses: [
+      { text: '"Good question. I don\'t. I was after an outlet. I\'ll stay here and use a cord."', good: true, effects: { rep: 0.4, stress: -2 } },
+      { text: '"Relax, I\'m not going to steal anything."', good: false, effects: { rep: -0.3, stress: 5 } },
+      { text: '"I go where the job takes me."', good: false, effects: { rep: -0.2, stress: 3 } },
+    ] },
+  { seed: 39, line: '"Nobody\'s visited since the funeral. You\'re the first voice I\'ve heard in days. Sorry if I talk too much."',
+    feeling: 'lonely', options: ['rushed', 'lonely', 'angry', 'suspicious'],
+    responses: [
+      { text: '"Talk as much as you like. I\'m listening."', good: true, effects: { rep: 0.3, stress: -5 } },
+      { text: '"No worries. I\'ll put my headphones in so I don\'t bother you."', good: false, effects: { rep: -0.1, stress: 1 } },
+      { text: '"Sorry for your loss. So, the sink?"', good: false, effects: { rep: -0.2, stress: 2 } },
+    ] },
+  { seed: 44, line: '"The app charged me twice and support won\'t answer. I\'m not paying anyone until somebody fixes it."',
+    feeling: 'angry', options: ['grateful', 'angry', 'embarrassed', 'rushed'],
+    responses: [
+      { text: '"Maddening, and not your fault. Let\'s screenshot both charges and I\'ll flag it too."', good: true, effects: { rep: 0.3, stress: -2 } },
+      { text: '"That\'s not my department."', good: false, effects: { rep: -0.3, stress: 5 } },
+      { text: '"No pay, no work. Sorry."', good: false, effects: { rep: -0.2, stress: 4 } },
+    ] },
+  { seed: 48, line: '"You fixed in ten minutes what I\'ve been fighting for a month. Please, take some of these cookies. I insist."',
+    feeling: 'grateful', options: ['suspicious', 'grateful', 'lonely', 'embarrassed'],
+    responses: [
+      { text: '"Thank you, that\'s really kind. Enjoy the working sink!"', good: true, effects: { rep: 0.2, stress: -4 } },
+      { text: '"No thanks, I\'m on a schedule."', good: false, effects: { rep: -0.1, stress: 1 } },
+      { text: '"It was easy, honestly. Anyone could have done it."', good: false, effects: { rep: -0.1, stress: 1 } },
+    ] },
 ];
 const FEELING_LABEL = { rushed: 'Rushed', suspicious: 'Wary', lonely: 'Lonely', embarrassed: 'Embarrassed', angry: 'Frustrated', grateful: 'Grateful' };
 
@@ -412,7 +482,8 @@ export class ReadClient {
   constructor(state, scenario) {
     this.name = 'READ THE CLIENT';
     this.hint = 'Look and listen. What\'s really going on with them?';
-    this.s = scenario || READ_CLIENT_SCENARIOS[Math.floor(Math.random() * READ_CLIENT_SCENARIOS.length)];
+    const base = scenario || READ_CLIENT_SCENARIOS[drawFromDeck(state, 'readClient', READ_CLIENT_SCENARIOS.length)];
+    this.s = { ...base, responses: shuffled(base.responses) };
     this.step = 0;          // 0 = pick feeling, 1 = pick response, 2 = reveal
     this.picked = null;
     this.buttons = [];
@@ -496,6 +567,48 @@ export const TEXT_BACK_THREADS = [
       { text: 'It\'s fine, but the texting does slow me down.', tag: 'def', heat: 10 },
       { text: 'np', tag: 'dis', heat: 6 } ] },
   ] },
+  { title: 'Client texting mid-job', heat: 45, msgs: [
+    { text: 'while you\'re here could you also mount the tv? should only take a sec', replies: [
+      { text: 'Happy to. It\'s a separate job, so I\'ll quote it now and you decide.', tag: 'ack', heat: -18 },
+      { text: 'That\'s not what you booked.', tag: 'def', heat: 14 },
+      { text: 'we\'ll see', tag: 'dis', heat: 8 } ] },
+    { text: 'the last guy did it for free', replies: [
+      { text: 'I get it. Mounting needs proper anchors so it stays up. That\'s what the price covers.', tag: 'ack', heat: -18 },
+      { text: 'Then call the last guy.', tag: 'def', heat: 16 },
+      { text: 'cool', tag: 'dis', heat: 8 } ] },
+    { text: 'fine. how much', replies: [
+      { text: '$40, anchors included, and I\'ll clean up after. Want me to go ahead?', tag: 'ack', heat: -22 },
+      { text: 'More than you\'d like.', tag: 'def', heat: 12 },
+      { text: 'depends', tag: 'dis', heat: 8 } ] },
+  ] },
+  { title: 'Client texting mid-job', heat: 60, msgs: [
+    { text: 'you were supposed to be here at 2. i had to leave for work. what now', replies: [
+      { text: 'That\'s on me, and I\'m sorry. Can I come tomorrow at a time that suits you?', tag: 'ack', heat: -22 },
+      { text: 'The app said 3.', tag: 'def', heat: 14 },
+      { text: 'can reschedule', tag: 'dis', heat: 8 } ] },
+    { text: 'i took the afternoon off for this', replies: [
+      { text: 'I know, and that cost you real money. I\'ll take $15 off to make up for some of it.', tag: 'ack', heat: -20 },
+      { text: 'I can\'t control traffic.', tag: 'def', heat: 15 },
+      { text: 'sorry', tag: 'dis', heat: 6 } ] },
+    { text: 'ok. tomorrow at 9 then. don\'t be late', replies: [
+      { text: '9 sharp. I\'ll text when I\'m ten minutes out.', tag: 'ack', heat: -20 },
+      { text: 'I\'m usually never late, for the record.', tag: 'def', heat: 10 },
+      { text: 'ok', tag: 'dis', heat: 6 } ] },
+  ] },
+  { title: 'Client texting mid-job', heat: 50, msgs: [
+    { text: 'hi!! first time using one of these apps. is it weird if i stay home while you work?', replies: [
+      { text: 'Not weird at all. Stay, ask me anything. It\'s your home.', tag: 'ack', heat: -18 },
+      { text: 'I work faster alone, to be honest.', tag: 'def', heat: 12 },
+      { text: 'up to you', tag: 'dis', heat: 6 } ] },
+    { text: 'what should i do to get ready? don\'t want to waste your time', replies: [
+      { text: 'Just clear a path to the room and show me the outlets. That\'s it.', tag: 'ack', heat: -18 },
+      { text: 'Read the listing, it\'s all there.', tag: 'def', heat: 14 },
+      { text: 'nothing', tag: 'dis', heat: 6 } ] },
+    { text: 'thank you for being patient with all my questions', replies: [
+      { text: 'Questions are how jobs go well. See you soon.', tag: 'ack', heat: -20 },
+      { text: 'No problem, but I do have another job after.', tag: 'def', heat: 8 },
+      { text: 'np', tag: 'dis', heat: 5 } ] },
+  ] },
 ];
 
 export const CHECK_IN_THREADS = [
@@ -527,13 +640,56 @@ export const CHECK_IN_THREADS = [
       { text: 'I\'m fine.', tag: 'flat' },
       { text: 'I am. Nobody gets how hard this is.', tag: 'self' } ] },
   ] },
+  { title: 'Nadia', msgs: [
+    { text: 'sorry I\'ve been MIA. the baby doesn\'t believe in sleep', replies: [
+      { text: 'Don\'t apologize! How are YOU doing, not just the baby?', tag: 'emp' },
+      { text: 'Tell me about it, I barely sleep either with work.', tag: 'self' },
+      { text: 'haha congrats', tag: 'flat' } ] },
+    { text: 'honestly? kind of lonely. everyone asks about her, nobody asks about me', replies: [
+      { text: 'I\'m asking. What\'s been the hardest part?', tag: 'emp' },
+      { text: 'that\'s normal I think', tag: 'flat' },
+      { text: 'Same. Nobody asks about me either.', tag: 'self' } ] },
+    { text: 'thank you. come over sunday? you can hold her while I shower lol', replies: [
+      { text: 'Deal. I\'ll bring food so you don\'t have to cook.', tag: 'emp' },
+      { text: 'maybe, if I\'m not working', tag: 'flat' },
+      { text: 'Sunday is my only day off though...', tag: 'self' } ] },
+  ] },
+  { title: 'Jordan', msgs: [
+    { text: 'did 14 hours of deliveries today. my back is done', replies: [
+      { text: '14?! That\'s too much. Are you okay? Did you eat?', tag: 'emp' },
+      { text: 'I did 12, so I get it.', tag: 'self' },
+      { text: 'oof', tag: 'flat' } ] },
+    { text: 'rent\'s due. can\'t really stop', replies: [
+      { text: 'I hear you. Take tomorrow night off with me and we\'ll cook cheap. Rest is part of the job.', tag: 'emp' },
+      { text: 'Yeah, same. It\'s the grind.', tag: 'self' },
+      { text: 'that sucks', tag: 'flat' } ] },
+    { text: 'ok. tomorrow night. you bring the pasta', replies: [
+      { text: 'Deal. Phones on silent, no apps.', tag: 'emp' },
+      { text: 'sure', tag: 'flat' },
+      { text: 'If I don\'t get a late gig.', tag: 'self' } ] },
+  ] },
+  { title: 'Dad', msgs: [
+    { text: 'Saw a news story about gig workers. Is that you?', replies: [
+      { text: 'Ha, probably. How are you, Dad? Still fixing up the garage?', tag: 'emp' },
+      { text: 'Yeah, it\'s rough out here.', tag: 'self' },
+      { text: 'sort of', tag: 'flat' } ] },
+    { text: 'Garage is done. Took me all summer. Wish you\'d seen it.', replies: [
+      { text: 'Send me pictures! And I\'ll come see it in person soon.', tag: 'emp' },
+      { text: 'nice', tag: 'flat' },
+      { text: 'Wish I had time for projects.', tag: 'self' } ] },
+    { text: 'Proud of you, kid. Don\'t work yourself sick.', replies: [
+      { text: 'Thanks, Dad. That means a lot. I\'ll call more.', tag: 'emp' },
+      { text: 'k', tag: 'flat' },
+      { text: 'Easy to say when you\'re retired.', tag: 'self' } ] },
+  ] },
 ];
 
 export class ThreadGame {
-  constructor(mode, thread) {
+  constructor(mode, thread, state = null) {
     this.mode = mode; // 'client' | 'friend'
     const pool = mode === 'client' ? TEXT_BACK_THREADS : CHECK_IN_THREADS;
-    this.thread = thread || pool[Math.floor(Math.random() * pool.length)];
+    const base = thread || pool[drawFromDeck(state, mode === 'client' ? 'textBack' : 'checkIn', pool.length)];
+    this.thread = { ...base, msgs: base.msgs.map((m) => ({ ...m, replies: shuffled(m.replies) })) };
     this.name = mode === 'client' ? 'TEXT BACK' : `CALL ${this.thread.title.toUpperCase()}`;
     this.hint = mode === 'client' ? 'Keep the client\'s temperature down. Timer is soft, silence is not.' : 'Ask about them. It is a two-way call.';
     this.idx = 0;
@@ -628,12 +784,12 @@ export class ThreadGame {
 
 /** In-gig emotional-intelligence games, by the id used in choice trees. */
 export function createEIGame(kind, state) {
-  if (kind === 'textback') return new ThreadGame('client');
+  if (kind === 'textback') return new ThreadGame('client', null, state);
   return new ReadClient(state);
 }
 
 /** Evening games, by the evening choice id. */
-export function createEveningGame(kind) {
-  if (kind === 'checkin') return new ThreadGame('friend');
+export function createEveningGame(kind, state = null) {
+  if (kind === 'checkin') return new ThreadGame('friend', null, state);
   return new Breathe();
 }
