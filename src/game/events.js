@@ -1,6 +1,7 @@
 // Random daily events + morning flavor ticker text.
 // Rolled once per morning in Game.beginMorning(), never per frame.
 import { makeReferralGig } from './gigs.js';
+import { withPronouns } from '../ui/character.js';
 
 // Tier 1 = flavor (texture only), tier 2 = gameplay (effects/choices), tier 3 = crisis (rare, high impact).
 // effect(state) applies immediately and returns a short outcome line.
@@ -122,6 +123,6 @@ export function generateMorningFlavor(state, weather) {
   if (state.health < 30) lines.push('You feel run down. Rest recommended.');
   lines.push(TIPS[(state.day - 1) % TIPS.length]);
   if (state.cash < 200) lines.push(`Rent's due in ${Math.max(0, state.daysUntilBills)} days. You're stretched thin.`);
-  if (state.reputation > 3) lines.push('A regular left you a 5-star review!');
+  if (state.reputation > 3) lines.push(withPronouns('A regular left you 5 stars: "Would hire {obj} again!"', state.character));
   return lines.slice(0, 4);   // keep mornings snappy
 }

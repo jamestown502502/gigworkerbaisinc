@@ -8,6 +8,7 @@ export function makeGame(overrides = {}) {
   localStorage.clear();
   const state = new GameState();
   state.tutorialSeen = true;
+  state.characterCreated = true; // start on the apartment, as every existing test expects
   Object.assign(state, overrides);
   const game = new Game(state);
   game.ctx = fakeCtx();

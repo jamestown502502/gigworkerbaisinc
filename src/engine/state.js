@@ -1,4 +1,6 @@
-export const SAVE_VERSION = 2;
+import { DEFAULT_CHARACTER } from '../ui/character.js';
+
+export const SAVE_VERSION = 3; // v3: character gains body, pronouns, hairStyle, facialHair
 export const RUN_LENGTH_DAYS = 30;
 
 export class GameState {
@@ -11,7 +13,8 @@ export class GameState {
     this.day = 1;
     this.daysUntilBills = 7;
     this.hoursLeft = 12;
-    this.character = { skin: '#d4a574', hair: '#4a3728', shirt: '#3498db' };
+    this.character = { ...DEFAULT_CHARACTER };
+    this.characterCreated = false; // a new run opens on the character creator until this is set
     this.inventory = [];
     this.gigHistory = [];
     this.repeatClients = [];
@@ -49,6 +52,7 @@ export class GameState {
     this.groceriesDay = 0;       // day groceries were bought (clears Hungry for that day)
     this.lateGigTomorrow = null; // accepted late ping → an extra listing tomorrow
     this.eiWins = 0;
+    this.eiDecks = {};           // no-repeat scenario decks for the EI games (see qte.js drawFromDeck)
     this.runComplete = false;    // day 30 finished
     this.freePlay = false;       // chose to keep going past day 30
     // Preferences, not run state — survive `reset()` (see reset() below), same pattern as the
@@ -71,6 +75,10 @@ export class GameState {
       const parsed = JSON.parse(saved);
       const defaults = JSON.parse(JSON.stringify(this));
       Object.assign(this, parsed);
+      // A save from before the creator existed is a player already mid-run: never interrupt them
+      // with it (the look stays editable every morning). Their old colours carry over as-is.
+      if (parsed.characterCreated === undefined) this.characterCreated = true;
+      this.character = { ...defaults.character, ...(parsed.character || {}) };
       // Backfill anything a pre-v2 save (or a partially written one) lacks, against the
       // constructor defaults — no field is ever left undefined.
       for (const k of Object.keys(defaults)) if (this[k] === undefined || this[k] === null) this[k] = defaults[k];
@@ -88,9 +96,12 @@ export class GameState {
   }
   reset() {
     const settings = this.settings;
+    const character = { ...this.character }; // a new run's creator starts from the last look
     localStorage.removeItem('gigWorkerState');
     Object.assign(this, new GameState());
     this.settings = settings;
+    this.character = character;
+    this.characterCreated = false;
     this.save();
   }
   clamp() {

@@ -58,8 +58,16 @@ test('first pointer activation unlocks audio (QA #9)', async ({ page, browserNam
   }
 });
 
-test('tutorial shows on first launch, Skip is visible on every step (QA #5, #11, #16)', async ({ page }) => {
+test('first launch opens the character creator, then the tutorial; Skip is visible on every step (QA #5, #11, #16)', async ({ page }) => {
   await boot(page, { tutorialSeen: false });
+  expect(await page.evaluate(() => window.__game.phase)).toBe('CREATE');
+  // "Start Day 1" by real tap. Retried because the first tap after boot can land while WebKit is
+  // still settling the canvas box under a loaded runner; a broken button fails every attempt.
+  await expect.poll(async () => {
+    if (await page.evaluate(() => window.__game.phase) === 'CREATE') await tapLogical(page, 665, 525);
+    await step(page, 2);
+    return page.evaluate(() => window.__game.phase);
+  }, { timeout: 15_000 }).toBe('MORNING');
   const visible = await page.evaluate(() => window.__game.tutorialVisible());
   expect(visible).toBe(true);
   for (let i = 0; i < 3; i++) {
@@ -105,4 +113,24 @@ test('settings: reset progress needs a confirm and keeps settings (QA #18)', asy
   await step(page, 1);
   expect(await page.evaluate(() => window.__game.state.day)).toBe(1);
   expect(await page.evaluate(() => window.__game.state.settings.muted)).toBe(true);
+});
+
+// Google Play expects a wrapped web app to work offline at a basic level. Before public/sw.js the
+// game showed the browser's offline page. Chromium only: it is the engine inside an Android TWA.
+test('boots offline after one online visit (Android TWA readiness)', async ({ page, context, browserName }) => {
+  test.skip(browserName !== 'chromium', 'Android wraps Chromium; other engines differ in offline SW support under Playwright');
+  await page.goto('/');
+  await page.waitForFunction(() => window.__booted === true, null, { timeout: 15_000 });
+  await page.waitForFunction(async () => {
+    if (!navigator.serviceWorker.controller) return false;
+    const c = await caches.open('gigworker-v1');
+    const keys = (await c.keys()).map((r) => new URL(r.url).pathname);
+    return keys.some((p) => p.startsWith('/assets/')) && keys.includes('/media/apartment.png');
+  }, null, { timeout: 15_000 });
+  await context.setOffline(true);
+  await page.reload();
+  await page.waitForFunction(() => window.__booted === true, null, { timeout: 15_000 });
+  const art = await page.evaluate(async () => !!(await caches.match('/media/apartment.png')));
+  expect(art).toBe(true);
+  await context.setOffline(false);
 });

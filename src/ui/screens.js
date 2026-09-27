@@ -1,7 +1,7 @@
 // Screen renderers + immediate-mode UI helpers.
 import { drawSprite } from '../engine/sprites.js';
 import { InputManager } from '../engine/input.js';
-import { drawCharacter, renderCustomizer } from './character.js';
+import { drawCharacter, optionRow, pronounsFor, pronounPreview, randomLook, BUILDS, FACIAL_HAIR, HAIR_COLORS, HAIR_STYLES, PRONOUNS, SHIRT_COLORS, SKIN_TONES } from './character.js';
 import { travelCost } from '../game/gigs.js';
 import { UPGRADES, CONSUMABLES, EVENING_OPTIONS } from '../game/loop.js';
 import { drawText, drawWrapped, roundRectPath } from './text.js';
@@ -136,6 +136,37 @@ function modalScale(ctx, t, cx = 400, cy = 300) {
   ctx.translate(cx, cy); ctx.scale(s, s); ctx.translate(-cx, -cy);
 }
 
+// ---------- CHARACTER CREATOR ----------
+// Opens every new run, and from the apartment's "Edit look". Every option is independent and
+// open to every build; see src/ui/character.js for the practice this follows.
+export function creatorScreen(ctx, game) {
+  const s = game.state;
+  const c = s.character;
+  const set = (patch) => { s.character = { ...s.character, ...patch }; s.save(); };
+  drawBackground(ctx, 'apartment', 0.62);
+  drawText(ctx, game.creatorEditing ? 'CHANGE YOUR LOOK' : 'WHO IS HUSTLING?', 400, 40, { size: 24, weight: 'bold', color: '#ffffff', align: 'center', outline: true });
+  drawText(ctx, 'Every option is open to everyone. Change any of it later from your apartment.', 400, 64, { size: 13, color: '#c9a876', align: 'center' });
+
+  panel(ctx, 30, 80, 270, 400);
+  drawCharacter(ctx, 105, 100, 120, 240, c);
+  drawWrapped(ctx, pronounPreview(c), 165, 380, 240, 18, { size: 13, color: '#f0e0b0', align: 'center' });
+
+  panel(ctx, 320, 80, 450, 400);
+  const reg = (x, y, w, h, cb) => UI.register(x, y, w, h, cb);
+  const keys = Object.keys(PRONOUNS);
+  let y = 94;
+  y = optionRow(ctx, 340, y, 'Pronouns', keys.map((k) => PRONOUNS[k]), keys.indexOf(c.pronouns), (i) => set({ pronouns: keys[i] }), reg);
+  y = optionRow(ctx, 340, y, 'Body', BUILDS, c.body, (i) => set({ body: i }), reg);
+  y = optionRow(ctx, 340, y, 'Hair', HAIR_STYLES, c.hairStyle, (i) => set({ hairStyle: i }), reg);
+  y = optionRow(ctx, 340, y, 'Facial hair', FACIAL_HAIR, c.facialHair, (i) => set({ facialHair: i }), reg, { chipW: 72, perRow: 4 });
+  y = optionRow(ctx, 340, y, 'Skin', SKIN_TONES, c.skin, (col) => set({ skin: col }), reg, { swatch: true });
+  y = optionRow(ctx, 340, y, 'Hair color', HAIR_COLORS, c.hair, (col) => set({ hair: col }), reg, { swatch: true });
+  optionRow(ctx, 340, y, 'Shirt', SHIRT_COLORS, c.shirt, (col) => set({ shirt: col }), reg, { swatch: true });
+
+  button(ctx, 320, 500, 190, 50, 'Randomize look', { fontSize: 14, onClick: () => set(randomLook(s.character)) });
+  button(ctx, 560, 500, 210, 50, game.creatorEditing ? 'Done' : 'Start Day 1', { color: '#2c6e49', fontSize: 15, onClick: () => game.finishCreator() });
+}
+
 // ---------- APARTMENT (morning) ----------
 export function apartmentScreen(ctx, game) {
   const s = game.state;
@@ -146,7 +177,8 @@ export function apartmentScreen(ctx, game) {
   panel(ctx, 30, 120, 300, 360);
   drawText(ctx, 'YOU', 180, 146, { size: 18, weight: 'bold', color: '#ffffff', align: 'center' });
   drawCharacter(ctx, 130, 160, 100, 200, s.character);
-  renderCustomizer(ctx, 55, 378, s, (x, y, w, h, cb) => { if (!game.activeEvent) UI.register(x, y, w, h, cb); });
+  drawText(ctx, `${pronounsFor(s.character).label} · ${BUILDS[s.character.body] ?? BUILDS[0]}`, 180, 392, { size: 13, color: '#c9a876', align: 'center' });
+  button(ctx, 80, 410, 200, 44, 'Edit look', { fontSize: 14, onClick: () => { if (!game.activeEvent) game.openCreator(); } });
 
   // stats summary panel
   panel(ctx, 360, 120, 410, 220);
@@ -374,6 +406,11 @@ export function resultsScreen(ctx, game) {
   }
   for (const t of r.outcomeTexts.slice(0, 3)) {
     y = drawWrapped(ctx, t, 400, y, 460, 17, { size: 12, color: '#c9a876', align: 'center' }) + 1;
+  }
+  // the client's review, only when it fits above the stat row (never pushes it into the button)
+  if (r.review && y + 17 <= 392) {
+    drawText(ctx, r.review, 400, y + 4, { size: 12, color: '#f0e0b0', align: 'center', maxWidth: 460 });
+    y += 20;
   }
 
   // stat deltas
