@@ -71,6 +71,18 @@ async function boot() {
   // round-trips or how loaded the machine running the test happens to be.
   window.__bootMs = Math.round(performance.now());
   window.__booted = true;
+  registerServiceWorker();
+}
+
+/** Offline support (public/sw.js). Production builds only: in dev it would cache modules that the
+ *  dev server is busy hot-replacing. Hands the worker every file this first load fetched, so the
+ *  game works offline from the first launch, not the second. */
+function registerServiceWorker() {
+  if (!import.meta.env.PROD || !('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.register('/sw.js').then(() => navigator.serviceWorker.ready).then((reg) => {
+    const urls = [location.href, ...performance.getEntriesByType('resource').map((e) => e.name)];
+    reg.active?.postMessage({ type: 'cache-urls', urls });
+  }).catch((err) => console.warn('Service worker registration failed; the game still works online.', err));
 }
 
 boot().catch((err) => {
