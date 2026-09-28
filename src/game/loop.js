@@ -1,6 +1,7 @@
-// State machine: MORNING → BROWSE → TRAVEL → GIG → RESULTS (loop) → EVENING (+ EVENING_GAME)
+// State machine: CREATE (new run) → MORNING → BROWSE → TRAVEL → GIG → RESULTS (loop) → EVENING (+ EVENING_GAME)
 // → sleep → MORNING ... → SUMMARY on day 30 (+ GAMEOVER on eviction).
 import { InputManager } from '../engine/input.js';
+import { withPronouns } from '../ui/character.js';
 import * as audio from '../engine/audio.js';
 import { RUN_LENGTH_DAYS } from '../engine/state.js';
 import { generateDailyGigs, gigEnergyCost, travelCost, makeReferralGig } from './gigs.js';
@@ -62,6 +63,20 @@ export function sleepRecovery(s) {
   return Math.round(base * mult + 1e-6);
 }
 
+/** Client reviews on the results screen. Written in the third person so the player's chosen
+ *  pronouns are what the world actually calls them. */
+const GOOD_REVIEWS = [
+  '"{Subj} {was} on time and easy to work with."',
+  '"Would hire {obj} again. Already told my neighbor."',
+  '"{Subj} knew exactly what {subj} {was} doing."',
+  '"Friendly, fast, careful with my stuff. Five stars for {obj}."',
+];
+const MIXED_REVIEWS = [
+  '"{Subj} got it done. It took a while."',
+  '"Not {poss} best day, but {subj} showed up."',
+  '"Fine. I think {subj} {was} having a rough week."',
+];
+
 export class Game {
   constructor(state) {
     this.state = state;
@@ -109,6 +124,22 @@ export class Game {
     state.save();
     if (state.rentOverdueDays >= 14) this.phase = 'GAMEOVER';
     else if (state.runComplete && !state.freePlay) this.phase = 'SUMMARY';
+    else if (!state.characterCreated) this.phase = 'CREATE';
+    this.creatorEditing = false; // true when opened from the apartment, not at the start of a run
+  }
+
+  /** Open the creator from the apartment to change the look mid-run. */
+  openCreator() {
+    this.creatorEditing = true;
+    this.setPhase('CREATE', 'fade');
+  }
+
+  /** Leave the creator: into Day 1 for a new run, or back to the apartment when editing. */
+  finishCreator() {
+    this.state.characterCreated = true;
+    this.state.save();
+    if (this.creatorEditing) { this.creatorEditing = false; this.setPhase('MORNING', 'fade'); return; }
+    this.setPhase('MORNING', 'sunrise', { fromDay: 0, toDay: 1 });
   }
 
   // ---------- phase changes ----------
@@ -381,7 +412,13 @@ export class Game {
     s.clamp();
 
     const total = items.reduce((a, i) => a + i.amount, 0);
+    // A client's one-line review, in the player's pronouns. Picked by gig count, not Math.random,
+    // so it never shifts the random sequence the rest of the game (and its tests) depend on.
+    const pleased = s.reputation >= this.snapshot.rep;
+    const pool = pleased ? GOOD_REVIEWS : MIXED_REVIEWS;
+    const review = withPronouns(pool[s.gigsCompleted % pool.length], s.character);
     this.results = {
+      review,
       payout,
       total,
       items,
@@ -491,7 +528,7 @@ export class Game {
       s.save();
       return;
     }
-    this.qte = createEveningGame(id === 'checkin' ? 'checkin' : 'breathe');
+    this.qte = createEveningGame(id === 'checkin' ? 'checkin' : 'breathe', this.state);
     this.qteKind = 'evening';
     this.qteReadyT = 0;
     this.qteEndTimer = 0;
@@ -667,7 +704,8 @@ export class Game {
     this.eventQueue = [];
     this.activeEvent = null;
     this.repShown = this.state.reputation;
-    this.setPhase('MORNING', 'sunrise', { fromDay: 0, toDay: 1 });
+    this.creatorEditing = false;
+    this.setPhase('CREATE', 'fade');
   }
 
   // ---------- frame ----------
@@ -740,6 +778,7 @@ export class Game {
     ctx.clearRect(-10, -10, 820, 620); // slightly oversized to cover the shake offset at the edges
 
     switch (this.phase) {
+      case 'CREATE': screens.creatorScreen(ctx, this); break;
       case 'MORNING': screens.apartmentScreen(ctx, this); break;
       case 'BROWSE': renderListings(ctx, this); break;
       case 'TRAVEL': screens.travelScreen(ctx, this); break;
@@ -751,7 +790,7 @@ export class Game {
       case 'GAMEOVER': screens.gameOverScreen(ctx, this); break;
     }
 
-    if (this.phase !== 'GAMEOVER' && this.phase !== 'SUMMARY') renderHUD(ctx, this);
+    if (this.phase !== 'GAMEOVER' && this.phase !== 'SUMMARY' && this.phase !== 'CREATE') renderHUD(ctx, this);
     if (this.settingsOpen) screens.settingsModal(ctx, this);
     renderFX(ctx);
     if (this.tutorialVisible()) renderTutorial(ctx, this);

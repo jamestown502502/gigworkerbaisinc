@@ -171,7 +171,7 @@ describe('save / reset / tutorial (QA #5, #18)', () => {
     expect(state.support).toBe(20);
     expect(state.weekStats.eveningsRested).toBe(0);
     expect(state.settings.reduceMotion).toBe(false);
-    expect(state.version).toBe(2);
+    expect(state.version).toBe(3);
   });
 });
 

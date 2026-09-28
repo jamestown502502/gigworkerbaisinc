@@ -247,3 +247,23 @@ before/after doc `BAIS_GigWorker_BeforeAfter_QAPass_2026-09-12.md`.
 hard gate at accept and in-gig costs may drain to 0 (day then ends); day 30 → Summary → explicit
 Free Play; Reduce Motion off by default. The tester's "Breathme" screen (row 17) does not exist
 under that name — the closest is Steady Hand; the overlap sweep now guards every minigame frame.
+
+## 7. Resubmission update (2026-09-27)
+
+- **Character creator** (`creatorScreen` in `src/ui/screens.js`, options in `src/ui/character.js`):
+  phase `CREATE` opens every new run and from the apartment's "Edit look". Builds are numbered,
+  never gendered; hairstyles and facial hair are open to every build; pronouns are separate and
+  are the only thing text reads, via `withPronouns()`. Saves without `characterCreated` are
+  existing players and skip it. Save version 3.
+- **EI games**: 12 client reads, 5 text threads, 5 check-in calls, drawn from no-repeat decks on
+  `state.eiDecks` (`drawFromDeck` in `src/game/qte.js`). Answer order is shuffled per play; the
+  best answer used to be the top button everywhere. `tests/unit/eiDepth.test.js` holds line
+  lengths to what is proven to fit on screen.
+- **Offline / installable**: `public/sw.js`, `public/manifest.webmanifest`, `public/icons/`.
+  Registered in production builds only (`registerServiceWorker` in `src/main.js`). Cache lookups
+  use `ignoreVary`: the module script request carries an Origin header and a strict match missed
+  it, so the game did not boot offline until that was fixed. Bump `CACHE_NAME` only when the
+  caching strategy changes.
+- `icons/icon-512.png` is also the 512x512 Play Store icon (32-bit, 332 KB).
+- Known: the iPhone WebKit profile can flake on this Windows machine under parallel load (it did
+  on the pre-change code too). CI on Linux is the gate.

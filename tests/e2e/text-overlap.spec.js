@@ -82,6 +82,11 @@ test('no two texts overlap on any screen', async ({ page }) => {
   problems.push(...await sweep(page, 'summary'));
   await page.evaluate(() => { const g = window.__game; g.phase = 'GAMEOVER'; g.step(1 / 60); });
   problems.push(...await sweep(page, 'gameover'));
+  // longest labels on every row: they/them, Build 3, Mustache — both the new-run and the edit title
+  await page.evaluate(() => { const g = window.__game; g.state.character = { ...g.state.character, pronouns: 'they', body: 2, hairStyle: 5, facialHair: 2 }; g.creatorEditing = false; g.phase = 'CREATE'; g.step(1 / 60); });
+  problems.push(...await sweep(page, 'creator'));
+  await page.evaluate(() => { const g = window.__game; g.creatorEditing = true; g.step(1 / 60); });
+  problems.push(...await sweep(page, 'creator-edit'));
   expect(problems, problems.join('\n')).toEqual([]);
 });
 
