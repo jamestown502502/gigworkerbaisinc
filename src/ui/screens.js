@@ -65,7 +65,7 @@ export function button(ctx, x, y, w, h, label, { color = '#5d4023', textColor = 
   drawText(ctx, label, x + w / 2, y + h / 2, {
     size: fontSize,
     weight: 'bold',
-    color: disabled ? '#8a7a63' : textColor,
+    color: disabled ? '#b5a488' : textColor,
     align: 'center',
     baseline: 'middle',
     outline: !disabled,
@@ -238,7 +238,7 @@ export function apartmentScreen(ctx, game) {
     ctx.globalAlpha = alpha;
     drawText(ctx, game.ticker.lines[game.ticker.idx], 400, 108, { size: 15, color: '#aaaaaa', align: 'center', shadow: false, maxWidth: 680 });
     ctx.globalAlpha = 1;
-    drawText(ctx, 'tap to skip', 400, 500, { size: 11, color: '#6a5a43', align: 'center', shadow: false });
+    drawText(ctx, 'tap to skip', 400, 500, { size: 12, color: '#b5a488', align: 'center', shadow: false });
   } else if (game.activeEvent) {
     eventModal(ctx, game);
   }
@@ -392,7 +392,7 @@ export function resultsScreen(ctx, game) {
   let y = 192;
   for (const item of r.items) {
     drawText(ctx, item.label, 180, y, { size: 13, color: '#c9a876', maxWidth: 330 });
-    drawText(ctx, `${item.amount >= 0 ? '+' : '-'}$${Math.abs(item.amount)}`, 620, y, { size: 13, weight: 'bold', color: item.amount >= 0 ? '#2ecc71' : '#e74c3c', align: 'right', font: 'monospace' });
+    drawText(ctx, `${item.amount >= 0 ? '+' : '-'}$${Math.abs(item.amount)}`, 620, y, { size: 13, weight: 'bold', color: item.amount >= 0 ? '#2ecc71' : '#ff6b5e', align: 'right', font: 'monospace' });
     y += 18;
   }
   ctx.strokeStyle = '#8b5a2b'; ctx.lineWidth = 1;
@@ -400,7 +400,7 @@ export function resultsScreen(ctx, game) {
   y += 4;
   if (r.qteResult) {
     drawText(ctx, `Challenge ${r.qteResult.success ? 'cleared' : 'fumbled'} — score ${r.qteResult.score}`, 400, y, {
-      size: 13, color: r.qteResult.success ? '#2ecc71' : '#e74c3c', align: 'center',
+      size: 13, color: r.qteResult.success ? '#2ecc71' : '#ff6b5e', align: 'center',
     });
     y += 18;
   }
@@ -519,7 +519,7 @@ function pingModal(ctx, game) {
   opts.forEach(([label, id, color], i) => {
     button(ctx, 200, 272 + i * 58, 400, 48, label, { color, fontSize: 15, onClick: () => game.resolvePing(id) });
   });
-  drawText(ctx, 'Saying no costs nothing here. Saying yes costs tomorrow.', 400, 462, { size: 12, color: '#8a7a63', align: 'center', shadow: false });
+  drawText(ctx, 'Saying no costs nothing here. Saying yes costs tomorrow.', 400, 462, { size: 12, color: '#b5a488', align: 'center', shadow: false });
 }
 
 // Weekly wrap-up — shows after bills every 7 days.
@@ -693,20 +693,39 @@ export function settingsModal(ctx, game) {
 
   toggleRow(ctx, 204, y, 'Mute All', () => s.muted, (v) => { s.muted = v; applyAudioSettings(); game.state.save(); }); y += 48;
   toggleRow(ctx, 204, y, 'Reduce Timing Pressure', () => s.reduceTimingPressure, (v) => { s.reduceTimingPressure = v; game.state.save(); }); y += 44;
-  drawWrapped(ctx, 'Widens timed-challenge windows and slows their timers.', 204, y, 380, 15, { size: 11, color: '#8a7a63' }); y += 22;
+  drawWrapped(ctx, 'Widens timed-challenge windows and slows their timers.', 204, y, 380, 15, { size: 12, color: '#b5a488' }); y += 22;
   toggleRow(ctx, 204, y, 'Reduce Motion', () => s.reduceMotion, (v) => { s.reduceMotion = v; game.state.save(); }); y += 44;
-  drawWrapped(ctx, 'Replaces screen transitions with a quick fade.', 204, y, 380, 15, { size: 11, color: '#8a7a63' }); y += 30;
+  drawWrapped(ctx, 'Replaces screen transitions with a quick fade.', 204, y, 380, 15, { size: 12, color: '#b5a488' }); y += 30;
 
   button(ctx, 204, y, 180, 40, 'Replay tutorial', { color: '#2c5a6e', fontSize: 13, onClick: () => game.replayTutorial() });
   if (game.confirmReset) {
-    button(ctx, 400, y, 190, 40, 'Really reset? YES', { color: '#7a3020', fontSize: 13, onClick: () => { game.newGame(); game.settingsOpen = false; game.confirmReset = false; } });
+    button(ctx, 400, y, 190, 40, 'Start over? YES', { color: '#7a3020', fontSize: 13, onClick: () => { game.newGame(); game.settingsOpen = false; game.confirmReset = false; } });
   } else {
-    button(ctx, 400, y, 190, 40, 'Reset progress', { color: '#5d4023', fontSize: 13, onClick: () => { game.confirmReset = true; } });
+    button(ctx, 400, y, 190, 40, 'Start new game', { color: '#5d4023', fontSize: 13, onClick: () => { game.confirmReset = true; } });
   }
-  y += 48;
-  if (game.confirmReset) drawText(ctx, 'This deletes the current run. Settings are kept.', 400, y, { size: 11, color: '#ff6b5e', align: 'center' });
+  y += 58; // room for the warning between the buttons and Close (it was squeezed against both)
+  if (game.confirmReset) drawText(ctx, 'This deletes the current run. Settings are kept.', 400, y, { size: 12, color: '#ff8a7e', align: 'center' });
 
-  button(ctx, 300, 512, 200, 44, 'Close', { color: '#2c6e49', onClick: () => { game.settingsOpen = false; game.confirmReset = false; } });
+  button(ctx, 300, 528, 200, 38, 'Close', { color: '#2c6e49', onClick: () => { game.settingsOpen = false; game.confirmReset = false; } });
+}
+
+// ---------- WELCOME BACK (reopening a run in progress) ----------
+export function resumeModal(ctx, game) {
+  const s = game.state;
+  ctx.fillStyle = 'rgba(6, 4, 2, 0.82)';
+  ctx.fillRect(0, 0, 800, 600);
+  UI.absorb();
+  panel(ctx, 220, 160, 360, 280, { alpha: 0.98 });
+  drawText(ctx, 'WELCOME BACK', 400, 204, { size: 24, weight: 'bold', color: '#ffd700', align: 'center' });
+  drawText(ctx, `Day ${s.day}  ·  $${Math.round(s.cash)}  ·  ${s.gigsCompleted} gigs done`, 400, 238, { size: 15, color: '#e0e0e0', align: 'center' });
+  if (!game.confirmNewGame) {
+    button(ctx, 250, 272, 300, 56, 'Continue', { color: '#2c6e49', onClick: () => { game.resumePrompt = false; } });
+    button(ctx, 250, 344, 300, 56, 'New game', { color: '#5d4023', onClick: () => { game.confirmNewGame = true; } });
+  } else {
+    drawWrapped(ctx, 'Start over from Day 1? This run will be deleted. Your settings are kept.', 400, 282, 300, 20, { size: 15, color: '#ffb3a8', align: 'center' });
+    button(ctx, 250, 344, 145, 56, 'Keep playing', { color: '#2c6e49', fontSize: 14, onClick: () => { game.confirmNewGame = false; game.resumePrompt = false; } });
+    button(ctx, 405, 344, 145, 56, 'Start over', { color: '#7a3020', fontSize: 14, onClick: () => game.newGame() });
+  }
 }
 
 // ---------- SUMMARY (day 30) ----------

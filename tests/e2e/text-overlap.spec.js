@@ -1,33 +1,13 @@
 import { test, expect } from '@playwright/test';
-import { boot, settleMorning, step } from './helpers.js';
+import { boot, settleMorning, step, auditText } from './helpers.js';
 
 // Text-overlap sweep: every screen is rendered with the text probe on, and no two drawn
 // strings on the same frame may intersect. This catches the whole class behind QA #13 / #17
 // (labels drawn into buttons, hints wrapping into play areas) rather than the two instances.
-function overlaps(a, b) {
-  const pad = -2; // small tolerance for outline/shadow
-  return a.x < b.x + b.w + pad && a.x + a.w + pad > b.x && a.y < b.y + b.h + pad && a.y + a.h + pad > b.y;
-}
-
+// Every screen gets the full readability audit (overlap, off-canvas, minimum size, contrast), not
+// just the overlap check this sweep started with.
 async function sweep(page, label) {
-  const texts = await page.evaluate(() => {
-    window.__textProbe = [];
-    window.__game.step(1 / 60);
-    const all = window.__textProbe;
-    window.__textProbe = null;
-    // only the topmost layer is visible: drop everything before the last modal/overlay marker
-    let cut = 0;
-    all.forEach((t, i) => { if (t.layer) cut = i + 1; });
-    return all.slice(cut).filter((t) => !t.layer);
-  });
-  const collisions = [];
-  for (let i = 0; i < texts.length; i++) for (let j = i + 1; j < texts.length; j++) {
-    const a = texts[i], b = texts[j];
-    if (a.text === b.text && Math.abs(a.x - b.x) < 1 && Math.abs(a.y - b.y) < 1) continue; // outline pass + fill pass
-    if (a.w === 0 || b.w === 0) continue;
-    if (overlaps(a, b)) collisions.push(`${label}: "${a.text}" @${Math.round(a.x)},${Math.round(a.y)} vs "${b.text}" @${Math.round(b.x)},${Math.round(b.y)}`);
-  }
-  return collisions;
+  return auditText(page, label);
 }
 
 test('no two texts overlap on any screen', async ({ page }) => {

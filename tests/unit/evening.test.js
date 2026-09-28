@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { makeGame, withRandom } from './helpers.js';
-import { Breathe, ReadClient, ThreadGame, READ_CLIENT_SCENARIOS, TEXT_BACK_THREADS, CHECK_IN_THREADS, difficultyFactor } from '../../src/game/qte.js';
+import { Breathe, BOX_SIDE, ReadClient, ThreadGame, READ_CLIENT_SCENARIOS, TEXT_BACK_THREADS, CHECK_IN_THREADS, difficultyFactor } from '../../src/game/qte.js';
 import { sleepRecovery, applyHealthDecay } from '../../src/game/loop.js';
 
 describe('evening loop', () => {
@@ -67,16 +67,38 @@ describe('evening loop', () => {
 });
 
 describe('minigames', () => {
-  it('Breathe never fails and scores taps by timing', () => {
+  // Box breathing: hold through IN and HOLD, let go through OUT and REST.
+  const runBreathe = (pressFor) => {
     const b = new Breathe();
-    b.update(3.2); b.handleTap();            // exact peak → 100
-    b.update(3.2 + 0.45); b.handleTap();     // half a window late → ~50
-    while (!b.done) b.update(0.1);
+    while (!b.done) b.update(1 / 60, pressFor(b.sideIndex()));
+    return b;
+  };
+  it('Breathe: holding in time with the box scores 100, the reverse scores 0', () => {
+    expect(runBreathe((side) => side <= 1).result.score).toBe(100);
+    expect(runBreathe((side) => side >= 2).result.score).toBe(0);
+  });
+  it('Breathe never fails: never touching it still succeeds, matching the two let-go sides', () => {
+    const b = runBreathe(() => false);
     expect(b.result.success).toBe(true);
-    expect(b.targets[0].hit).toBe(100);
-    expect(b.targets[1].hit).toBeGreaterThan(40);
-    expect(b.targets[1].hit).toBeLessThan(60);
-    expect(b.result.score).toBe(Math.round((100 + b.targets[1].hit) / 6));
+    expect(b.result.score).toBe(50);
+  });
+  it('Breathe does not score reaction time at each turn', () => {
+    // Late by 0.4 s on every side (inside the 0.45 s grace) still scores 100.
+    const b = new Breathe();
+    let t = 0;
+    while (!b.done) {
+      const side = Math.floor(Math.max(0, Math.min(t, b.exercise - 1e-6) - 0.4) / BOX_SIDE) % 4;
+      b.update(1 / 60, side <= 1 && t >= 0.4);
+      t += 1 / 60;
+    }
+    expect(b.result.score).toBeGreaterThanOrEqual(99);
+  });
+  it('Breathe follows the box: lungs fill on IN, stay full on HOLD, empty on OUT', () => {
+    const b = new Breathe();
+    b.update(BOX_SIDE * 0.5, true); expect(b.sideIndex()).toBe(0); expect(b.lungs()).toBeCloseTo(0.5, 1);
+    b.update(BOX_SIDE, true); expect(b.sideIndex()).toBe(1); expect(b.lungs()).toBe(1);
+    b.update(BOX_SIDE, false); expect(b.sideIndex()).toBe(2); expect(b.lungs()).toBeCloseTo(0.5, 1);
+    b.update(BOX_SIDE, false); expect(b.sideIndex()).toBe(3); expect(b.lungs()).toBe(0);
   });
   it('Read the Client: right feeling + good response = 100, wrong feeling costs reputation', () => {
     for (const sc of READ_CLIENT_SCENARIOS) {

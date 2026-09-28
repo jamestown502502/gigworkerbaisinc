@@ -43,7 +43,7 @@ export function drawText(ctx, text, x, y, options = {}) {
     const w = ctx.measureText(text).width;
     const left = align === 'center' ? x - w / 2 : align === 'right' ? x - w : x;
     const top = baseline === 'middle' ? y - size / 2 : baseline === 'top' ? y : y - size * 0.8;
-    globalThis.__textProbe.push({ text: String(text), x: left, y: top, w, h: size });
+    globalThis.__textProbe.push({ text: String(text), x: left, y: top, w, h: size, size, color, outline, bold: String(weight).includes('bold') });
   }
 
   ctx.shadowColor = 'transparent';
@@ -54,22 +54,26 @@ export function drawText(ctx, text, x, y, options = {}) {
 }
 
 // Word-wrap with shadow. Returns the y just below the last line.
-export function drawWrapped(ctx, text, x, y, maxW, lineH, options = {}) {
+/** The lines drawWrapped will draw, for sizing a box BEFORE drawing into it. Estimating from the
+ *  raw text width undercounts, because wrapping happens at word boundaries: a Text Back bubble
+ *  sized that way let its third line spill onto the temperature meter. */
+export function wrapLines(ctx, text, maxW, options = {}) {
   const words = String(text).split(' ');
-  let line = '', cy = y;
+  const lines = [];
+  let line = '';
   ctx.font = `${options.size || 16}px ${options.font || 'system-ui, sans-serif'}`;
   for (const word of words) {
     const test = line ? line + ' ' + word : word;
-    if (ctx.measureText(test).width > maxW && line) {
-      drawText(ctx, line, x, cy, options);
-      line = word;
-      cy += lineH;
-    } else {
-      line = test;
-    }
+    if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = word; } else line = test;
   }
-  if (line) drawText(ctx, line, x, cy, options);
-  return cy + lineH;
+  if (line) lines.push(line);
+  return lines;
+}
+
+export function drawWrapped(ctx, text, x, y, maxW, lineH, options = {}) {
+  const lines = wrapLines(ctx, text, maxW, options);
+  lines.forEach((line, i) => drawText(ctx, line, x, y + i * lineH, options));
+  return y + Math.max(1, lines.length) * lineH;
 }
 
 // Measure text width without call sites touching ctx.font directly.

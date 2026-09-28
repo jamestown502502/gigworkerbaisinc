@@ -78,6 +78,8 @@ export class GameState {
       // A save from before the creator existed is a player already mid-run: never interrupt them
       // with it (the look stays editable every morning). Their old colours carry over as-is.
       if (parsed.characterCreated === undefined) this.characterCreated = true;
+      // Not saved (non-enumerable): lets the game offer Continue / New game on reopening a run.
+      Object.defineProperty(this, 'fromSave', { value: true, configurable: true });
       this.character = { ...defaults.character, ...(parsed.character || {}) };
       // Backfill anything a pre-v2 save (or a partially written one) lacks, against the
       // constructor defaults — no field is ever left undefined.
@@ -97,11 +99,13 @@ export class GameState {
   reset() {
     const settings = this.settings;
     const character = { ...this.character }; // a new run's creator starts from the last look
+    const tutorialSeen = this.tutorialSeen;  // someone starting over has seen it (Settings replays it)
     localStorage.removeItem('gigWorkerState');
     Object.assign(this, new GameState());
     this.settings = settings;
     this.character = character;
     this.characterCreated = false;
+    this.tutorialSeen = tutorialSeen;
     this.save();
   }
   clamp() {

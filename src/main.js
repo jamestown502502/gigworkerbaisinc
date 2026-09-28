@@ -5,6 +5,7 @@ import { GameState } from './engine/state.js';
 import { Game } from './game/loop.js';
 import { initAudio, unlock as unlockAudio, contextState } from './engine/audio.js';
 import { loadAssets } from './engine/sprites.js';
+import * as qte from './game/qte.js';
 import { drawText, roundRectPath } from './ui/text.js';
 
 export { drawSprite, imageCache } from './engine/sprites.js';
@@ -43,6 +44,7 @@ async function boot() {
   window.__game = game;   // dev/e2e hook
   window.__state = state;
   window.__audioState = contextState;
+  window.__qte = qte;     // e2e hook: the readability audit renders every EI scenario
 
   let last = performance.now();
   let rafId = null;
