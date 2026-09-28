@@ -267,3 +267,21 @@ under that name — the closest is Steady Hand; the overlap sweep now guards eve
 - `icons/icon-512.png` is also the 512x512 Play Store icon (32-bit, 332 KB).
 - Known: the iPhone WebKit profile can flake on this Windows machine under parallel load (it did
   on the pre-change code too). CI on Linux is the gate.
+
+### 7a. Follow-up fixes (2026-09-28)
+
+- **Text Back bubbles** are sized from the real word-wrapped line count (`wrapLines` in
+  `src/ui/text.js`) and only the newest messages that fit are shown; the old width estimate let a
+  third line spill onto the temperature meter.
+- **Readability audit** (`auditText` in `tests/e2e/helpers.js`): overlap, off-canvas, size under
+  11 px, and WCAG AA contrast measured against the real pixels around each string (sampled on a
+  ring outside the text box; inside the box, small bold glyphs read as background). It runs on
+  every screen in `text-overlap.spec.js` and on every EI scenario, thread, call, the breathing game,
+  creator, settings and the welcome-back prompt in `readability.spec.js`. Muted text is `#b5a488`
+  (the old `#8a7a63` failed AA everywhere it was used).
+- **No more stuck new games:** settings (gear, mute, every button inside) work while the tutorial
+  is up (`tutorialVisible()` is false while settings are open); reopening a run shows Welcome back
+  with Continue / New game (`resumePrompt`, from the non-saved `state.fromSave`); starting over
+  keeps `tutorialSeen`. The e2e `boot()` helper dismisses the prompt unless `keepResumePrompt`.
+- **Breathing** is box breathing: press and hold for IN and HOLD, let go for OUT and REST, 3 s per
+  side, 3 cycles, 0.45 s grace per turn. Score is the share of scored time the finger matched.

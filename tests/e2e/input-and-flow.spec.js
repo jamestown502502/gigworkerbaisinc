@@ -86,7 +86,7 @@ test('a full day: listings → gig → results → evening choice → sleep, wit
   await tapLogical(page, 580, 186); // Wind down
   await step(page, 1);
   expect(await phase(page)).toBe('EVENING_GAME');
-  await page.evaluate(() => { const g = window.__game; g.qte.update(30); g.step(1.2); });
+  await page.evaluate(() => { const g = window.__game; g.qte.update(g.qte.duration ?? 30); g.step(1.2); }); // finish the exercise, whatever its length
   expect(await phase(page)).toBe('EVENING');
   expect(await page.evaluate(() => window.__game.state.eveningDoneDay)).toBe(4);
   await tapLogical(page, 160, 552); // Sleep

@@ -36,12 +36,12 @@ export function renderListings(ctx, game) {
       cold: 'outdoor gigs cost +2 energy',
       perfect: 'bonus listings today!',
     };
-    drawText(ctx, `${wthr.emoji} ${wthr.name} — ${notes[wthr.id]}`, 400, bannerY, { size: 12, weight: 'bold', color: wthr.color, align: 'center' });
+    drawText(ctx, `${wthr.emoji} ${wthr.name} — ${notes[wthr.id]}`, 400, bannerY, { size: 12, weight: 'bold', color: wthr.color, align: 'center', outline: true });
     bannerY += 16;
   }
   if (s.stress > 60 && s.todayGigs.some((g) => g.hasQTE)) {
     drawText(ctx, "⚠ Your stress is high — timed challenges will feel a lot harder today.", 400, bannerY, {
-      size: 12, weight: 'bold', color: '#ff6b5e', align: 'center',
+      size: 12, weight: 'bold', color: '#ff6b5e', align: 'center', outline: true,
     });
   }
 
@@ -135,7 +135,7 @@ function drawGigCard(ctx, x, y, w, h, gig, game, s) {
     size: 12, weight: 'bold', color: tooTired ? '#ff6b5e' : wmod > 0 ? '#ff9d5c' : '#2ecc71', font: 'monospace', align: 'right',
   });
 
-  drawText(ctx, gig.description, x + 20, y + 65, { size: 11, color: '#8a99a8' });
+  drawText(ctx, gig.description, x + 20, y + 65, { size: 12, color: '#c3ccd6' });
 
   const rlabel = `⚠ ${gig.risk}%`;
   const tw = textWidth(ctx, rlabel, 12, 'monospace', 'bold');

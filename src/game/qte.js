@@ -5,7 +5,8 @@
 // Skill QTE difficulty scales with stress (high = harder) and energy (low = harder).
 
 import { playTick, playSuccess, playFail, playBreathIn, playBreathOut, playBuzz, playWarm, playError } from '../engine/audio.js';
-import { drawText, drawWrapped, roundRectPath } from '../ui/text.js';
+import { drawText, drawWrapped, roundRectPath, wrapLines } from '../ui/text.js';
+import { InputManager } from '../engine/input.js';
 
 // Brief "GET READY" beat before a skill QTE's own update()/handleTap() go live — shared with
 // loop.js (gates input) and screens.js (renders the countdown). Lives here, not in loop.js,
@@ -250,7 +251,7 @@ function drawChoice(ctx, b, { color = '#3d4d5c', dim = false } = {}) {
   roundRectPath(ctx, b.x, b.y, b.w, b.h, 9); ctx.fill();
   ctx.strokeStyle = dim ? '#444' : '#c9a876'; ctx.lineWidth = 2;
   roundRectPath(ctx, b.x, b.y, b.w, b.h, 9); ctx.stroke();
-  drawWrapped(ctx, b.label, b.x + 14, b.y + 24, b.w - 28, 18, { size: 14, color: dim ? '#8a7a63' : '#ffffff', shadow: false });
+  drawWrapped(ctx, b.label, b.x + 14, b.y + 24, b.w - 28, 18, { size: 14, color: dim ? '#b5a488' : '#ffffff', shadow: false });
 }
 
 function hit(b, pt) { return pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h; }
@@ -292,72 +293,132 @@ export function drawFace(ctx, x, y, size, seed, feeling) {
 }
 
 // ---------- Breathe — evening wind-down, no fail ----------
-// Box breathing: the ring swells on the inhale and settles on the exhale. Tap at the top of
-// each breath and at the bottom. Accuracy scores stress relief; a passive player still gets the
-// floor amount, because a breathing exercise you can lose is not a breathing exercise.
-const BREATH_HALF = 3.2;
-const BREATH_CYCLES = 3;
+// Box breathing (in, hold, out, rest, equal counts), the paced-breathing pattern taught for stress
+// down-regulation. The player's body does the pacing: press and HOLD through the inhale and the
+// hold, LET GO through the exhale and the rest. A light travels the square so the next side is
+// always visible before it arrives, and every side counts down. The score is how much of the
+// exercise the finger matched the breath (a short grace at each turn, so reaction time is not
+// scored). It cannot be failed: a player who never touches it still matches the two let-go sides.
+//
+// Replaced a "tap at the top and bottom of the breath" version: six taps over twenty seconds, with
+// nothing to do in between, which players read as a loading screen rather than an exercise.
+export const BOX_SIDE = 3;   // seconds per side
+export const BOX_CYCLES = 3;
+const BOX_GRACE = 0.45;      // seconds at the start of each side that are not scored
+const BOX_SIDES = [
+  { label: 'Breathe in', short: 'IN', press: true, color: '#5dade2' },
+  { label: 'Hold', short: 'HOLD', press: true, color: '#9b8cd9' },
+  { label: 'Breathe out', short: 'OUT', press: false, color: '#2ecc71' },
+  { label: 'Rest', short: 'REST', press: false, color: '#c9a876' },
+];
 export class Breathe {
   constructor() {
     this.name = 'WIND DOWN';
-    this.hint = 'Breathe with the ring. Tap at the top and bottom of each breath.';
+    this.hint = 'Press and hold to breathe in and hold. Let go to breathe out and rest.';
     this.elapsed = 0;
-    this.targets = [];
-    for (let i = 1; i <= BREATH_CYCLES * 2; i++) this.targets.push({ t: i * BREATH_HALF, hit: null });
-    this.duration = BREATH_CYCLES * 2 * BREATH_HALF + 0.6;
+    this.exercise = BOX_SIDE * 4 * BOX_CYCLES;
+    this.duration = this.exercise + 1.2; // a moment of stillness before the result
+    this.scored = 0;                     // seconds that counted
+    this.matched = 0;                    // of those, seconds the finger matched the breath
+    this.pressed = false;
+    this.lastSide = -1;
     this.done = false;
     this.result = null;
-    this.ripple = 0;
-    this.lastCue = -1;
     this.noFail = true;
   }
-  phase() { return (this.elapsed % (BREATH_HALF * 2)) / BREATH_HALF; } // 0..2 : 0-1 inhale, 1-2 exhale
-  breath() { const p = this.phase(); return p < 1 ? p : 2 - p; }        // 0..1 ring size
-  update(dt) {
+  sideIndex() { return Math.floor(Math.min(this.elapsed, this.exercise - 1e-6) / BOX_SIDE) % 4; }
+  sideT() { return (Math.min(this.elapsed, this.exercise - 1e-6) % BOX_SIDE) / BOX_SIDE; }
+  /** 0..1 how full the lungs are: fills on IN, stays full on HOLD, empties on OUT, empty on REST. */
+  lungs() { const t = this.sideT(); return [t, 1, 1 - t, 0][this.sideIndex()]; }
+  sync() { return this.scored > 0 ? this.matched / this.scored : 1; }
+  /** `pressed` is read from the pointer each frame; tests pass it in. */
+  update(dt, pressed = InputManager.pointer.down) {
     if (this.done) return;
+    this.pressed = !!pressed;
+    if (this.elapsed < this.exercise) {
+      const side = this.sideIndex();
+      if (side !== this.lastSide) {
+        this.lastSide = side;
+        if (side === 0) playBreathIn(); else if (side === 2) playBreathOut(); else playTick();
+      }
+      if (this.elapsed % BOX_SIDE >= BOX_GRACE) {
+        this.scored += dt;
+        if (this.pressed === BOX_SIDES[side].press) this.matched += dt;
+      }
+    }
     this.elapsed += dt;
-    this.ripple = Math.max(0, this.ripple - dt * 2);
-    const cue = Math.floor(this.elapsed / BREATH_HALF);
-    if (cue !== this.lastCue) { this.lastCue = cue; (cue % 2 === 0 ? playBreathIn : playBreathOut)(); }
     if (this.elapsed >= this.duration) {
-      const scores = this.targets.map((t) => t.hit ?? 0);
-      const score = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
-      this.result = { success: true, score };
+      this.result = { success: true, score: Math.round(this.sync() * 100) };
       this.done = true;
       playWarm();
     }
   }
-  handleTap() {
-    if (this.done) return;
-    const WINDOW = 0.9;
-    let best = null;
-    for (const t of this.targets) {
-      if (t.hit !== null) continue;
-      const diff = Math.abs(this.elapsed - t.t);
-      if (diff <= WINDOW && (!best || diff < Math.abs(this.elapsed - best.t))) best = t;
-    }
-    if (best) { best.hit = Math.round(100 - (Math.abs(this.elapsed - best.t) / WINDOW) * 100); this.ripple = 1; playTick(); }
-  }
+  handleTap() { /* holding is read continuously in update(); a tap is just a short hold */ }
   render(ctx) {
-    const cx = AREA.x + AREA.w / 2, cy = AREA.y + AREA.h / 2 + 10;
-    const r = 46 + 96 * this.breath();
-    const inhale = this.phase() < 1;
-    ctx.fillStyle = inhale ? 'rgba(93,173,226,0.22)' : 'rgba(46,204,113,0.22)';
-    ctx.beginPath(); ctx.arc(cx, cy, r + 14, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = inhale ? '#5dade2' : '#2ecc71';
-    ctx.lineWidth = 6;
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
-    if (this.ripple > 0) {
-      ctx.strokeStyle = `rgba(255,255,255,${this.ripple * 0.7})`; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(cx, cy, r + 30 * (1 - this.ripple), 0, Math.PI * 2); ctx.stroke();
+    const cx = AREA.x + AREA.w / 2, cy = AREA.y + 196;
+    const finished = this.elapsed >= this.exercise;
+    const side = BOX_SIDES[this.sideIndex()];
+    const progress = Math.min(1, this.elapsed / this.exercise);
+
+    // the room settles: a cool night that warms as the exercise goes on
+    const sky = ctx.createLinearGradient(0, AREA.y + 40, 0, AREA.y + AREA.h);
+    sky.addColorStop(0, `rgba(${Math.round(30 + 40 * progress)}, ${Math.round(40 + 20 * progress)}, ${Math.round(70 - 20 * progress)}, 0.55)`);
+    sky.addColorStop(1, 'rgba(20, 14, 8, 0.2)');
+    ctx.fillStyle = sky;
+    roundRectPath(ctx, AREA.x + 20, AREA.y + 44, AREA.w - 40, AREA.h - 70, 14); ctx.fill();
+    for (let i = 0; i < 14; i++) {                        // slow drifting motes
+      const mx = AREA.x + 40 + ((i * 97 + this.elapsed * (6 + (i % 4) * 3)) % (AREA.w - 80));
+      const my = AREA.y + 60 + ((i * 53) % 280) - Math.sin(this.elapsed * 0.6 + i) * 6;
+      ctx.fillStyle = `rgba(255, 240, 200, ${0.08 + 0.06 * Math.sin(this.elapsed + i)})`;
+      ctx.beginPath(); ctx.arc(mx, my, 2 + (i % 3), 0, Math.PI * 2); ctx.fill();
     }
-    drawText(ctx, inhale ? 'Breathe in...' : 'Breathe out...', cx, cy + 6, { size: 22, weight: 'bold', color: '#ffffff', align: 'center', baseline: 'middle', outline: true });
-    const cycle = Math.min(BREATH_CYCLES, Math.floor(this.elapsed / (BREATH_HALF * 2)) + 1);
-    drawText(ctx, `Breath ${cycle} of ${BREATH_CYCLES}`, cx, AREA.y + AREA.h - 30, { size: 16, color: '#f0f0f0', font: 'monospace', align: 'center' });
+
+    // the box: faint track, each side labelled, the travelled part of this side lit
+    const half = 110, x0 = cx - half, y0 = cy - half, s = half * 2;
+    const corners = [[x0, y0 + s], [x0, y0], [x0 + s, y0], [x0 + s, y0 + s]]; // IN goes up the left side
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+    ctx.strokeRect(x0, y0, s, s);
+    const at = (i, t) => { const a = corners[i], b = corners[(i + 1) % 4]; return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; };
+    if (!finished) {
+      const i = this.sideIndex(), [dx, dy] = at(i, this.sideT());
+      ctx.strokeStyle = side.color; ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.moveTo(...corners[i]); ctx.lineTo(dx, dy); ctx.stroke();
+      const glow = ctx.createRadialGradient(dx, dy, 0, dx, dy, 22);
+      glow.addColorStop(0, 'rgba(255,255,255,0.95)'); glow.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(dx, dy, 22, 0, Math.PI * 2); ctx.fill();
+    }
+    const labelAt = [[x0 - 30, cy], [cx, y0 - 16], [x0 + s + 30, cy], [cx, y0 + s + 22]];
+    BOX_SIDES.forEach((sd, i) => {
+      const on = !finished && i === this.sideIndex();
+      drawText(ctx, sd.short, labelAt[i][0], labelAt[i][1], { size: 12, weight: 'bold', color: on ? sd.color : 'rgba(240,240,240,0.55)', align: 'center', baseline: 'middle', shadow: false });
+    });
+
+    // the lungs: a soft circle that fills and empties; it glows when the finger matches the breath
+    const inSync = this.pressed === side.press;
+    const r = 26 + 58 * this.lungs();
+    ctx.fillStyle = finished ? 'rgba(46,204,113,0.28)' : inSync ? 'rgba(255,255,255,0.16)' : 'rgba(230,126,34,0.16)';
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = finished ? '#2ecc71' : side.color; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+
+    if (finished) {
+      drawText(ctx, 'Settled.', cx, cy - 4, { size: 24, weight: 'bold', color: '#ffffff', align: 'center', baseline: 'middle', outline: true });
+      drawText(ctx, `In sync ${Math.round(this.sync() * 100)}%`, cx, cy + 24, { size: 15, color: '#c9f2d6', align: 'center', baseline: 'middle', shadow: false });
+    } else {
+      const count = Math.ceil(BOX_SIDE - (this.elapsed % BOX_SIDE));
+      drawText(ctx, side.label, cx, cy - 12, { size: 20, weight: 'bold', color: '#ffffff', align: 'center', baseline: 'middle', outline: true });
+      drawText(ctx, String(count), cx, cy + 18, { size: 26, weight: 'bold', color: side.color, align: 'center', baseline: 'middle', outline: true });
+    }
+
+    // what to do with your finger, and how it is going
+    const cycle = Math.min(BOX_CYCLES, Math.floor(this.elapsed / (BOX_SIDE * 4)) + 1);
+    const instruction = finished ? 'Well done.' : side.press ? 'Press and hold' : 'Let go';
+    drawText(ctx, instruction, AREA.x + 44, AREA.y + AREA.h - 40, { size: 16, weight: 'bold', color: side.press && !finished ? '#8ec6ea' : '#9fe0b5', shadow: false });
+    drawText(ctx, `Breath ${cycle} of ${BOX_CYCLES}  ·  In sync ${Math.round(this.sync() * 100)}%`, AREA.x + AREA.w - 44, AREA.y + AREA.h - 40, { size: 14, color: '#e8dcc4', align: 'right', shadow: false });
     ctx.fillStyle = '#3a2d1f';
     ctx.fillRect(AREA.x, AREA.y + AREA.h - 14, AREA.w, 10);
     ctx.fillStyle = '#f5deb3';
-    ctx.fillRect(AREA.x, AREA.y + AREA.h - 14, AREA.w * Math.min(1, this.elapsed / this.duration), 10);
+    ctx.fillRect(AREA.x, AREA.y + AREA.h - 14, AREA.w * progress, 10);
   }
 }
 
@@ -741,20 +802,26 @@ export class ThreadGame {
   }
   render(ctx) {
     this.buttons = [];
-    // thread
-    let y = AREA.y + 62;
-    const recent = this.log.slice(-3);
-    for (const m of recent) {
+    // thread: the newest messages that fit between the hint and the meter, sized from the real
+    // wrapped line count. Older messages scroll off the top, as in a real chat.
+    const w = 360, top = AREA.y + 58, bottom = AREA.y + 212, gap = 8;
+    const sized = this.log.map((m) => ({ m, lines: wrapLines(ctx, m.text, w - 28, { size: 14 }) }))
+      .map((b) => ({ ...b, h: 14 + b.lines.length * 18 }));
+    const shown = [];
+    let used = 0;
+    for (let i = sized.length - 1; i >= 0; i--) {
+      const need = sized[i].h + (shown.length ? gap : 0);
+      if (used + need > bottom - top) break;
+      shown.unshift(sized[i]); used += need;
+    }
+    let y = top;
+    for (const { m, lines, h } of shown) {
       const mine = m.who === 'me';
-      const w = 360;
       const x = mine ? AREA.x + AREA.w - w - 24 : AREA.x + 24;
-      ctx.font = '14px system-ui, sans-serif';
-      const lines = Math.max(1, Math.ceil(ctx.measureText(m.text).width / (w - 28)));
-      const h = 16 + lines * 18;
       ctx.fillStyle = mine ? '#2c6e9e' : '#3a3a3a';
       roundRectPath(ctx, x, y, w, h, 12); ctx.fill();
-      drawWrapped(ctx, m.text, x + 14, y + 22, w - 28, 18, { size: 14, color: '#ffffff', shadow: false });
-      y += h + 8;
+      lines.forEach((line, i) => drawText(ctx, line, x + 14, y + 20 + i * 18, { size: 14, color: '#ffffff', shadow: false }));
+      y += h + gap;
     }
     // meter / timer
     if (this.mode === 'client') {

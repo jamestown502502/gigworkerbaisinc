@@ -115,6 +115,52 @@ test('settings: reset progress needs a confirm and keeps settings (QA #18)', asy
   expect(await page.evaluate(() => window.__game.state.settings.muted)).toBe(true);
 });
 
+// "Starting a new game got stuck" (2026-09-28): at the start of a fresh run the tutorial took every
+// tap, including the settings gear and every button inside settings. These drive real taps.
+test('during the tutorial, settings open, and New game / Close inside them work', async ({ page }) => {
+  await boot(page, { save: { tutorialSeen: false, characterCreated: true, day: 1 } });
+  expect(await page.evaluate(() => window.__game.tutorialVisible())).toBe(true);
+  await tapLogical(page, 778, 16); // gear, while the tutorial is up
+  expect(await page.evaluate(() => window.__game.settingsOpen)).toBe(true);
+  expect(await page.evaluate(() => window.__game.tutorialVisible())).toBe(false); // settings on top
+  await tapLogical(page, 400, 547); // Close
+  expect(await page.evaluate(() => window.__game.settingsOpen)).toBe(false);
+  expect(await page.evaluate(() => window.__game.tutorialVisible())).toBe(true); // tutorial resumes
+  await tapLogical(page, 778, 16);
+  await tapLogical(page, 495, 482); // Start new game
+  await tapLogical(page, 495, 482); // Start over? YES
+  await step(page, 1);
+  expect(await phase(page)).toBe('CREATE');
+});
+
+test('reopening a run offers Continue or New game, and New game reaches a playable Day 1', async ({ page }) => {
+  await boot(page, { save: { tutorialSeen: true, characterCreated: true, day: 6, cash: 480, gigsCompleted: 9 }, keepResumePrompt: true });
+  expect(await page.evaluate(() => window.__game.resumePrompt)).toBe(true);
+  await tapLogical(page, 400, 372); // New game
+  expect(await page.evaluate(() => window.__game.confirmNewGame)).toBe(true);
+  expect(await page.evaluate(() => window.__game.state.day)).toBe(6); // nothing deleted yet
+  await tapLogical(page, 477, 372); // Start over
+  await step(page, 1);
+  expect(await phase(page)).toBe('CREATE');
+  expect(await page.evaluate(() => window.__game.state.day)).toBe(1);
+  await tapLogical(page, 665, 525); // Start Day 1
+  await step(page, 2);
+  expect(await phase(page)).toBe('MORNING');
+  expect(await page.evaluate(() => window.__game.tutorialVisible())).toBe(false); // already seen
+  await settleMorning(page);
+  await tapLogical(page, 165, 552); // Check Listings
+  await step(page, 1);
+  expect(await phase(page)).toBe('BROWSE');
+});
+
+test('Continue closes the prompt and keeps the run', async ({ page }) => {
+  await boot(page, { save: { tutorialSeen: true, characterCreated: true, day: 6, cash: 480, gigsCompleted: 9 }, keepResumePrompt: true });
+  await tapLogical(page, 400, 300); // Continue
+  expect(await page.evaluate(() => window.__game.resumePrompt)).toBe(false);
+  expect(await page.evaluate(() => window.__game.state.day)).toBe(6);
+  expect(await phase(page)).toBe('MORNING');
+});
+
 // Google Play expects a wrapped web app to work offline at a basic level. Before public/sw.js the
 // game showed the browser's offline page. Chromium only: it is the engine inside an Android TWA.
 test('boots offline after one online visit (Android TWA readiness)', async ({ page, context, browserName }) => {

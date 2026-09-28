@@ -157,7 +157,10 @@ describe('save / reset / tutorial (QA #5, #18)', () => {
     expect(state.day).toBe(1);
     expect(state.cash).toBe(200);
     expect(state.settings.muted).toBe(true);
-    expect(state.tutorialSeen).toBe(false);
+    // Starting over does not force the tutorial on someone who has already seen it (2026-09-28:
+    // a new game that opened on a tutorial which swallowed every tap read as "stuck").
+    expect(state.tutorialSeen).toBe(true);
+    expect(game.phase).toBe('CREATE');
   });
   it('a save with a tutorial pointer past the end still shows the tutorial from step 0', () => {
     localStorage.setItem('gigWorkerState', JSON.stringify({ tutorialSeen: false, tutorialStep: -3, day: 1 }));

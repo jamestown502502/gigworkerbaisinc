@@ -126,6 +126,10 @@ export class Game {
     else if (state.runComplete && !state.freePlay) this.phase = 'SUMMARY';
     else if (!state.characterCreated) this.phase = 'CREATE';
     this.creatorEditing = false; // true when opened from the apartment, not at the start of a run
+    // Reopening the game with a run under way offers Continue or New game up front, instead of
+    // hiding a fresh start behind Settings > Reset.
+    this.resumePrompt = !!state.fromSave && this.phase === 'MORNING' && (state.day > 1 || state.gigsCompleted > 0);
+    this.confirmNewGame = false;
   }
 
   /** Open the creator from the apartment to change the look mid-run. */
@@ -219,6 +223,10 @@ export class Game {
   // ---------- tutorial ----------
 
   tutorialVisible() {
+    // Settings sit above the tutorial: while it is open, the tutorial neither draws nor takes taps,
+    // so Close, the volume bars and New game always work (they were unreachable at the start of a
+    // fresh run, when the tutorial is always showing).
+    if (this.settingsOpen || this.resumePrompt) return false;
     if (this.state.tutorialSeen) return false;
     const step = TUTORIAL_STEPS[this.state.tutorialStep];
     return !!step && step.phase === this.phase;
@@ -545,7 +553,8 @@ export class Game {
       s.calmTonight = true;
       s.eveningsRested += 1;
       s.weekStats.eveningsRested += 1;
-      this.eveningOutcome = `You breathe. -${relief} stress, +3 balance. Tomorrow's timed challenges will feel easier.`;
+      const how = result.score >= 85 ? 'Your breathing and the box moved as one.' : result.score >= 60 ? 'You found the rhythm.' : 'It took a while to settle, but you stayed with it.';
+      this.eveningOutcome = `${how} -${relief} stress, +3 balance. Tomorrow's timed challenges will feel easier.`;
     } else {
       s.support += fx.support || 0;
       s.stress += fx.stress || 0;
@@ -705,6 +714,8 @@ export class Game {
     this.activeEvent = null;
     this.repShown = this.state.reputation;
     this.creatorEditing = false;
+    this.resumePrompt = false;
+    this.confirmNewGame = false;
     this.setPhase('CREATE', 'fade');
   }
 
@@ -792,6 +803,7 @@ export class Game {
 
     if (this.phase !== 'GAMEOVER' && this.phase !== 'SUMMARY' && this.phase !== 'CREATE') renderHUD(ctx, this);
     if (this.settingsOpen) screens.settingsModal(ctx, this);
+    else if (this.resumePrompt) screens.resumeModal(ctx, this);
     renderFX(ctx);
     if (this.tutorialVisible()) renderTutorial(ctx, this);
     ctx.restore();
@@ -807,6 +819,9 @@ export class Game {
     let click;
     while ((click = InputManager.consumeClick())) {
       if (this.transition) continue;
+      // The HUD's settings gear and mute button always work, tutorial or not: the tutorial used to
+      // swallow every tap, so a player could not open settings (or start over) until it ended.
+      if (this.tutorialVisible() && click.y < 56 && click.x > 750 && UI.handleClick(click)) { audio.playClick(); continue; }
       // tutorial overlay consumes clicks and advances (or skips entirely)
       if (this.tutorialVisible()) {
         const r = this.tutorialSkipRect;
