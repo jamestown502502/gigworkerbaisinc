@@ -415,11 +415,12 @@ export function resultsScreen(ctx, game) {
 
   // stat deltas
   y = Math.max(y + 10, 400);
+  // Losses use #ff6b5e: #e74c3c measured 4.49:1 on this panel in CI, just under the 4.5:1 standard.
   const deltas = [
-    ['Cash', r.deltas.cash, '$', '#2ecc71', '#e74c3c'],
-    ['Stress', r.deltas.stress, '', '#e74c3c', '#2ecc71'],
-    ['Rep', r.deltas.rep, '', '#2ecc71', '#e74c3c'],
-    ['Energy', r.deltas.energy, '', '#2ecc71', '#e74c3c'],
+    ['Cash', r.deltas.cash, '$', '#2ecc71', '#ff6b5e'],
+    ['Stress', r.deltas.stress, '', '#ff6b5e', '#2ecc71'],
+    ['Rep', r.deltas.rep, '', '#2ecc71', '#ff6b5e'],
+    ['Energy', r.deltas.energy, '', '#2ecc71', '#ff6b5e'],
   ];
   deltas.forEach(([label, val, prefix, posColor, negColor], i) => {
     const dx = 220 + i * 120;
