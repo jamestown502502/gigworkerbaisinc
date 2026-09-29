@@ -285,3 +285,20 @@ under that name — the closest is Steady Hand; the overlap sweep now guards eve
   keeps `tutorialSeen`. The e2e `boot()` helper dismisses the prompt unless `keepResumePrompt`.
 - **Breathing** is box breathing: press and hold for IN and HOLD, let go for OUT and REST, 3 s per
   side, 3 cycles, 0.45 s grace per turn. Score is the share of scored time the finger matched.
+
+### 7b. Best-in-class pass (2026-09-29)
+
+- **Job microgames** (`src/game/microgames.js`): LIFT!, UNTANGLE!, PACK!, RAKE!, PROOFREAD!, SORT!,
+  chosen by the gig's `choiceTree` (`MICROGAME_BY_TREE`). They replaced RhythmTap / TimedSequence /
+  SteadyHand. Six gigs now have one (Yard Work, Logo Design, Mystery Shopping added), so a fumble
+  costs 5 stress instead of 10 to keep the Monte Carlo bands. `shakeOffset` = stress in the hands.
+- **Conversations**: `ThreadGame` has a "typing" beat (`theyTyping`), drafts (`choose` -> types
+  out -> harsh drafts hover `HARSH_HOLD`), and `deleteDraft()` (counts `rewrites`). `reply()` is
+  still the commit, so tests can call it directly. `ReadClient` reveals face, then `cues[0..1]`.
+- **Breathing**: `Breathe` opens on a choice (`BREATH_PATTERNS.calm` 5/5, `.focus` 4x4 box; Calm
+  auto-starts after 10 s), glide tone (`playBreathGlide`), `navigator.vibrate`, eyes-closed mode.
+- **Math of the month**: `state.monthMath` (paid hours, lost pay, rent/phone paid, travel energy,
+  sick days); `monthMath()`/`monthMathModal` in screens.js, from SUMMARY and GAMEOVER.
+- Two report-based Text Back threads (rating threat, tip baiting); `TEXT_BACK_THREADS` is 7.
+- **Tests:** `window.__loopPaused = true` stops the real-time loop for audits that drive time with
+  `game.step()`; without it the slower profiles let a game finish between two measurements.

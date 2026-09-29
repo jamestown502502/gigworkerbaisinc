@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { makeGame, withRandom } from './helpers.js';
-import { Breathe, BOX_SIDE, ReadClient, ThreadGame, READ_CLIENT_SCENARIOS, TEXT_BACK_THREADS, CHECK_IN_THREADS, difficultyFactor } from '../../src/game/qte.js';
+import { Breathe, BREATH_PATTERNS, BREATH_CHOOSE_SECS, ReadClient, ThreadGame, READ_CLIENT_SCENARIOS, TEXT_BACK_THREADS, CHECK_IN_THREADS, difficultyFactor } from '../../src/game/qte.js';
 import { sleepRecovery, applyHealthDecay } from '../../src/game/loop.js';
 
 describe('evening loop', () => {
@@ -67,38 +67,55 @@ describe('evening loop', () => {
 });
 
 describe('minigames', () => {
-  // Box breathing: hold through IN and HOLD, let go through OUT and REST.
-  const runBreathe = (pressFor) => {
+  // Breathing: hold through the in-breath (and a hold), let go through the out-breath (and a rest).
+  const runBreathe = (key, pressFor) => {
     const b = new Breathe();
-    while (!b.done) b.update(1 / 60, pressFor(b.sideIndex()));
+    b.start(key);
+    while (!b.done) b.update(1 / 60, pressFor(b.side()));
     return b;
   };
-  it('Breathe: holding in time with the box scores 100, the reverse scores 0', () => {
-    expect(runBreathe((side) => side <= 1).result.score).toBe(100);
-    expect(runBreathe((side) => side >= 2).result.score).toBe(0);
+  for (const key of ['calm', 'focus']) {
+    it(`Breathe (${key}): matching the breath scores 100, the reverse scores 0`, () => {
+      expect(runBreathe(key, (side) => side.press).result.score).toBe(100);
+      expect(runBreathe(key, (side) => !side.press).result.score).toBe(0);
+    });
+    it(`Breathe (${key}) never fails: never touching it succeeds, matching the let-go half`, () => {
+      const b = runBreathe(key, () => false);
+      expect(b.result.success).toBe(true);
+      expect(b.result.score).toBe(50);
+    });
+  }
+  it('Calm is resonance breathing: 5 in, 5 out, six breaths a minute; Focus is a 4-count box', () => {
+    const cycle = BREATH_PATTERNS.calm.sides.reduce((a, x) => a + x.secs, 0);
+    expect(cycle).toBe(10);
+    expect(60 / cycle).toBe(6);
+    expect(BREATH_PATTERNS.focus.sides.map((x) => x.secs)).toEqual([4, 4, 4, 4]);
   });
-  it('Breathe never fails: never touching it still succeeds, matching the two let-go sides', () => {
-    const b = runBreathe(() => false);
-    expect(b.result.success).toBe(true);
-    expect(b.result.score).toBe(50);
+  it('Breathe waits for a choice, then starts Calm on its own', () => {
+    const b = new Breathe();
+    expect(b.stage).toBe('choose');
+    for (let t = 0; t < BREATH_CHOOSE_SECS + 0.1; t += 1 / 60) b.update(1 / 60, false);
+    expect(b.stage).toBe('breathe');
+    expect(b.patternKey).toBe('calm');
   });
   it('Breathe does not score reaction time at each turn', () => {
-    // Late by 0.4 s on every side (inside the 0.45 s grace) still scores 100.
     const b = new Breathe();
+    b.start('focus');
     let t = 0;
     while (!b.done) {
-      const side = Math.floor(Math.max(0, Math.min(t, b.exercise - 1e-6) - 0.4) / BOX_SIDE) % 4;
-      b.update(1 / 60, side <= 1 && t >= 0.4);
+      const late = (Math.max(0, Math.min(t, b.exercise - 1e-6) - 0.4)) % b.cycleLen;
+      b.update(1 / 60, t >= 0.4 && late < 8);   // in-breath and hold, pressed 0.4 s late each time
       t += 1 / 60;
     }
-    expect(b.result.score).toBeGreaterThanOrEqual(99);
+    expect(b.result.score).toBeGreaterThanOrEqual(98);
   });
-  it('Breathe follows the box: lungs fill on IN, stay full on HOLD, empty on OUT', () => {
+  it('the lungs fill on the in-breath, stay full on hold, empty on the out-breath', () => {
     const b = new Breathe();
-    b.update(BOX_SIDE * 0.5, true); expect(b.sideIndex()).toBe(0); expect(b.lungs()).toBeCloseTo(0.5, 1);
-    b.update(BOX_SIDE, true); expect(b.sideIndex()).toBe(1); expect(b.lungs()).toBe(1);
-    b.update(BOX_SIDE, false); expect(b.sideIndex()).toBe(2); expect(b.lungs()).toBeCloseTo(0.5, 1);
-    b.update(BOX_SIDE, false); expect(b.sideIndex()).toBe(3); expect(b.lungs()).toBe(0);
+    b.start('focus');
+    b.update(2, true); expect(b.sideIndex()).toBe(0); expect(b.lungs()).toBeCloseTo(0.5, 1);
+    b.update(4, true); expect(b.sideIndex()).toBe(1); expect(b.lungs()).toBe(1);
+    b.update(4, false); expect(b.sideIndex()).toBe(2); expect(b.lungs()).toBeCloseTo(0.5, 1);
+    b.update(4, false); expect(b.sideIndex()).toBe(3); expect(b.lungs()).toBe(0);
   });
   it('Read the Client: right feeling + good response = 100, wrong feeling costs reputation', () => {
     for (const sc of READ_CLIENT_SCENARIOS) {
@@ -115,14 +132,16 @@ describe('minigames', () => {
       expect(g2.result.effects.rep).toBeLessThan(0);
     }
   });
+  // Let a thread play out in real time (messages now arrive after a "typing..." beat).
+  const settle = (g) => { for (let i = 0; i < 60 * 60 && !g.done; i++) g.update(1 / 60); return g; };
   it('Text Back: acknowledging replies cool the client; silence counts against you', () => {
     for (const th of TEXT_BACK_THREADS) {
       const g = new ThreadGame('client', th);
       for (const m of th.msgs) g.reply(m.replies.find((r) => r.tag === 'ack'));
-      g.update(2);
+      settle(g);
       expect(g.result.success).toBe(true);
       const g2 = new ThreadGame('client', th);
-      g2.update(10); g2.update(10); g2.update(10); g2.update(2);
+      settle(g2); // never replies: each message waits out its timer after it lands
       expect(g2.tags).toEqual(['dis', 'dis', 'dis']);
       expect(g2.result.success).toBe(false);
     }
@@ -131,12 +150,12 @@ describe('minigames', () => {
     for (const th of CHECK_IN_THREADS) {
       const g = new ThreadGame('friend', th);
       for (const m of th.msgs) g.reply(m.replies.find((r) => r.tag === 'emp'));
-      g.update(2);
+      settle(g);
       expect(g.result.success).toBe(true);
       expect(g.result.effects.support).toBe(16);
       const g2 = new ThreadGame('friend', th);
       for (const m of th.msgs) g2.reply(m.replies.find((r) => r.tag === 'self'));
-      g2.update(2);
+      settle(g2);
       expect(g2.result.success).toBe(true);
       expect(g2.result.effects.support).toBe(4);
     }

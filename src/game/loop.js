@@ -6,7 +6,8 @@ import * as audio from '../engine/audio.js';
 import { RUN_LENGTH_DAYS } from '../engine/state.js';
 import { generateDailyGigs, gigEnergyCost, travelCost, makeReferralGig } from './gigs.js';
 import { getNode, resolveChoice } from './choices.js';
-import { createQTE, createEIGame, createEveningGame, QTE_READY_DURATION } from './qte.js';
+import { createEIGame, createEveningGame, QTE_READY_DURATION } from './qte.js';
+import { createQTE } from './microgames.js';
 import { rollDailyEvents, generateMorningFlavor } from './events.js';
 import { rollWeather } from './weather.js';
 import { UI } from '../ui/screens.js';
@@ -182,6 +183,7 @@ export class Game {
     this.restDay = false;
     if (s.health <= 0) {
       this.restDay = true;
+      s.monthMath.sickDays += 1;
       s.health = Math.min(100, s.health + 20);
       this.ticker = { lines: [], idx: 0, t: 0 };
       this.eventQueue = [];
@@ -276,6 +278,7 @@ export class Game {
       this.startGig();
     } else {
       this.state.energy -= travelCost(gig, this.state);
+      this.state.monthMath.travelEnergy += travelCost(gig, this.state);
       this.state.clamp();
       this.travelT = 0;
       this.setPhase('TRAVEL', 'commute');
@@ -359,6 +362,8 @@ export class Game {
     const gig = this.currentGig;
     s.energy -= gigEnergyCost(gig, s);
     s.hoursLeft -= gig.hours;
+    s.monthMath.paidHours += gig.hours;
+    s.monthMath.gigs += 1;
 
     const items = [];
     const base = gig.payout;
@@ -375,7 +380,10 @@ export class Game {
         items.push({ label: 'Fumbled the challenge (-30%)', amount: -cut });
         payout -= cut;
         s.reputation -= 0.2;
-        s.stress += 10;
+        // 5, was 10: since 2026-09-29 six gigs have a challenge instead of three, so a month holds
+        // about twice as many chances to fumble; this keeps the month's total stress where the
+        // balance bands (tests/unit/balance.test.js) were designed.
+        s.stress += 5;
         spawnFloatingText(229, 20, '+stress', { color: '#e74c3c', size: 14 });
       }
     }
@@ -386,6 +394,7 @@ export class Game {
     if (Math.random() * 100 < scamChance) {
       const kept = Math.random() * 0.5;
       const lost = payout - Math.round(payout * kept);
+      s.monthMath.lostToNonPayment += Math.max(0, lost);
       if (lost > 0) items.push({ label: kept < 0.1 ? 'Client vanished without paying' : 'Client short-changed you', amount: -lost });
       payout -= lost;
       s.stress += 15;
@@ -585,6 +594,7 @@ export class Game {
     if (s.cash < amt || this.billsPaid[kind]) return;
     s.cash -= amt;
     this.billsPaid[kind] = true;
+    if (kind === 'rent') s.monthMath.rentPaid += amt; else s.monthMath.phonePaid += amt;
     if (kind === 'rent') { s.unpaidRent = 0; s.rentOverdueDays = 0; }
     if (kind === 'phone') { s.unpaidPhone = 0; s.phoneCut = false; }
     audio.playCashOut();
@@ -617,10 +627,12 @@ export class Game {
     let paid = 0;
     if (kind === 'rent' && s.cash >= s.unpaidRent && s.unpaidRent > 0) {
       paid = s.unpaidRent;
+      s.monthMath.rentPaid += paid;
       s.cash -= s.unpaidRent; s.unpaidRent = 0; s.rentOverdueDays = 0;
     }
     if (kind === 'phone' && s.cash >= s.unpaidPhone && s.unpaidPhone > 0) {
       paid = s.unpaidPhone;
+      s.monthMath.phonePaid += paid;
       s.cash -= s.unpaidPhone; s.unpaidPhone = 0; s.phoneCut = false;
     }
     if (paid > 0) {
@@ -716,6 +728,7 @@ export class Game {
     this.creatorEditing = false;
     this.resumePrompt = false;
     this.confirmNewGame = false;
+    this.mathOpen = false;
     this.setPhase('CREATE', 'fade');
   }
 
@@ -804,6 +817,7 @@ export class Game {
     if (this.phase !== 'GAMEOVER' && this.phase !== 'SUMMARY' && this.phase !== 'CREATE') renderHUD(ctx, this);
     if (this.settingsOpen) screens.settingsModal(ctx, this);
     else if (this.resumePrompt) screens.resumeModal(ctx, this);
+    else if (this.mathOpen && (this.phase === 'SUMMARY' || this.phase === 'GAMEOVER')) screens.monthMathModal(ctx, this);
     renderFX(ctx);
     if (this.tutorialVisible()) renderTutorial(ctx, this);
     ctx.restore();

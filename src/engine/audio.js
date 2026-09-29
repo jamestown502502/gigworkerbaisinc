@@ -73,8 +73,29 @@ export function playAccept()  { tone(523, 0.07, { type: 'triangle', vol: 0.06 })
 export function playGood()    { tone(784, 0.07, { type: 'sine', vol: 0.05 }); tone(1047, 0.16, { type: 'sine', vol: 0.05, when: 0.07 }); }
 export function playSting()   { tone(140, 0.4, { type: 'sawtooth', vol: 0.05, slide: -30 }); tone(147, 0.4, { type: 'sawtooth', vol: 0.04 }); }
 // Evening / wellbeing cues
-export function playBreathIn()  { tone(330, 0.5, { type: 'sine', vol: 0.035, slide: 60 }); }
-export function playBreathOut() { tone(392, 0.6, { type: 'sine', vol: 0.035, slide: -70 }); }
+/** A soft tone that glides for the whole length of one breath: up on the inhale, down on the exhale.
+ *  Sustained (not a blip), so the out-breath can be paced by ear with the eyes closed. */
+export function playBreathGlide(rising, seconds) {
+  const v = 0.03 * sfxVolume();
+  if (v <= 0) return;
+  const ctx = ac();
+  if (!ctx) return;
+  const t0 = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(rising ? 247 : 370, t0);
+  osc.frequency.linearRampToValueAtTime(rising ? 370 : 247, t0 + seconds);
+  gain.gain.setValueAtTime(0.0001, t0);
+  gain.gain.linearRampToValueAtTime(v, t0 + Math.min(0.4, seconds / 3));
+  gain.gain.setValueAtTime(v, t0 + Math.max(0.5, seconds - 0.5));
+  gain.gain.linearRampToValueAtTime(0.0001, t0 + seconds);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(t0);
+  osc.stop(t0 + seconds + 0.05);
+}
+/** True when sound effects will actually be heard (not muted, volume above zero). */
+export function soundIsOn() { return sfxVolume() > 0; }
 export function playBuzz()      { tone(120, 0.08, { type: 'square', vol: 0.04 }); tone(120, 0.08, { type: 'square', vol: 0.04, when: 0.12 }); }
 export function playWarm()      { tone(392, 0.12, { type: 'triangle', vol: 0.05 }); tone(494, 0.12, { type: 'triangle', vol: 0.05, when: 0.1 }); tone(587, 0.25, { type: 'triangle', vol: 0.05, when: 0.2 }); }
 

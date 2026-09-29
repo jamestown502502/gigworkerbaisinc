@@ -728,6 +728,54 @@ export function resumeModal(ctx, game) {
   }
 }
 
+// ---------- THE MATH OF THE MONTH ----------
+// Research on the poverty simulator Spent found that making the choices can leave players believing
+// hardship is a personal failing, while empathy grows from seeing the structural causes. So the end
+// of a run shows the job's own numbers, from this run, next to the verdict on the player's choices.
+export function monthMath(s) {
+  const m = s.monthMath || {};
+  const hours = m.paidHours || 0;
+  const rate = hours > 0 ? s.totalEarned / hours : 0;
+  return {
+    hours, rate,
+    earned: Math.round(s.totalEarned),
+    lost: Math.round(m.lostToNonPayment || 0),
+    rent: Math.round(m.rentPaid || 0),
+    rentShare: s.totalEarned > 0 ? Math.round(((m.rentPaid || 0) / s.totalEarned) * 100) : 0,
+    travelEnergy: Math.round(m.travelEnergy || 0),
+    sickDays: m.sickDays || 0,
+    hoursForRent: rate > 0 ? Math.ceil(600 / rate) : null,
+  };
+}
+
+export function monthMathModal(ctx, game) {
+  const k = monthMath(game.state);
+  ctx.fillStyle = 'rgba(6, 4, 2, 0.88)';
+  ctx.fillRect(0, 0, 800, 600);
+  UI.absorb();
+  panel(ctx, 110, 40, 580, 520, { alpha: 0.98 });
+  drawText(ctx, 'THE MATH OF THE MONTH', 400, 80, { size: 24, weight: 'bold', color: '#ffd700', align: 'center' });
+  const rows = [
+    ['Paid hours worked', `${k.hours} h`],
+    ['Earned, per paid hour', k.hours > 0 ? `$${k.rate.toFixed(2)}` : 'no paid work yet'],
+    ["Lost to clients who didn't pay", `$${k.lost}`],
+    ['Rent paid', k.earned > 0 ? `$${k.rent} (${k.rentShare}% of earnings)` : `$${k.rent}`],
+    ['Energy spent getting to gigs, unpaid', `${k.travelEnergy}`],
+    ['Days too sick to work', `${k.sickDays}`],
+  ];
+  rows.forEach(([label, v], i) => {
+    const y = 124 + i * 32;
+    drawText(ctx, label, 140, y, { size: 15, color: '#e8dcc4' });
+    drawText(ctx, v, 660, y, { size: 15, weight: 'bold', color: '#ffffff', align: 'right', font: 'monospace' });
+  });
+  const line = k.hoursForRent
+    ? `At $${k.rate.toFixed(2)} an hour, one week's rent took ${k.hoursForRent} hours of paid work, before food, the phone, or a single day off.`
+    : "With no paid hours, a week's rent was out of reach from the start.";
+  let y = drawWrapped(ctx, line, 400, 330, 520, 22, { size: 16, color: '#ffffff', align: 'center' }) + 8;
+  drawWrapped(ctx, "The pay per gig, the rent, and the chance a client doesn't pay were set by the job, not by you. Your choices moved these numbers a little. They didn't set them.", 400, y, 520, 21, { size: 15, color: '#c9e4d3', align: 'center' });
+  button(ctx, 300, 490, 200, 48, 'Close', { color: '#2c6e49', onClick: () => { game.mathOpen = false; } });
+}
+
 // ---------- SUMMARY (day 30) ----------
 function runVerdict(s) {
   if (s.cash >= 1500 && s.health >= 60) return 'You made it — and you made it with something left in the tank.';
@@ -763,8 +811,9 @@ export function summaryScreen(ctx, game) {
   });
   drawStars(ctx, 366, 452, s.reputation, 20);
 
-  button(ctx, 160, 480, 220, 50, 'Free play (keep going)', { color: '#2c5a6e', fontSize: 14, onClick: () => game.startFreePlay() });
-  button(ctx, 420, 480, 220, 50, 'New run', { color: '#2c6e49', fontSize: 14, onClick: () => game.newGame() });
+  button(ctx, 100, 480, 190, 50, 'Free play (keep going)', { color: '#2c5a6e', fontSize: 13, onClick: () => game.startFreePlay() });
+  button(ctx, 305, 480, 190, 50, 'The math of the month', { color: '#6b4a2e', fontSize: 13, onClick: () => { game.mathOpen = true; } });
+  button(ctx, 510, 480, 190, 50, 'New run', { color: '#2c6e49', fontSize: 14, onClick: () => game.newGame() });
 }
 
 // ---------- GAME OVER ----------
@@ -777,5 +826,6 @@ export function gameOverScreen(ctx, game) {
   drawText(ctx, `Days survived: ${s.day}`, 400, 300, { size: 17, weight: 'bold', color: '#f0f0f0', align: 'center' });
   drawText(ctx, `Gigs completed: ${s.gigsCompleted}`, 400, 330, { size: 17, weight: 'bold', color: '#f0f0f0', align: 'center' });
   drawText(ctx, `Total earned: $${Math.round(s.totalEarned)}`, 400, 360, { size: 17, weight: 'bold', color: '#f0f0f0', align: 'center' });
-  button(ctx, 300, 430, 200, 56, 'New Game', { color: '#2c6e49', onClick: () => game.newGame() });
+  button(ctx, 180, 430, 210, 56, 'The math of the month', { color: '#6b4a2e', fontSize: 14, onClick: () => { game.mathOpen = true; } });
+  button(ctx, 410, 430, 210, 56, 'New Game', { color: '#2c6e49', onClick: () => game.newGame() });
 }

@@ -39,7 +39,9 @@ describe('results ledger (QA #3, #7)', () => {
         expect(r.total).toBe(sum);
         expect(r.deltas.cash).toBe(sum);
         expect(Math.round(state.cash - before)).toBe(sum);
-        if (state.doublePayDays > 0) expect(r.items.some((it) => it.label.startsWith('Steady contract'))).toBe(true);
+        // Doubling applies only when there is pay to double (loop.js finishGig): a client who
+        // vanished without paying leaves nothing to double, so no "Steady contract" line.
+        if (state.doublePayDays > 0 && r.payout > 0) expect(r.items.some((it) => it.label.startsWith('Steady contract'))).toBe(true);
       }
     } finally { Math.random = orig; }
   });
