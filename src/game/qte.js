@@ -1,10 +1,10 @@
-// Minigames. Three skill QTEs (rhythm tap, timed sequence, steady hand) plus the emotional-
-// intelligence / work-life-balance set added in the 2026-09 pass: Breathe (evening wind-down),
-// Read the Client and Text Back (in-gig), Check In (evening call).
+// Minigames. The emotional-intelligence / work-life-balance set: Breathe (evening wind-down),
+// Read the Client and Text Back (in-gig), Check In (evening call). The in-gig skill challenges
+// are the job-shaped microgames in microgames.js (they replaced three generic ones, 2026-09-29).
 // Every instance: update(dt), render(ctx), handleTap(pt), done, result { success, score, ... }.
 // Skill QTE difficulty scales with stress (high = harder) and energy (low = harder).
 
-import { playTick, playSuccess, playFail, playBreathIn, playBreathOut, playBuzz, playWarm, playError } from '../engine/audio.js';
+import { playTick, playSuccess, playFail, playBuzz, playWarm, playError, playBreathGlide, soundIsOn } from '../engine/audio.js';
 import { drawText, drawWrapped, roundRectPath, wrapLines } from '../ui/text.js';
 import { InputManager } from '../engine/input.js';
 
@@ -27,220 +27,9 @@ export function difficultyFactor(state) {
   return d;
 }
 
-const AREA = { x: 100, y: 110, w: 600, h: 400 };
+export const AREA = { x: 100, y: 110, w: 600, h: 400 };
 
 // ---------- TYPE 1: Rhythm Tap — circles converge, tap when aligned ----------
-class RhythmTap {
-  constructor(state) {
-    this.name = 'RHYTHM TAP';
-    this.hint = 'Tap when the ring hits the target!';
-    this.d = difficultyFactor(state);
-    this.totalRounds = 5;
-    this.round = 0;
-    this.hits = [];
-    this.done = false;
-    this.result = null;
-    this.flash = 0;
-    this.restT = 0;
-    this.startRound();
-  }
-  startRound() {
-    this.radius = 130;
-    this.speed = 90 * this.d;   // px/sec shrink
-    this.tapped = false;
-  }
-  update(dt) {
-    if (this.done) return;
-    this.flash = Math.max(0, this.flash - dt * 3);
-    if (this.tapped) {
-      // Between rounds: driven by the game clock, not setTimeout, so a paused/throttled tab
-      // (or a test stepping the loop by hand) cannot desync the round cadence.
-      this.restT += dt;
-      if (this.restT >= 0.35) { this.restT = 0; this.startRound(); }
-      return;
-    }
-    this.radius -= this.speed * dt;
-    if (this.radius < 22 && !this.tapped) this.endRound(0);   // missed entirely
-  }
-  handleTap() {
-    if (this.done || this.tapped) return;
-    const diff = Math.abs(this.radius - 40);
-    // Grace zone: a near-miss outside the scoring window still counts for something instead of
-    // an instant zero — a small forgiveness buffer around the hit window, not a second hit window.
-    if (diff < 14) { this.endRound(Math.round(100 - (diff / 14) * 50)); playTick(); }
-    else if (diff < 28) { this.endRound(Math.round(20 - ((diff - 14) / 14) * 15)); playTick(); }
-    else this.endRound(0);
-  }
-  endRound(score) {
-    this.tapped = true;
-    this.hits.push(score);
-    this.flash = score > 0 ? 1 : -1;
-    this.round++;
-    if (this.round >= this.totalRounds) this.finish();
-  }
-  finish() {
-    const score = Math.round(this.hits.reduce((a, b) => a + b, 0) / this.totalRounds);
-    const success = this.hits.filter((h) => h > 0).length >= 3;
-    this.result = { success, score };
-    this.done = true;
-    success ? playSuccess() : playFail();
-  }
-  render(ctx) {
-    const cx = AREA.x + AREA.w / 2, cy = AREA.y + AREA.h / 2;
-    ctx.strokeStyle = '#f5deb3';
-    ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(cx, cy, 40, 0, Math.PI * 2); ctx.stroke();
-    if (!this.tapped && !this.done) {
-      ctx.strokeStyle = '#e07030';
-      ctx.lineWidth = 6;
-      ctx.beginPath(); ctx.arc(cx, cy, Math.max(this.radius, 5), 0, Math.PI * 2); ctx.stroke();
-    }
-    if (Math.abs(this.flash) > 0.01) {
-      ctx.fillStyle = this.flash > 0 ? 'rgba(46,204,113,0.4)' : 'rgba(231,76,60,0.4)';
-      ctx.beginPath(); ctx.arc(cx, cy, 46, 0, Math.PI * 2); ctx.fill();
-    }
-    drawText(ctx, `Round ${Math.min(this.round + 1, this.totalRounds)} / ${this.totalRounds}`, cx, AREA.y + AREA.h - 24, {
-      size: 16, color: '#f0f0f0', font: 'monospace', align: 'center',
-    });
-  }
-}
-
-// ---------- TYPE 2: Timed Sequence — press buttons in order before timer ----------
-class TimedSequence {
-  constructor(state) {
-    this.name = 'TIMED SEQUENCE';
-    this.hint = 'Tap the numbers in order — beat the clock!';
-    this.d = difficultyFactor(state);
-    this.count = 4;
-    this.timeLeft = 7 / this.d;
-    this.timeMax = this.timeLeft;
-    this.nextIdx = 0;
-    this.done = false;
-    this.result = null;
-    this.buttons = this.placeButtons();
-  }
-  placeButtons() {
-    const btns = [];
-    const size = 64;
-    let attempts = 0;
-    while (btns.length < this.count && attempts < 500) {
-      attempts++;
-      const x = AREA.x + 20 + Math.random() * (AREA.w - size - 40);
-      const y = AREA.y + 50 + Math.random() * (AREA.h - size - 80);
-      if (btns.some((b) => Math.abs(b.x - x) < size + 20 && Math.abs(b.y - y) < size + 20)) continue;
-      btns.push({ x, y, size, label: btns.length + 1, hit: false });
-    }
-    return btns;
-  }
-  update(dt) {
-    if (this.done) return;
-    this.timeLeft -= dt;
-    if (this.timeLeft <= 0) this.finish(false);
-  }
-  handleTap(pt) {
-    if (this.done) return;
-    for (const b of this.buttons) {
-      if (pt.x >= b.x && pt.x <= b.x + b.size && pt.y >= b.y && pt.y <= b.y + b.size && !b.hit) {
-        if (b.label === this.nextIdx + 1) {
-          b.hit = true; this.nextIdx++; playTick();
-          if (this.nextIdx >= this.count) this.finish(true);
-        } else {
-          this.timeLeft = Math.max(0.1, this.timeLeft - 1); // wrong order penalty
-        }
-        return;
-      }
-    }
-  }
-  finish(success) {
-    const score = success ? Math.round(50 + 50 * (this.timeLeft / this.timeMax)) : Math.round((this.nextIdx / this.count) * 40);
-    this.result = { success, score };
-    this.done = true;
-    success ? playSuccess() : playFail();
-  }
-  render(ctx) {
-    ctx.fillStyle = '#3a2d1f';
-    ctx.fillRect(AREA.x, AREA.y + 8, AREA.w, 16);
-    ctx.fillStyle = this.timeLeft / this.timeMax > 0.3 ? '#2ecc71' : '#e74c3c';
-    ctx.fillRect(AREA.x, AREA.y + 8, AREA.w * Math.max(0, this.timeLeft / this.timeMax), 16);
-    for (const b of this.buttons) {
-      ctx.fillStyle = b.hit ? '#2ecc71' : '#e07030';
-      ctx.fillRect(b.x, b.y, b.size, b.size);
-      ctx.strokeStyle = '#1d150d'; ctx.lineWidth = 3;
-      ctx.strokeRect(b.x, b.y, b.size, b.size);
-      drawText(ctx, String(b.label), b.x + b.size / 2, b.y + b.size / 2, {
-        size: 26, weight: 'bold', color: '#ffffff', align: 'center', baseline: 'middle', outline: true,
-      });
-    }
-  }
-}
-
-// ---------- TYPE 3: Steady Hand — keep marker inside a moving zone ----------
-class SteadyHand {
-  constructor(state) {
-    this.name = 'STEADY HAND';
-    this.hint = 'Tap to lift — stay inside the moving zone!';
-    this.d = difficultyFactor(state);
-    this.duration = 6;
-    this.elapsed = 0;
-    this.insideTime = 0;
-    this.markerY = AREA.y + AREA.h / 2;
-    this.vy = 0;
-    this.phase = Math.random() * Math.PI * 2;
-    this.bandHalf = 70 / this.d;
-    this.done = false;
-    this.result = null;
-  }
-  bandCenter() {
-    return AREA.y + AREA.h / 2 + Math.sin(this.elapsed * 1.2 * this.d + this.phase) * 100;
-  }
-  update(dt) {
-    if (this.done) return;
-    this.elapsed += dt;
-    this.vy += 260 * dt;                 // gravity
-    this.markerY += this.vy * dt;
-    this.markerY = Math.max(AREA.y + 10, Math.min(AREA.y + AREA.h - 10, this.markerY));
-    const c = this.bandCenter();
-    if (Math.abs(this.markerY - c) <= this.bandHalf) this.insideTime += dt;
-    if (this.elapsed >= this.duration) {
-      const pct = this.insideTime / this.duration;
-      this.result = { success: pct >= 0.55, score: Math.round(pct * 100) };
-      this.done = true;
-      this.result.success ? playSuccess() : playFail();
-    }
-  }
-  handleTap() {
-    if (!this.done) { this.vy = -190; playTick(); }
-  }
-  render(ctx) {
-    const c = this.bandCenter();
-    ctx.fillStyle = 'rgba(46, 204, 113, 0.28)';
-    ctx.fillRect(AREA.x + 40, c - this.bandHalf, AREA.w - 80, this.bandHalf * 2);
-    ctx.strokeStyle = '#2ecc71';
-    ctx.strokeRect(AREA.x + 40, c - this.bandHalf, AREA.w - 80, this.bandHalf * 2);
-    const inside = Math.abs(this.markerY - c) <= this.bandHalf;
-    ctx.fillStyle = inside ? '#f1c40f' : '#e74c3c';
-    ctx.beginPath(); ctx.arc(AREA.x + AREA.w / 2, this.markerY, 14, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#3a2d1f';
-    ctx.fillRect(AREA.x, AREA.y + 8, AREA.w, 12);
-    ctx.fillStyle = '#f5deb3';
-    ctx.fillRect(AREA.x, AREA.y + 8, AREA.w * (this.elapsed / this.duration), 12);
-  }
-}
-
-const QTE_BY_TYPE = {
-  physical: RhythmTap,     // PRD: physical = tap/rhythm
-  service: TimedSequence,  // PRD: service = timed buttons
-  weird: null,             // unpredictable — random pick
-};
-
-export function createQTE(gig, state) {
-  let Cls = QTE_BY_TYPE[gig.type];
-  if (!Cls) Cls = [RhythmTap, TimedSequence, SteadyHand][Math.floor(Math.random() * 3)];
-  // Mix in SteadyHand occasionally for variety
-  if (Math.random() < 0.25) Cls = SteadyHand;
-  return new Cls(state);
-}
-
 // =====================================================================================
 // Shared bits for the conversational minigames: choice buttons hit-tested inside the game
 // (they run under the same tap contract as the skill QTEs) and a procedural client face.
@@ -293,57 +82,104 @@ export function drawFace(ctx, x, y, size, seed, feeling) {
 }
 
 // ---------- Breathe — evening wind-down, no fail ----------
-// Box breathing (in, hold, out, rest, equal counts), the paced-breathing pattern taught for stress
-// down-regulation. The player's body does the pacing: press and HOLD through the inhale and the
-// hold, LET GO through the exhale and the rest. A light travels the square so the next side is
-// always visible before it arrives, and every side counts down. The score is how much of the
-// exercise the finger matched the breath (a short grace at each turn, so reaction time is not
-// scored). It cannot be failed: a player who never touches it still matches the two let-go sides.
-//
-// Replaced a "tap at the top and bottom of the breath" version: six taps over twenty seconds, with
-// nothing to do in between, which players read as a loading screen rather than an exercise.
-export const BOX_SIDE = 3;   // seconds per side
-export const BOX_CYCLES = 3;
-const BOX_GRACE = 0.45;      // seconds at the start of each side that are not scored
-const BOX_SIDES = [
-  { label: 'Breathe in', short: 'IN', press: true, color: '#5dade2' },
-  { label: 'Hold', short: 'HOLD', press: true, color: '#9b8cd9' },
-  { label: 'Breathe out', short: 'OUT', press: false, color: '#2ecc71' },
-  { label: 'Rest', short: 'REST', press: false, color: '#c9a876' },
-];
+// Two patterns, the player's choice:
+//   Calm  - 5 seconds in, 5 out: slow "resonance" breathing at six breaths a minute, the pace the
+//           heart-rate-variability research centres on (e.g. JMIR Serious Games, 2021).
+//   Focus - box breathing, 4 seconds each: in, hold, out, rest.
+// Press and hold for the in-breath (and its hold), let go for the out-breath (and the rest). A soft
+// tone rises through each in-breath and falls through each out-breath, and Android phones pulse at
+// every turn, because people report more calm from cues they hear or feel than from cues they must
+// watch (Frontiers in Computer Science, 2022). "Eyes closed" darkens the screen and leaves the sound.
+// The score is the share of the exercise the finger matched the breath, with a grace period at each
+// turn so reaction time is never scored. It cannot be failed: doing nothing still matches the let-go
+// half. Replaced a tap-at-the-peak version (2026-09-28) and then a fixed 3-second box (2026-09-29).
+export const BREATH_PATTERNS = {
+  calm: { label: 'Calm', sub: '5 in, 5 out', cycles: 3, sides: [
+    { label: 'Breathe in', short: 'IN', press: true, tone: 'up', color: '#5dade2', secs: 5 },
+    { label: 'Breathe out', short: 'OUT', press: false, tone: 'down', color: '#2ecc71', secs: 5 },
+  ] },
+  focus: { label: 'Focus', sub: 'Box: in, hold, out, rest (4 each)', cycles: 2, sides: [
+    { label: 'Breathe in', short: 'IN', press: true, tone: 'up', color: '#5dade2', secs: 4 },
+    { label: 'Hold', short: 'HOLD', press: true, tone: null, color: '#9b8cd9', secs: 4 },
+    { label: 'Breathe out', short: 'OUT', press: false, tone: 'down', color: '#2ecc71', secs: 4 },
+    { label: 'Rest', short: 'REST', press: false, tone: null, color: '#c9a876', secs: 4 },
+  ] },
+};
+export const BREATH_GRACE = 0.45;       // seconds at the start of each side that are not scored
+export const BREATH_CHOOSE_SECS = 10;   // no choice by then: Calm starts on its own
+
+function pulse(pattern) { try { globalThis.navigator?.vibrate?.(pattern); } catch { /* not supported */ } }
+
 export class Breathe {
   constructor() {
     this.name = 'WIND DOWN';
-    this.hint = 'Press and hold to breathe in and hold. Let go to breathe out and rest.';
+    this.hint = 'Choose how you want to breathe tonight.';
+    this.stage = 'choose';
+    this.chooseT = 0;
+    this.eyesClosed = false;
+    this.buttons = [];
+    this.pattern = null;
+    this.patternKey = null;
     this.elapsed = 0;
-    this.exercise = BOX_SIDE * 4 * BOX_CYCLES;
-    this.duration = this.exercise + 1.2; // a moment of stillness before the result
-    this.scored = 0;                     // seconds that counted
-    this.matched = 0;                    // of those, seconds the finger matched the breath
+    this.exercise = 0;
+    this.duration = 0;
+    this.scored = 0;
+    this.matched = 0;
     this.pressed = false;
     this.lastSide = -1;
     this.done = false;
     this.result = null;
     this.noFail = true;
   }
-  sideIndex() { return Math.floor(Math.min(this.elapsed, this.exercise - 1e-6) / BOX_SIDE) % 4; }
-  sideT() { return (Math.min(this.elapsed, this.exercise - 1e-6) % BOX_SIDE) / BOX_SIDE; }
-  /** 0..1 how full the lungs are: fills on IN, stays full on HOLD, empties on OUT, empty on REST. */
-  lungs() { const t = this.sideT(); return [t, 1, 1 - t, 0][this.sideIndex()]; }
+  start(key) {
+    if (this.stage !== 'choose') return;
+    this.patternKey = key;
+    this.pattern = BREATH_PATTERNS[key];
+    this.cycleLen = this.pattern.sides.reduce((a, s) => a + s.secs, 0);
+    this.exercise = this.cycleLen * this.pattern.cycles;
+    this.duration = this.exercise + 1.2;
+    this.stage = 'breathe';
+    this.hint = this.eyesClosed ? 'Eyes closed. Hold while the tone rises, let go while it falls.' : 'Press and hold to breathe in. Let go to breathe out.';
+    playTick();
+  }
+  /** Which side of the pattern the breath is on, and how far through it (0..1). */
+  position() {
+    const t = Math.min(this.elapsed, this.exercise - 1e-6) % this.cycleLen;
+    let acc = 0;
+    for (let i = 0; i < this.pattern.sides.length; i++) {
+      const s = this.pattern.sides[i];
+      if (t < acc + s.secs) return { index: i, into: t - acc, frac: (t - acc) / s.secs };
+      acc += s.secs;
+    }
+    return { index: this.pattern.sides.length - 1, into: 0, frac: 1 };
+  }
+  sideIndex() { return this.position().index; }
+  side() { return this.pattern.sides[this.sideIndex()]; }
+  /** 0..1 how full the lungs are: fills on in, full on hold, empties on out, empty at rest. */
+  lungs() {
+    const p = this.position(), s = this.pattern.sides[p.index];
+    return s.tone === 'up' ? p.frac : s.tone === 'down' ? 1 - p.frac : s.press ? 1 : 0;
+  }
   sync() { return this.scored > 0 ? this.matched / this.scored : 1; }
   /** `pressed` is read from the pointer each frame; tests pass it in. */
   update(dt, pressed = InputManager.pointer.down) {
     if (this.done) return;
+    if (this.stage === 'choose') {
+      this.chooseT += dt;
+      if (this.chooseT >= BREATH_CHOOSE_SECS) this.start('calm');
+      return;
+    }
     this.pressed = !!pressed;
     if (this.elapsed < this.exercise) {
-      const side = this.sideIndex();
-      if (side !== this.lastSide) {
-        this.lastSide = side;
-        if (side === 0) playBreathIn(); else if (side === 2) playBreathOut(); else playTick();
+      const p = this.position(), s = this.pattern.sides[p.index];
+      if (p.index !== this.lastSide || (p.index === 0 && this.lastSide !== 0)) {
+        this.lastSide = p.index;
+        if (s.tone) playBreathGlide(s.tone === 'up', s.secs); else playTick();
+        pulse(s.tone === 'up' ? [50] : s.tone === 'down' ? [30, 60, 30] : [15]);
       }
-      if (this.elapsed % BOX_SIDE >= BOX_GRACE) {
+      if (p.into >= BREATH_GRACE) {
         this.scored += dt;
-        if (this.pressed === BOX_SIDES[side].press) this.matched += dt;
+        if (this.pressed === s.press) this.matched += dt;
       }
     }
     this.elapsed += dt;
@@ -353,72 +189,117 @@ export class Breathe {
       playWarm();
     }
   }
-  handleTap() { /* holding is read continuously in update(); a tap is just a short hold */ }
+  handleTap(pt) {
+    if (this.done || this.stage !== 'choose') return; // while breathing, holding is read in update()
+    for (const b of this.buttons) if (hit(b, pt)) { b.onTap(); return; }
+  }
   render(ctx) {
+    this.buttons = [];
+    if (this.stage === 'choose') return this.renderChoose(ctx);
     const cx = AREA.x + AREA.w / 2, cy = AREA.y + 196;
     const finished = this.elapsed >= this.exercise;
-    const side = BOX_SIDES[this.sideIndex()];
+    const pos = this.position();
+    const side = this.pattern.sides[pos.index];
     const progress = Math.min(1, this.elapsed / this.exercise);
 
-    // the room settles: a cool night that warms as the exercise goes on
-    const sky = ctx.createLinearGradient(0, AREA.y + 40, 0, AREA.y + AREA.h);
-    sky.addColorStop(0, `rgba(${Math.round(30 + 40 * progress)}, ${Math.round(40 + 20 * progress)}, ${Math.round(70 - 20 * progress)}, 0.55)`);
-    sky.addColorStop(1, 'rgba(20, 14, 8, 0.2)');
-    ctx.fillStyle = sky;
-    roundRectPath(ctx, AREA.x + 20, AREA.y + 44, AREA.w - 40, AREA.h - 70, 14); ctx.fill();
-    for (let i = 0; i < 14; i++) {                        // slow drifting motes
-      const mx = AREA.x + 40 + ((i * 97 + this.elapsed * (6 + (i % 4) * 3)) % (AREA.w - 80));
-      const my = AREA.y + 60 + ((i * 53) % 280) - Math.sin(this.elapsed * 0.6 + i) * 6;
-      ctx.fillStyle = `rgba(255, 240, 200, ${0.08 + 0.06 * Math.sin(this.elapsed + i)})`;
-      ctx.beginPath(); ctx.arc(mx, my, 2 + (i % 3), 0, Math.PI * 2); ctx.fill();
-    }
-
-    // the box: faint track, each side labelled, the travelled part of this side lit
-    const half = 110, x0 = cx - half, y0 = cy - half, s = half * 2;
-    const corners = [[x0, y0 + s], [x0, y0], [x0 + s, y0], [x0 + s, y0 + s]]; // IN goes up the left side
-    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,0.14)';
-    ctx.strokeRect(x0, y0, s, s);
-    const at = (i, t) => { const a = corners[i], b = corners[(i + 1) % 4]; return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; };
-    if (!finished) {
-      const i = this.sideIndex(), [dx, dy] = at(i, this.sideT());
-      ctx.strokeStyle = side.color; ctx.lineWidth = 6;
-      ctx.beginPath(); ctx.moveTo(...corners[i]); ctx.lineTo(dx, dy); ctx.stroke();
-      const glow = ctx.createRadialGradient(dx, dy, 0, dx, dy, 22);
-      glow.addColorStop(0, 'rgba(255,255,255,0.95)'); glow.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(dx, dy, 22, 0, Math.PI * 2); ctx.fill();
-    }
-    const labelAt = [[x0 - 30, cy], [cx, y0 - 16], [x0 + s + 30, cy], [cx, y0 + s + 22]];
-    BOX_SIDES.forEach((sd, i) => {
-      const on = !finished && i === this.sideIndex();
-      drawText(ctx, sd.short, labelAt[i][0], labelAt[i][1], { size: 12, weight: 'bold', color: on ? sd.color : 'rgba(240,240,240,0.55)', align: 'center', baseline: 'middle', shadow: false });
-    });
-
-    // the lungs: a soft circle that fills and empties; it glows when the finger matches the breath
-    const inSync = this.pressed === side.press;
-    const r = 26 + 58 * this.lungs();
-    ctx.fillStyle = finished ? 'rgba(46,204,113,0.28)' : inSync ? 'rgba(255,255,255,0.16)' : 'rgba(230,126,34,0.16)';
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = finished ? '#2ecc71' : side.color; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
-
-    if (finished) {
-      drawText(ctx, 'Settled.', cx, cy - 4, { size: 24, weight: 'bold', color: '#ffffff', align: 'center', baseline: 'middle', outline: true });
-      drawText(ctx, `In sync ${Math.round(this.sync() * 100)}%`, cx, cy + 24, { size: 15, color: '#c9f2d6', align: 'center', baseline: 'middle', shadow: false });
+    if (this.eyesClosed && !finished) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.92)';
+      roundRectPath(ctx, AREA.x + 20, AREA.y + 44, AREA.w - 40, AREA.h - 70, 14); ctx.fill();
+      drawText(ctx, 'Eyes closed.', cx, cy - 40, { size: 22, weight: 'bold', color: '#e8dcc4', align: 'center' });
+      drawText(ctx, 'Hold while the tone rises. Let go while it falls.', cx, cy - 6, { size: 15, color: '#c9c3d6', align: 'center' });
+      drawText(ctx, `In sync ${Math.round(this.sync() * 100)}%`, cx, cy + 30, { size: 14, color: '#9fe0b5', align: 'center' });
     } else {
-      const count = Math.ceil(BOX_SIDE - (this.elapsed % BOX_SIDE));
-      drawText(ctx, side.label, cx, cy - 12, { size: 20, weight: 'bold', color: '#ffffff', align: 'center', baseline: 'middle', outline: true });
-      drawText(ctx, String(count), cx, cy + 18, { size: 26, weight: 'bold', color: side.color, align: 'center', baseline: 'middle', outline: true });
+      const sky = ctx.createLinearGradient(0, AREA.y + 40, 0, AREA.y + AREA.h);
+      sky.addColorStop(0, `rgba(${Math.round(30 + 40 * progress)}, ${Math.round(40 + 20 * progress)}, ${Math.round(70 - 20 * progress)}, 0.55)`);
+      sky.addColorStop(1, 'rgba(20, 14, 8, 0.2)');
+      ctx.fillStyle = sky;
+      roundRectPath(ctx, AREA.x + 20, AREA.y + 44, AREA.w - 40, AREA.h - 70, 14); ctx.fill();
+      for (let i = 0; i < 14; i++) {
+        const mx = AREA.x + 40 + ((i * 97 + this.elapsed * (6 + (i % 4) * 3)) % (AREA.w - 80));
+        const my = AREA.y + 60 + ((i * 53) % 280) - Math.sin(this.elapsed * 0.6 + i) * 6;
+        ctx.fillStyle = `rgba(255, 240, 200, ${0.08 + 0.06 * Math.sin(this.elapsed + i)})`;
+        ctx.beginPath(); ctx.arc(mx, my, 2 + (i % 3), 0, Math.PI * 2); ctx.fill();
+      }
+      // the path the breath travels: a box for Focus, a circle for Calm (up the left, down the right)
+      let at, labelAt;
+      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+      if (this.patternKey === 'focus') {
+        const half = 110, x0 = cx - half, y0 = cy - half, s = half * 2;
+        const corners = [[x0, y0 + s], [x0, y0], [x0 + s, y0], [x0 + s, y0 + s]];
+        ctx.strokeRect(x0, y0, s, s);
+        at = (i, t) => { const a = corners[i], b = corners[(i + 1) % 4]; return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; };
+        labelAt = [[x0 - 30, cy], [cx, y0 - 16], [x0 + s + 30, cy], [cx, y0 + s + 22]];
+        if (!finished) {
+          ctx.strokeStyle = side.color; ctx.lineWidth = 6;
+          const [dx, dy] = at(pos.index, pos.frac);
+          ctx.beginPath(); ctx.moveTo(...corners[pos.index]); ctx.lineTo(dx, dy); ctx.stroke();
+        }
+      } else {
+        const r = 110;
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+        const angle = (i, t) => (i === 0 ? Math.PI / 2 + t * Math.PI : Math.PI * 1.5 + t * Math.PI);
+        at = (i, t) => [cx + Math.cos(angle(i, t)) * r, cy + Math.sin(angle(i, t)) * r];
+        labelAt = [[cx - r - 30, cy], [cx + r + 34, cy]];
+        if (!finished) {
+          ctx.strokeStyle = side.color; ctx.lineWidth = 6;
+          ctx.beginPath(); ctx.arc(cx, cy, r, angle(pos.index, 0), angle(pos.index, pos.frac)); ctx.stroke();
+        }
+      }
+      if (!finished) {
+        const [dx, dy] = at(pos.index, pos.frac);
+        const glow = ctx.createRadialGradient(dx, dy, 0, dx, dy, 22);
+        glow.addColorStop(0, 'rgba(255,255,255,0.95)'); glow.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(dx, dy, 22, 0, Math.PI * 2); ctx.fill();
+      }
+      this.pattern.sides.forEach((sd, i) => {
+        const on = !finished && i === pos.index;
+        drawText(ctx, sd.short, labelAt[i][0], labelAt[i][1], { size: 12, weight: 'bold', color: on ? sd.color : 'rgba(240,240,240,0.8)', align: 'center', baseline: 'middle', shadow: false });
+      });
+      const inSync = this.pressed === side.press;
+      const rr = 26 + 58 * this.lungs();
+      ctx.fillStyle = finished ? 'rgba(46,204,113,0.28)' : inSync ? 'rgba(255,255,255,0.16)' : 'rgba(230,126,34,0.16)';
+      ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = finished ? '#2ecc71' : side.color; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.stroke();
+      if (finished) {
+        drawText(ctx, 'Settled.', cx, cy - 4, { size: 24, weight: 'bold', color: '#ffffff', align: 'center', baseline: 'middle', outline: true });
+        drawText(ctx, `In sync ${Math.round(this.sync() * 100)}%`, cx, cy + 24, { size: 15, color: '#c9f2d6', align: 'center', baseline: 'middle', shadow: false });
+      } else {
+        drawText(ctx, side.label, cx, cy - 12, { size: 20, weight: 'bold', color: '#ffffff', align: 'center', baseline: 'middle', outline: true });
+        drawText(ctx, String(Math.ceil(side.secs - pos.into)), cx, cy + 18, { size: 26, weight: 'bold', color: side.color, align: 'center', baseline: 'middle', outline: true });
+      }
     }
-
-    // what to do with your finger, and how it is going
-    const cycle = Math.min(BOX_CYCLES, Math.floor(this.elapsed / (BOX_SIDE * 4)) + 1);
+    const cycle = Math.min(this.pattern.cycles, Math.floor(this.elapsed / this.cycleLen) + 1);
     const instruction = finished ? 'Well done.' : side.press ? 'Press and hold' : 'Let go';
     drawText(ctx, instruction, AREA.x + 44, AREA.y + AREA.h - 40, { size: 16, weight: 'bold', color: side.press && !finished ? '#8ec6ea' : '#9fe0b5', shadow: false });
-    drawText(ctx, `Breath ${cycle} of ${BOX_CYCLES}  ·  In sync ${Math.round(this.sync() * 100)}%`, AREA.x + AREA.w - 44, AREA.y + AREA.h - 40, { size: 14, color: '#e8dcc4', align: 'right', shadow: false });
+    drawText(ctx, `${this.pattern.label} · breath ${cycle} of ${this.pattern.cycles} · in sync ${Math.round(this.sync() * 100)}%`, AREA.x + AREA.w - 44, AREA.y + AREA.h - 40, { size: 14, color: '#e8dcc4', align: 'right', shadow: false });
     ctx.fillStyle = '#3a2d1f';
     ctx.fillRect(AREA.x, AREA.y + AREA.h - 14, AREA.w, 10);
     ctx.fillStyle = '#f5deb3';
     ctx.fillRect(AREA.x, AREA.y + AREA.h - 14, AREA.w * progress, 10);
+  }
+  renderChoose(ctx) {
+    const cards = [
+      { key: 'calm', x: AREA.x + 40, lines: ['Six slow breaths a minute.', 'Best for winding down.'] },
+      { key: 'focus', x: AREA.x + 310, lines: ['In, hold, out, rest.', 'Best for a racing mind.'] },
+    ];
+    for (const c of cards) {
+      const p = BREATH_PATTERNS[c.key];
+      const b = { x: c.x, y: AREA.y + 64, w: 250, h: 150, label: '', onTap: () => this.start(c.key) };
+      this.buttons.push(b);
+      ctx.fillStyle = 'rgba(20, 30, 44, 0.92)'; roundRectPath(ctx, b.x, b.y, b.w, b.h, 14); ctx.fill();
+      ctx.strokeStyle = c.key === 'calm' ? '#5dade2' : '#9b8cd9'; ctx.lineWidth = 2; roundRectPath(ctx, b.x, b.y, b.w, b.h, 14); ctx.stroke();
+      drawText(ctx, p.label, b.x + b.w / 2, b.y + 40, { size: 24, weight: 'bold', color: '#ffffff', align: 'center' });
+      drawText(ctx, p.sub, b.x + b.w / 2, b.y + 70, { size: 14, color: '#c9e4f5', align: 'center', maxWidth: b.w - 20 });
+      c.lines.forEach((l, i) => drawText(ctx, l, b.x + b.w / 2, b.y + 100 + i * 20, { size: 13, color: '#e8dcc4', align: 'center' }));
+    }
+    const soundOn = soundIsOn();
+    const t = { x: AREA.x + 150, y: AREA.y + 238, w: 300, h: 46, label: '', onTap: () => { if (soundOn) { this.eyesClosed = !this.eyesClosed; playTick(); } } };
+    this.buttons.push(t);
+    ctx.fillStyle = this.eyesClosed ? '#2c6e49' : 'rgba(20, 14, 8, 0.9)'; roundRectPath(ctx, t.x, t.y, t.w, t.h, 10); ctx.fill();
+    ctx.strokeStyle = '#c9a876'; ctx.lineWidth = 1.5; roundRectPath(ctx, t.x, t.y, t.w, t.h, 10); ctx.stroke();
+    drawText(ctx, soundOn ? `${this.eyesClosed ? '✓ ' : ''}Eyes closed (sound only)` : 'Eyes closed needs sound on', t.x + t.w / 2, t.y + t.h / 2, { size: 15, weight: 'bold', color: soundOn ? '#ffffff' : '#c9c3d6', align: 'center', baseline: 'middle' });
+    drawText(ctx, `Calm starts on its own in ${Math.max(1, Math.ceil(BREATH_CHOOSE_SECS - this.chooseT))}...`, AREA.x + AREA.w / 2, AREA.y + AREA.h - 36, { size: 14, color: '#c9a876', align: 'center' });
   }
 }
 
@@ -454,6 +335,7 @@ function shuffled(arr) {
 export const READ_CLIENT_SCENARIOS = [
   { seed: 3, line: '"Look, can we just get this done? I have a call in twenty minutes and my kid\'s school already rang twice."',
     feeling: 'rushed', options: ['rushed', 'suspicious', 'lonely', 'embarrassed'],
+    cues: ['Keeps checking the clock on the stove.', 'Phone face-up on the counter, buzzing.'],
     responses: [
       { text: '"Totally. Point me at what matters most and I\'ll be out of your way."', good: true, effects: { rep: 0.3, stress: -3 } },
       { text: '"Rushing me is how mistakes happen."', good: false, effects: { rep: -0.2, stress: 6 } },
@@ -461,6 +343,7 @@ export const READ_CLIENT_SCENARIOS = [
     ] },
   { seed: 8, line: '"Sorry about the mess. I meant to tidy before you came. It\'s been... a week."',
     feeling: 'embarrassed', options: ['angry', 'embarrassed', 'rushed', 'suspicious'],
+    cues: ['Won\'t quite meet your eyes.', 'Pushes a pile of laundry behind the couch.'],
     responses: [
       { text: '"Honestly? You should see my place. Let\'s just start with the easy corner."', good: true, effects: { rep: 0.3, stress: -4 } },
       { text: '"Yeah, it\'s pretty bad. This\'ll take longer than the listing said."', good: false, effects: { rep: -0.3, stress: 4 } },
@@ -468,6 +351,7 @@ export const READ_CLIENT_SCENARIOS = [
     ] },
   { seed: 12, line: '"The last person I hired took my deposit and never came back. So. You understand why I\'m asking for ID."',
     feeling: 'suspicious', options: ['lonely', 'rushed', 'suspicious', 'grateful'],
+    cues: ['Arms crossed, standing between you and the hall.', 'The front door stays open behind you.'],
     responses: [
       { text: '"Completely fair. Here\'s my ID, and I\'m happy to be paid when you\'re satisfied."', good: true, effects: { rep: 0.4, stress: -2 } },
       { text: '"I\'m not the other guy. Can we skip the interrogation?"', good: false, effects: { rep: -0.3, stress: 6 } },
@@ -475,6 +359,7 @@ export const READ_CLIENT_SCENARIOS = [
     ] },
   { seed: 17, line: '"You can stay for tea after, if you like. My son used to help with this. He\'s in Denver now."',
     feeling: 'lonely', options: ['suspicious', 'grateful', 'lonely', 'rushed'],
+    cues: ['Two mugs already set out on the table.', 'Photos of a young man on every shelf.'],
     responses: [
       { text: '"I\'d like that. Tell me about Denver while we work."', good: true, effects: { rep: 0.3, stress: -5 } },
       { text: '"I\'ve got another gig after this, sorry."', good: false, effects: { rep: -0.1, stress: 0 } },
@@ -482,6 +367,7 @@ export const READ_CLIENT_SCENARIOS = [
     ] },
   { seed: 21, line: '"This is the third quote I\'ve had today and every one of them is higher than the last. Go on then, what\'s yours?"',
     feeling: 'angry', options: ['angry', 'embarrassed', 'lonely', 'grateful'],
+    cues: ['Jaw tight. Short, clipped sentences.', 'Holding a crumpled quote from another company.'],
     responses: [
       { text: '"Sounds like a frustrating day. Here\'s my number, and here\'s exactly what it covers."', good: true, effects: { rep: 0.3, stress: -2 } },
       { text: '"Maybe the job\'s just worth more than you think."', good: false, effects: { rep: -0.3, stress: 6 } },
@@ -489,6 +375,7 @@ export const READ_CLIENT_SCENARIOS = [
     ] },
   { seed: 6, line: '"You came! On a Sunday! I didn\'t think anyone would. Can I get you a coffee first?"',
     feeling: 'grateful', options: ['rushed', 'grateful', 'suspicious', 'angry'],
+    cues: ['Waves you in before you reach the step.', 'Already telling a neighbor that you came.'],
     responses: [
       { text: '"Coffee would be great. Walk me through what you need."', good: true, effects: { rep: 0.2, stress: -4 } },
       { text: '"No time for coffee, let\'s get started."', good: false, effects: { rep: -0.1, stress: 2 } },
@@ -496,6 +383,7 @@ export const READ_CLIENT_SCENARIOS = [
     ] },
   { seed: 25, line: '"Movers bailed, the truck is due back at six, and I have to get my daughter at five. Where do we even start?"',
     feeling: 'rushed', options: ['lonely', 'rushed', 'grateful', 'angry'],
+    cues: ['Talking fast, pacing between rooms.', 'Car keys in hand the whole time.'],
     responses: [
       { text: '"Heavy things first while you go get her. I\'ll leave a list on the fridge."', good: true, effects: { rep: 0.3, stress: -3 } },
       { text: '"Honestly, that timeline isn\'t realistic."', good: false, effects: { rep: -0.1, stress: 3 } },
@@ -503,6 +391,7 @@ export const READ_CLIENT_SCENARIOS = [
     ] },
   { seed: 30, line: '"I watched three videos and I still can\'t get this shelf level. My dad could do this in his sleep."',
     feeling: 'embarrassed', options: ['embarrassed', 'suspicious', 'rushed', 'grateful'],
+    cues: ['Laughs a little too quickly.', 'The instructions are folded and refolded.'],
     responses: [
       { text: '"These kits are badly designed. You got further than most people do."', good: true, effects: { rep: 0.3, stress: -3 } },
       { text: '"Yeah, it\'s pretty easy once you know how."', good: false, effects: { rep: -0.2, stress: 3 } },
@@ -510,6 +399,7 @@ export const READ_CLIENT_SCENARIOS = [
     ] },
   { seed: 34, line: '"Why do you need to go in the bedroom? The listing only said the living room."',
     feeling: 'suspicious', options: ['angry', 'suspicious', 'embarrassed', 'lonely'],
+    cues: ['Follows two steps behind you.', 'Eyes on your bag, not on you.'],
     responses: [
       { text: '"Good question. I don\'t. I was after an outlet. I\'ll stay here and use a cord."', good: true, effects: { rep: 0.4, stress: -2 } },
       { text: '"Relax, I\'m not going to steal anything."', good: false, effects: { rep: -0.3, stress: 5 } },
@@ -517,6 +407,7 @@ export const READ_CLIENT_SCENARIOS = [
     ] },
   { seed: 39, line: '"Nobody\'s visited since the funeral. You\'re the first voice I\'ve heard in days. Sorry if I talk too much."',
     feeling: 'lonely', options: ['rushed', 'lonely', 'angry', 'suspicious'],
+    cues: ['Speaks softly, then keeps talking.', 'Sympathy cards still on the mantel.'],
     responses: [
       { text: '"Talk as much as you like. I\'m listening."', good: true, effects: { rep: 0.3, stress: -5 } },
       { text: '"No worries. I\'ll put my headphones in so I don\'t bother you."', good: false, effects: { rep: -0.1, stress: 1 } },
@@ -524,6 +415,7 @@ export const READ_CLIENT_SCENARIOS = [
     ] },
   { seed: 44, line: '"The app charged me twice and support won\'t answer. I\'m not paying anyone until somebody fixes it."',
     feeling: 'angry', options: ['grateful', 'angry', 'embarrassed', 'rushed'],
+    cues: ['Phone gripped tight, the charges on screen.', 'Voice rising with every sentence.'],
     responses: [
       { text: '"Maddening, and not your fault. Let\'s screenshot both charges and I\'ll flag it too."', good: true, effects: { rep: 0.3, stress: -2 } },
       { text: '"That\'s not my department."', good: false, effects: { rep: -0.3, stress: 5 } },
@@ -531,12 +423,14 @@ export const READ_CLIENT_SCENARIOS = [
     ] },
   { seed: 48, line: '"You fixed in ten minutes what I\'ve been fighting for a month. Please, take some of these cookies. I insist."',
     feeling: 'grateful', options: ['suspicious', 'grateful', 'lonely', 'embarrassed'],
+    cues: ['Beaming, holding out a plate.', 'Says thank you before you\'ve even started.'],
     responses: [
       { text: '"Thank you, that\'s really kind. Enjoy the working sink!"', good: true, effects: { rep: 0.2, stress: -4 } },
       { text: '"No thanks, I\'m on a schedule."', good: false, effects: { rep: -0.1, stress: 1 } },
       { text: '"It was easy, honestly. Anyone could have done it."', good: false, effects: { rep: -0.1, stress: 1 } },
     ] },
 ];
+const READ_FACE_AT = 0.7, READ_CUE1_AT = 1.5, READ_CUE2_AT = 2.4;
 const FEELING_LABEL = { rushed: 'Rushed', suspicious: 'Wary', lonely: 'Lonely', embarrassed: 'Embarrassed', angry: 'Frustrated', grateful: 'Grateful' };
 
 export class ReadClient {
@@ -546,6 +440,9 @@ export class ReadClient {
     const base = scenario || READ_CLIENT_SCENARIOS[drawFromDeck(state, 'readClient', READ_CLIENT_SCENARIOS.length)];
     this.s = { ...base, responses: shuffled(base.responses) };
     this.step = 0;          // 0 = pick feeling, 1 = pick response, 2 = reveal
+    // Reading them IS the game: the expression shows after a moment, then two body-language cues,
+    // one at a time. The feelings can be picked once the face is visible.
+    this.readT = 0;
     this.picked = null;
     this.buttons = [];
     this.done = false;
@@ -555,8 +452,12 @@ export class ReadClient {
   }
   update(dt) {
     if (this.done) return;
+    this.readT += dt;
     if (this.step === 2) { this.revealT += dt; if (this.revealT > 1.6) this.finish(); }
   }
+  /** How many of the reading cues are showing: 0 (just their words), 1 (face), 2-3 (body language). */
+  cuesShown() { return this.readT < READ_FACE_AT ? 0 : this.readT < READ_CUE1_AT ? 1 : this.readT < READ_CUE2_AT ? 2 : 3; }
+  canPick() { return this.cuesShown() >= 1; }
   handleTap(pt) {
     if (this.done) return;
     for (const b of this.buttons) if (hit(b, pt)) { b.onTap(); return; }
@@ -572,9 +473,15 @@ export class ReadClient {
   }
   render(ctx) {
     this.buttons = [];
-    drawFace(ctx, AREA.x + 30, AREA.y + 40, 96, this.s.seed, this.step === 2 ? this.s.feeling : 'neutral');
-    drawWrapped(ctx, this.s.line, AREA.x + 150, AREA.y + 64, AREA.w - 180, 21, { size: 15, color: '#f0f0f0', shadow: false });
-    if (this.step === 0) {
+    const shown = this.cuesShown();
+    drawFace(ctx, AREA.x + 30, AREA.y + 40, 96, this.s.seed, shown >= 1 || this.step === 2 ? this.s.feeling : 'neutral');
+    const endY = drawWrapped(ctx, this.s.line, AREA.x + 150, AREA.y + 64, AREA.w - 180, 21, { size: 15, color: '#f0f0f0', shadow: false });
+    (this.s.cues || []).slice(0, Math.max(0, shown - 1)).forEach((cue, i) => {
+      drawText(ctx, cue, AREA.x + 150, endY + 2 + i * 19, { size: 13, color: '#e8c98a', shadow: false, maxWidth: AREA.w - 180 });
+    });
+    if (this.step === 0 && !this.canPick()) {
+      drawText(ctx, 'Look at them...', AREA.x + AREA.w / 2, AREA.y + 190, { size: 16, weight: 'bold', color: '#c9a876', align: 'center' });
+    } else if (this.step === 0) {
       drawText(ctx, 'What\'s going on with them?', AREA.x + AREA.w / 2, AREA.y + 190, { size: 16, weight: 'bold', color: '#f1c40f', align: 'center' });
       this.s.options.forEach((opt, i) => {
         const b = { x: AREA.x + 40 + (i % 2) * 270, y: AREA.y + 210 + Math.floor(i / 2) * 70, w: 250, h: 56, label: FEELING_LABEL[opt], onTap: () => { this.picked = opt; this.step = 1; playTick(); } };
@@ -670,6 +577,34 @@ export const TEXT_BACK_THREADS = [
       { text: 'No problem, but I do have another job after.', tag: 'def', heat: 8 },
       { text: 'np', tag: 'dis', heat: 5 } ] },
   ] },
+  { title: 'Client texting mid-job', heat: 55, msgs: [
+    { text: 'if this isnt done by 5 im leaving 1 star. you know what that does to you right', replies: [
+      { text: 'I do, and I want this done right for you. Finished by 5, and I\'ll text at 4:30.', tag: 'ack', heat: -20 },
+      { text: 'Threatening my rating won\'t make it go faster.', tag: 'def', heat: 16 },
+      { text: 'ok', tag: 'dis', heat: 8 } ] },
+    { text: 'the last guy got deactivated after my review. just saying', replies: [
+      { text: 'Understood. Here\'s where I\'m at so far, with photos, so you can see it.', tag: 'ack', heat: -18 },
+      { text: 'That\'s a lot of power to use on people.', tag: 'def', heat: 15 },
+      { text: 'noted', tag: 'dis', heat: 8 } ] },
+    { text: 'fine. photos help actually', replies: [
+      { text: 'Glad they do. I\'ll send the finished shots at 4:55.', tag: 'ack', heat: -20 },
+      { text: 'They always help. You could have asked.', tag: 'def', heat: 10 },
+      { text: 'yep', tag: 'dis', heat: 6 } ] },
+  ] },
+  { title: 'Client texting mid-job', heat: 45, msgs: [
+    { text: 'hey can you grab my dry cleaning on the way? ill tip $20 in the app', replies: [
+      { text: 'Happy to if it fits. Can you add it as a paid stop in the app so it\'s covered?', tag: 'ack', heat: -18 },
+      { text: 'Tips can be changed after. I\'ve been burned before.', tag: 'def', heat: 14 },
+      { text: 'maybe', tag: 'dis', heat: 8 } ] },
+    { text: 'cant add stops. trust me, the tip is real', replies: [
+      { text: 'I believe you. I\'ll keep to what\'s booked today, and I\'d love it next time.', tag: 'ack', heat: -18 },
+      { text: 'Everyone says that.', tag: 'def', heat: 15 },
+      { text: 'we\'ll see', tag: 'dis', heat: 8 } ] },
+    { text: 'ok fair. next time then', replies: [
+      { text: 'Next time, booked properly. Thanks for understanding.', tag: 'ack', heat: -20 },
+      { text: 'Sure, if you actually book it.', tag: 'def', heat: 10 },
+      { text: 'k', tag: 'dis', heat: 6 } ] },
+  ] },
 ];
 
 export const CHECK_IN_THREADS = [
@@ -745,6 +680,10 @@ export const CHECK_IN_THREADS = [
   ] },
 ];
 
+const TYPING_SECS = 1.1;   // how long "typing..." shows before their message lands
+const DRAFT_CPS = 42;      // your reply types itself at about 42 characters a second
+const HARSH_HOLD = 1.6;    // how long a harsh draft hovers over Send before it goes
+
 export class ThreadGame {
   constructor(mode, thread, state = null) {
     this.mode = mode; // 'client' | 'friend'
@@ -757,7 +696,15 @@ export class ThreadGame {
     this.heat = this.thread.heat ?? 0;
     this.timer = 0;
     this.perMsg = 9;
-    this.log = [{ who: 'them', text: this.thread.msgs[0].text }];
+    // They type before each message lands (a "typing..." bubble), and you draft before you send:
+    // your reply types itself into the box, and a harsh one waits a beat with your thumb over Send,
+    // long enough to delete it and say the kind thing instead. Emily Is Away's typing and Florence's
+    // conversation-as-mechanic are the references; the deleted draft is the emotional-regulation beat.
+    this.log = [];
+    this.pending = this.thread.msgs[0].text;
+    this.theyTyping = TYPING_SECS;
+    this.draft = null;
+    this.rewrites = 0;
     this.tags = [];
     this.buttons = [];
     this.done = false;
@@ -768,11 +715,38 @@ export class ThreadGame {
   }
   update(dt) {
     if (this.done) return;
+    if (this.theyTyping > 0) {
+      this.theyTyping -= dt;
+      if (this.theyTyping <= 0 && this.pending) { this.log.push({ who: 'them', text: this.pending }); this.pending = null; playBuzz(); }
+      return;
+    }
+    if (this.draft) {
+      const d = this.draft;
+      if (d.chars < d.reply.text.length) d.chars = Math.min(d.reply.text.length, d.chars + dt * DRAFT_CPS);
+      else { d.hold -= dt; if (d.hold <= 0) { this.draft = null; this.reply(d.reply); } }
+      return;
+    }
     if (this.idx >= this.thread.msgs.length) { this.endT += dt; if (this.endT > 1.2) this.finish(); return; }
     if (this.mode === 'client') {
       this.timer += dt;
       if (this.timer >= this.perMsg) this.reply({ text: '(left on read)', tag: 'dis', heat: 14 });
     }
+  }
+  /** The kind reply to the message on screen: acknowledge (client) or ask about them (friend). */
+  bestReply() { return this.thread.msgs[this.idx].replies.find((r) => r.tag === (this.mode === 'client' ? 'ack' : 'emp')); }
+  /** Pick a reply: it types into the box. A harsh one then hovers over Send long enough to delete. */
+  choose(r) {
+    if (this.draft || this.theyTyping > 0 || this.idx >= this.thread.msgs.length) return;
+    const harsh = r !== this.bestReply();
+    this.draft = { reply: r, chars: 0, hold: harsh ? HARSH_HOLD : 0.35, harsh };
+    playTick();
+  }
+  /** Delete the harsh draft and send the kind reply instead. */
+  deleteDraft() {
+    if (!this.draft || !this.draft.harsh) return;
+    this.rewrites += 1;
+    this.draft = { reply: this.bestReply(), chars: 0, hold: 0.35, harsh: false, rewritten: true };
+    playWarm();
   }
   handleTap(pt) {
     if (this.done) return;
@@ -785,27 +759,29 @@ export class ThreadGame {
     else (r.tag === 'emp' ? playWarm : playTick)();
     this.idx += 1;
     this.timer = 0;
-    if (this.idx < this.thread.msgs.length) this.log.push({ who: 'them', text: this.thread.msgs[this.idx].text });
+    if (this.idx < this.thread.msgs.length) { this.pending = this.thread.msgs[this.idx].text; this.theyTyping = TYPING_SECS; }
   }
   finish() {
     if (this.mode === 'client') {
       const success = this.heat <= 40;
       const acks = this.tags.filter((t) => t === 'ack').length;
-      this.result = { success, score: Math.round(100 - this.heat), effects: { rep: success ? 0.2 + acks * 0.05 : -0.2, stress: success ? -4 : 6 }, summary: success ? 'The client cooled off. They\'ll remember that.' : 'The client stayed hot. That review won\'t be kind.' };
+      this.result = { success, score: Math.round(100 - this.heat), effects: { rep: success ? 0.2 + acks * 0.05 : -0.2, stress: success ? -4 : 6 }, summary: (success ? 'The client cooled off. They\'ll remember that.' : 'The client stayed hot. That review won\'t be kind.') + this.rewriteNote() };
       success ? playSuccess() : playFail();
     } else {
       const emp = this.tags.filter((t) => t === 'emp').length;
-      this.result = { success: true, score: Math.round((emp / this.thread.msgs.length) * 100), effects: { support: 4 + emp * 4, stress: -3 - emp * 2 }, summary: emp >= 2 ? `${this.thread.title} sounded better by the end. So did you.` : `${this.thread.title} was glad you called, even if the call was mostly about you.` };
+      this.result = { success: true, score: Math.round((emp / this.thread.msgs.length) * 100), effects: { support: 4 + emp * 4, stress: -3 - emp * 2 }, summary: (emp >= 2 ? `${this.thread.title} sounded better by the end. So did you.` : `${this.thread.title} was glad you called, even if the call was mostly about you.`) + this.rewriteNote() };
       playWarm();
     }
     this.done = true;
   }
+  rewriteNote() { return this.rewrites > 0 ? ` You deleted ${this.rewrites === 1 ? 'a reply' : `${this.rewrites} replies`} before sending.` : ''; }
   render(ctx) {
     this.buttons = [];
     // thread: the newest messages that fit between the hint and the meter, sized from the real
     // wrapped line count. Older messages scroll off the top, as in a real chat.
     const w = 360, top = AREA.y + 58, bottom = AREA.y + 212, gap = 8;
-    const sized = this.log.map((m) => ({ m, lines: wrapLines(ctx, m.text, w - 28, { size: 14 }) }))
+    const entries = this.theyTyping > 0 ? [...this.log, { who: 'them', text: '• '.repeat(1 + (Math.floor(this.theyTyping * 4) % 3)).trim(), typing: true }] : this.log;
+    const sized = entries.map((m) => ({ m, lines: wrapLines(ctx, m.text, w - 28, { size: 14 }) }))
       .map((b) => ({ ...b, h: 14 + b.lines.length * 18 }));
     const shown = [];
     let used = 0;
@@ -837,10 +813,26 @@ export class ThreadGame {
     } else {
       drawText(ctx, `Calling ${this.thread.title}`, AREA.x + 24, AREA.y + 232, { size: 13, weight: 'bold', color: '#c9a876' });
     }
-    // replies
-    if (this.idx < this.thread.msgs.length) {
+    // replies, the draft being typed, or who is typing
+    const who = this.mode === 'client' ? 'The client' : this.thread.title;
+    if (this.draft) {
+      const d = this.draft;
+      ctx.fillStyle = 'rgba(15, 20, 28, 0.92)'; roundRectPath(ctx, AREA.x + 24, AREA.y + 250, AREA.w - 48, 58, 10); ctx.fill();
+      ctx.strokeStyle = '#5dade2'; ctx.lineWidth = 1.5; roundRectPath(ctx, AREA.x + 24, AREA.y + 250, AREA.w - 48, 58, 10); ctx.stroke();
+      const typed = d.reply.text.slice(0, Math.floor(d.chars)) + (d.chars < d.reply.text.length ? '|' : '');
+      drawWrapped(ctx, typed, AREA.x + 40, AREA.y + 274, AREA.w - 80, 18, { size: 14, color: '#ffffff', shadow: false });
+      if (d.harsh && d.chars >= d.reply.text.length) {
+        drawText(ctx, 'Your thumb hovers over Send.', AREA.x + 24, AREA.y + 336, { size: 14, color: '#e8c98a', shadow: false });
+        const b = { x: AREA.x + AREA.w - 244, y: AREA.y + 318, w: 220, h: 44, label: 'Delete it', onTap: () => this.deleteDraft() };
+        this.buttons.push(b); drawChoice(ctx, b, { color: '#6b3a2e' });
+      } else if (d.rewritten) {
+        drawText(ctx, 'You delete it and start again.', AREA.x + 24, AREA.y + 336, { size: 14, color: '#9fe0b5', shadow: false });
+      }
+    } else if (this.theyTyping > 0) {
+      drawText(ctx, `${who} is typing...`, AREA.x + 24, AREA.y + 270, { size: 14, color: '#c9a876', shadow: false });
+    } else if (this.idx < this.thread.msgs.length) {
       this.thread.msgs[this.idx].replies.forEach((r, i) => {
-        const b = { x: AREA.x + 24, y: AREA.y + 250 + i * 50, w: AREA.w - 48, h: 44, label: r.text, onTap: () => this.reply(r) };
+        const b = { x: AREA.x + 24, y: AREA.y + 250 + i * 50, w: AREA.w - 48, h: 44, label: r.text, onTap: () => this.choose(r) };
         this.buttons.push(b); drawChoice(ctx, b, { color: '#2b3d4f' });
       });
     } else {

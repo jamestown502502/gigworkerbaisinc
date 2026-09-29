@@ -13,6 +13,7 @@ async function sweep(page, label) {
 test('no two texts overlap on any screen', async ({ page }) => {
   await boot(page, { save: { tutorialSeen: true, energy: 100, cash: 350, day: 8, unpaidRent: 600, rentOverdueDays: 3, phoneCut: true, unpaidPhone: 40, hungry: true, stress: 75 } });
   const problems = [];
+  await page.evaluate(() => { window.__loopPaused = true; }); // only this test moves the clock
   await page.evaluate(() => { const g = window.__game; g.ticker = { lines: ['Study finds 1 in 3 gig workers skip meals to save money.'], idx: 0, t: 1 }; g.step(1 / 60); });
   problems.push(...await sweep(page, 'morning+ticker'));
   await page.evaluate(() => { const g = window.__game; g.ticker.idx = 1; g.activeEvent = { id: 'car-trouble', tier: 2, text: "Your car won't start. The mechanic quotes $150.", choices: [{ text: 'Pay the mechanic ($150)', disabled: () => false, apply: () => '' }, { text: 'Take the bus today', apply: () => '' }] }; g.eventT = 1; g.step(1 / 60); });

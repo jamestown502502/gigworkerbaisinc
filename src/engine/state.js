@@ -53,6 +53,8 @@ export class GameState {
     this.lateGigTomorrow = null; // accepted late ping → an extra listing tomorrow
     this.eiWins = 0;
     this.eiDecks = {};           // no-repeat scenario decks for the EI games (see qte.js drawFromDeck)
+    // The month's real numbers, for the day-30 / eviction "math of the month" page (2026-09-29).
+    this.monthMath = { paidHours: 0, gigs: 0, lostToNonPayment: 0, rentPaid: 0, phonePaid: 0, travelEnergy: 0, sickDays: 0 };
     this.runComplete = false;    // day 30 finished
     this.freePlay = false;       // chose to keep going past day 30
     // Preferences, not run state — survive `reset()` (see reset() below), same pattern as the
@@ -86,6 +88,7 @@ export class GameState {
       for (const k of Object.keys(defaults)) if (this[k] === undefined || this[k] === null) this[k] = defaults[k];
       this.settings = { ...defaults.settings, ...(parsed.settings || {}) };
       this.weekStats = { ...defaults.weekStats, ...(parsed.weekStats || {}) };
+      this.monthMath = { ...defaults.monthMath, ...(parsed.monthMath || {}) };
       // A save whose tutorial pointer ran off the end (or went negative) would hide the tutorial forever.
       if (typeof this.tutorialStep !== 'number' || this.tutorialStep < 0) this.tutorialStep = 0;
       this.version = SAVE_VERSION;

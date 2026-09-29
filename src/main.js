@@ -6,6 +6,7 @@ import { Game } from './game/loop.js';
 import { initAudio, unlock as unlockAudio, contextState } from './engine/audio.js';
 import { loadAssets } from './engine/sprites.js';
 import * as qte from './game/qte.js';
+import * as micro from './game/microgames.js';
 import { drawText, roundRectPath } from './ui/text.js';
 
 export { drawSprite, imageCache } from './engine/sprites.js';
@@ -45,14 +46,19 @@ async function boot() {
   window.__state = state;
   window.__audioState = contextState;
   window.__qte = qte;     // e2e hook: the readability audit renders every EI scenario
+  window.__micro = micro; // e2e hook: ...and every job microgame
 
   let last = performance.now();
   let rafId = null;
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
-    game.update(dt);
-    game.render(ctx);
+    // e2e hook: audits that drive time themselves by game.step() pause the real-time loop, so the
+    // game cannot move on between two measurements (see tests/e2e/readability.spec.js).
+    if (!window.__loopPaused) {
+      game.update(dt);
+      game.render(ctx);
+    }
     rafId = requestAnimationFrame(frame);
   }
   rafId = requestAnimationFrame(frame);
