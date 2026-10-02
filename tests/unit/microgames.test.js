@@ -15,15 +15,15 @@ function runIdle(g, maxSec = 120) {
 }
 
 describe('every gig with a challenge plays its own job', () => {
-  it('maps all six challenge gigs to a distinct microgame', () => {
+  it('maps all nine challenge gigs to a distinct microgame', () => {
     const withQTE = GIG_TEMPLATES.filter((g) => g.hasQTE);
     expect(withQTE.map((g) => g.title).sort()).toEqual([
-      'Assemble IKEA Furniture', 'Clean Out Garage', 'Dog Walking — Energetic Husky', 'Help Move Furniture', 'Logo Design — Small Business', 'Mystery Shopping — Review Store', 'Yard Work — Leaves & Mowing',
-    ].filter((t) => withQTE.some((g) => g.title === t)).sort());
+      'Assemble IKEA Furniture', 'Clean Out Garage', 'Dog Walking — Energetic Husky', 'Help Move Furniture', 'Logo Design — Small Business', 'Mystery Shopping — Review Store', 'Photography — Product Shots', 'Tutoring — High School Math', 'Yard Work — Leaves & Mowing',
+    ].sort());
     for (const g of withQTE) expect(MICROGAME_BY_TREE[g.choiceTree], g.title).toBeTruthy();
     const classes = new Set(withQTE.map((g) => MICROGAME_BY_TREE[g.choiceTree]));
     expect(classes.size).toBe(withQTE.length);
-    expect(withQTE.length).toBe(6);
+    expect(withQTE.length).toBe(9);
   });
 
   it('every microgame introduces itself with one word', () => {

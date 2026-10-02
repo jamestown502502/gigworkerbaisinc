@@ -128,3 +128,109 @@ test('every EI scenario, the breathing game and the new screens are readable', a
 
   expect(problems, problems.join('\n')).toEqual([]);
 });
+
+// Character depth and teaching (2026-10-02): the reaction card after EVERY choice (always with the
+// longest client name), EVERY client greeting over every choice node, every minigame's result card
+// with its takeaway, and the reveal states of the three new job microgames.
+test('every reaction card, client greeting and takeaway is readable', async ({ page }) => {
+  test.setTimeout(240000);
+  await boot(page, { save: { tutorialSeen: true, energy: 100, cash: 300, day: 5 } });
+  await settleMorning(page);
+  await page.evaluate(() => { window.__loopPaused = true; });
+  const problems = [];
+
+  const trees = await page.evaluate(() => Object.keys(window.__choices.CHOICE_TREES));
+  for (const tree of trees) {
+    const nNodes = await page.evaluate((t) => window.__choices.CHOICE_TREES[t].length, tree);
+    for (let n = 0; n < nNodes; n++) {
+      const nChoices = await page.evaluate(({ t, n }) => (window.__choices.CHOICE_TREES[t][n].choices || []).length, { t: tree, n });
+      for (let c = 0; c < nChoices; c++) {
+        for (const line of ['say', 'win', 'lose']) {
+          const has = await page.evaluate(({ t, n, c, line }) => {
+            const g = window.__game, ch = window.__choices.CHOICE_TREES[t][n].choices[c];
+            if (!ch[line]) return false;
+            g.phase = 'GIG'; g.qte = null; g.qteKind = null; g.node = null;
+            g.currentGig = { ...g.state.todayGigs[0], client: 'Marge', choiceTree: t };
+            g.pendingOutcome = { choice: ch.text, text: window.__choices.fillClient(ch[line], 'Marge'), lesson: ch.lesson, effects: { cash: -30, energy: -15, stress: 10, rep: -0.3 }, landed: line !== 'lose', next: null };
+            return true;
+          }, { t: tree, n, c, line });
+          if (has) problems.push(...await audit(page, `reaction ${tree}/${n}/${c} ${line}`));
+        }
+      }
+    }
+  }
+
+  // every client's three greetings over the busiest choice node (four choices)
+  const names = await page.evaluate(() => window.__clients.CLIENT_NAMES);
+  for (const name of names) {
+    for (const how of ['meet', 'back', 'wary']) {
+      await page.evaluate(({ name, how }) => {
+        const g = window.__game, C = window.__clients;
+        const c = C.CLIENTS.find((x) => x.name === name);
+        g.phase = 'GIG'; g.qte = null; g.qteKind = null; g.pendingOutcome = null;
+        g.currentGig = { ...g.state.todayGigs[0], client: name, choiceTree: 'waterSlide' };
+        g.node = window.__choices.CHOICE_TREES.waterSlide[0];
+        g.clientGreeting = c[how].replace(/\{lastJob\}/g, 'mystery shopping');
+      }, { name, how });
+      problems.push(...await audit(page, `greeting ${name} ${how}`));
+    }
+  }
+
+  // every result card that carries a takeaway: each microgame (won and fumbled) and each EI game
+  const micro = await page.evaluate(() => Object.keys(window.__micro.MICROGAME_BY_TREE));
+  for (const tree of micro) {
+    for (const success of [true, false]) {
+      await page.evaluate(({ tree, success }) => {
+        const g = window.__game;
+        g.phase = 'GIG'; g.qteKind = 'skill'; g.qteReadyT = 99; g.qteIntroHold = false; g.pendingOutcome = null;
+        g.currentGig = g.state.todayGigs[0];
+        g.qte = new window.__micro.MICROGAME_BY_TREE[tree](g.state);
+        g.qte.done = true; g.qte.result = { success, score: success ? 72 : 20, lesson: g.qte.result?.lesson || window.__micro.LESSONS[Object.keys(window.__micro.LESSONS)[0]] };
+        g.qteEndTimer = 1; g.qteFxFired = true; // a settled card, past its 0.2 s completion flash
+      }, { tree, success });
+      problems.push(...await audit(page, `result ${tree} ${success ? 'won' : 'fumbled'}`));
+    }
+  }
+  for (const [kind, lesson] of await page.evaluate(() => [
+    ...Object.values(window.__qte.FEELING_LESSON).map((l) => ['ei', l]),
+    ['ei', window.__qte.THREAD_LESSON.client], ['evening', window.__qte.THREAD_LESSON.friend], ['evening', window.__qte.BREATH_LESSON],
+  ])) {
+    await page.evaluate(({ kind, lesson }) => {
+      const g = window.__game, Q = window.__qte;
+      g.phase = kind === 'ei' ? 'GIG' : 'EVENING_GAME'; g.qteKind = kind;
+      g.qte = kind === 'ei' ? new Q.ReadClient(g.state, Q.READ_CLIENT_SCENARIOS[0]) : new Q.ThreadGame('friend', Q.CHECK_IN_THREADS[0]);
+      if (lesson === Q.BREATH_LESSON) g.qte = new Q.Breathe();
+      g.qte.done = true; g.qte.result = { success: true, score: 70, lesson, effects: { rep: 0.3, stress: -4, support: 12 } };
+      g.qteEndTimer = 1;
+    }, { kind, lesson });
+    problems.push(...await audit(page, `result ${kind}: ${lesson.slice(0, 24)}`));
+  }
+
+  // the new microgames' teaching moments: a wrong ASSEMBLE step, every PERCENT working, every FRAME verdict
+  await page.evaluate(() => {
+    const g = window.__game, M = window.__micro;
+    g.phase = 'GIG'; g.qteKind = 'skill'; g.qteReadyT = 99; g.qteEndTimer = 0;
+    g.qte = new M.AssembleSteps(g.state, M.RECIPES[2]);
+    const c = g.qte.cards.find((x) => x.i === 5); g.qte.handleTap({ x: c.box.x + 5, y: c.box.y + 5 });
+  });
+  problems.push(...await audit(page, 'assemble wrong step'));
+  const nP = await page.evaluate(() => window.__micro.PERCENT_PROBLEMS.length);
+  for (let i = 0; i < nP; i++) {
+    await page.evaluate((i) => {
+      const g = window.__game, M = window.__micro;
+      g.qte = new M.PercentTutor(g.state, [M.PERCENT_PROBLEMS[i]]);
+      g.qte.answer(M.PERCENT_PROBLEMS[i].wrong[0]);
+    }, i);
+    problems.push(...await audit(page, `percent ${i} working`));
+  }
+  for (const spot of ['tl', 'br', 'c']) {
+    await page.evaluate((spot) => {
+      const g = window.__game, M = window.__micro;
+      g.qte = new M.FrameShot(g.state, [M.FRAME_SHOTS[0]]);
+      g.qte.place(spot);
+    }, spot);
+    problems.push(...await audit(page, `frame ${spot}`));
+  }
+
+  expect(problems, problems.join('\n')).toEqual([]);
+});

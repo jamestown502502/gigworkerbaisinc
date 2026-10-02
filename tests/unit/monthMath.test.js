@@ -35,6 +35,7 @@ describe('the math of the month', () => {
     let guard = 0;
     while (game.phase === 'GIG' && guard++ < 10) {
       if (game.qteKind === 'ei') { game.finishEIGame({ success: true, score: 100, effects: {}, summary: 'ok' }); continue; }
+      if (game.pendingOutcome) { game.continueOutcome(); continue; }
       if (game.node) { game.choose(game.node.choices[0]); continue; }
       break;
     }

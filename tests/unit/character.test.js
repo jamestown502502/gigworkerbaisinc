@@ -142,6 +142,7 @@ describe('creator flow', () => {
     while (game.phase === 'GIG' && guard++ < 10) {
       if (game.qteKind === 'ei') { game.finishEIGame({ success: true, score: 100, effects: { rep: 0.3, stress: -3 }, summary: 'ok' }); continue; }
       if (game.qteKind === 'skill') { game.finishGig({ success: true, score: 80 }); break; }
+      if (game.pendingOutcome) { game.continueOutcome(); continue; }
       if (game.node) { game.choose(game.node.choices[0]); continue; }
       break;
     }

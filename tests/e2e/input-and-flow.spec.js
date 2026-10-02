@@ -69,6 +69,7 @@ test('a full day: listings → gig → results → evening choice → sleep, wit
     while (g.phase === 'GIG' && guard++ < 10) {
       if (g.qteKind === 'ei') g.finishEIGame({ success: true, score: 100, effects: { rep: 0.3 }, summary: 'ok' });
       else if (g.qteKind === 'skill') g.finishGig({ success: true, score: 70 });
+      else if (g.pendingOutcome) g.continueOutcome();
       else if (g.node) g.choose(g.node.choices[0]);
       else g.afterChoices();
     }
@@ -86,7 +87,9 @@ test('a full day: listings → gig → results → evening choice → sleep, wit
   await tapLogical(page, 580, 186); // Wind down
   await step(page, 1);
   expect(await phase(page)).toBe('EVENING_GAME');
-  await page.evaluate(() => { const g = window.__game; g.qte.start?.('calm'); g.qte.update(g.qte.duration ?? 30); g.step(2); }); // choose Calm, then finish the exercise, whatever its length
+  await page.evaluate(() => { const g = window.__game; g.qte.start?.('calm'); g.qte.update(g.qte.duration ?? 30); g.step(1); }); // choose Calm, then finish the exercise, whatever its length
+  await tapLogical(page, 400, 300); // tap past the result card (it now carries a takeaway and holds longer)
+  await step(page, 1);
   expect(await phase(page)).toBe('EVENING');
   expect(await page.evaluate(() => window.__game.state.eveningDoneDay)).toBe(4);
   await tapLogical(page, 160, 552); // Sleep

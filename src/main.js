@@ -7,6 +7,8 @@ import { initAudio, unlock as unlockAudio, contextState, setBackgrounded } from 
 import { loadAssets } from './engine/sprites.js';
 import * as qte from './game/qte.js';
 import * as micro from './game/microgames.js';
+import * as choices from './game/choices.js';
+import * as clients from './game/clients.js';
 import { drawText, roundRectPath } from './ui/text.js';
 
 export { drawSprite, imageCache } from './engine/sprites.js';
@@ -47,6 +49,8 @@ async function boot() {
   window.__audioState = contextState;
   window.__qte = qte;     // e2e hook: the readability audit renders every EI scenario
   window.__micro = micro; // e2e hook: ...and every job microgame
+  window.__choices = choices; // e2e hook: ...and every choice's reaction card
+  window.__clients = clients; // e2e hook: ...and every client greeting
 
   let last = performance.now();
   let rafId = null;

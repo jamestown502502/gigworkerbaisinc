@@ -336,3 +336,30 @@ User-reported: opening Settings during a timed challenge let the timer run out b
 or `resumePrompt` is up, after FX/transition/tooltip housekeeping — game time (morning intro,
 travel, every minigame, results count-up) freezes; presentation keeps animating. Unit tests in
 `tests/unit/twists.test.js` ("settings is a pause").
+
+## 10. Minigame and character depth pass (2026-10-02)
+
+Research-led pass (intrinsic integration, explained feedback, reflection, rule-based reactive
+dialogue). Full critique, rankings and before/after:
+`C:\Users\Jbthi\Claude Cowork\BAIS_Minigames_Depth_BeforeAfter_2026-10-02.md`.
+
+- **Choice trees** (`src/game/choices.js`): every choice carries `say` (no roll) or `win`/`lose`
+  (chance roll) plus a `lesson`; `{client}` is filled by `fillClient`. Effects and odds unchanged.
+  `Game.choose()` now sets `pendingOutcome` (reaction card in `gigScreen`/`outcomeCard`) and waits;
+  `continueOutcome()` follows `next` or goes to the challenge. Any test that walks a gig must call
+  `continueOutcome()` when `pendingOutcome` is set (the four unit drivers and the e2e full day do).
+- **Clients** (`src/game/clients.js`): 10 characters with `meet`/`back`/`wary` lines; the save's
+  `clientLog` records visits, last job and whether it went well (`rememberClient` in `finishGig`);
+  `startGig` sets `clientGreeting`, drawn above the node text.
+- **Lessons**: every microgame and EI result has `result.lesson` (`LESSONS` in microgames.js,
+  `FEELING_LESSON`/`THREAD_LESSON`/`BREATH_LESSON` in qte.js), drawn on `resultCard`; the card holds
+  +1.2 s when it has one (`resultHold(kind, result)`). `state.lessonsSeen` feeds the summary row
+  "Lessons learned on the job".
+- **PACK!** scores heavy-goes-low (`HEAVY`, `heavyHigh`, -15 score each, warning line).
+- **New microgames**: `AssembleSteps` (IKEA), `PercentTutor` (tutoring), `FrameShot` (photo). 9 of
+  12 gigs now have a challenge, so fumble stress went 5 -> 3 (same proportional rule as 2026-09-29)
+  to hold the Monte Carlo band; the result card says "Stress +3".
+- Result-card stars: unlit `#7d6b4f` (was 1.79:1), drawn at their real position for the probe.
+- e2e hooks added: `window.__choices`, `window.__clients`. New readability test renders every
+  reaction card, every client greeting, every result card with a lesson, and the new games' reveals.
+- Tests: `tests/unit/depth.test.js` (15).
