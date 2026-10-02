@@ -5,12 +5,14 @@ import { withPronouns } from '../ui/character.js';
 import * as audio from '../engine/audio.js';
 import { RUN_LENGTH_DAYS } from '../engine/state.js';
 import { generateDailyGigs, gigEnergyCost, travelCost, makeReferralGig } from './gigs.js';
-import { getNode, resolveChoice } from './choices.js';
+import { getNode, resolveChoice, fillClient } from './choices.js';
+import { clientGreeting, rememberClient } from './clients.js';
 import { createEIGame, createEveningGame, QTE_READY_DURATION } from './qte.js';
 import { createQTE } from './microgames.js';
 import { rollDailyEvents, generateMorningFlavor } from './events.js';
 import { rollWeather } from './weather.js';
 import { neighborBeat } from './neighbor.js';
+import { recallCard } from './recall.js';
 import { rollMonth, rentExtra, supportMultiplier, scamMultiplier, windDownMultiplier, goalOf, twistOf } from './twists.js';
 import { UI } from '../ui/screens.js';
 import * as screens from '../ui/screens.js';
@@ -88,8 +90,10 @@ export function monthCard(state) {
 }
 
 /** Seconds the result card stays up after a minigame ends (a tap after 0.4 s skips the rest). */
-export function resultHold(kind) {
-  return kind === 'skill' ? 2.4 : 1.6;
+export function resultHold(kind, result = null) {
+  // A card with a takeaway on it holds a second longer: it is a sentence to read, not a number.
+  const extra = result && result.lesson ? 1.2 : 0;
+  return (kind === 'skill' ? 2.4 : 1.6) + extra;
 }
 
 export class Game {
@@ -256,6 +260,9 @@ export class Game {
     // Dee across the hall opens each new week (src/game/neighbor.js).
     const beat = inTutorial ? null : neighborBeat(s);
     if (beat) this.eventQueue.unshift(beat);
+    // ...and the morning after each visit, one earlier takeaway comes back as a question (recall.js).
+    const quiz = inTutorial ? null : recallCard(s);
+    if (quiz) this.eventQueue.unshift(quiz);
     s.save();
   }
 
@@ -274,7 +281,8 @@ export class Game {
 
   chooseEventOption(opt) {
     this.eventOutcome = opt.apply(this.state) || '';
-    this.activeEvent = { ...this.activeEvent, choices: null, resolved: true };
+    // `after`: an option may explain itself once chosen (the recall card's answer and reason).
+    this.activeEvent = { ...this.activeEvent, choices: null, resolved: true, subtext: opt.after || this.activeEvent.subtext };
     this.eventT = 0;
     this.state.clamp();
     this.state.save();
@@ -348,6 +356,9 @@ export class Game {
   startGig() {
     this.qte = null;
     this.qteKind = null;
+    this.pendingOutcome = null;
+    // Said at the door: a first meeting, or how the last job with this client went (clients.js).
+    this.clientGreeting = clientGreeting(this.state, this.currentGig.client);
     this.setPhase('GIG', 'doorway');
     this.enterNode(getNode(this.currentGig.choiceTree, 0));
   }
@@ -367,11 +378,33 @@ export class Game {
     this.node = node;
   }
 
+  /** A choice resolves into the client's reaction and a takeaway, shown until the player taps on
+   *  (2026-10-02). It used to jump straight on with a generic line nobody saw until the receipt. */
   choose(choice) {
-    const { outcomeText } = resolveChoice(this.state, choice);
-    this.outcomeTexts.push(`${choice.text} — ${outcomeText}`);
-    if (choice.next) this.enterNode(getNode(this.currentGig.choiceTree, choice.next));
+    if (this.pendingOutcome) return;
+    const { effects, outcomeText, lesson, landed } = resolveChoice(this.state, choice);
+    const text = fillClient(outcomeText, this.currentGig.client);
+    this.outcomeTexts.push(text);
+    this.noteLesson(lesson);
+    this.node = null;
+    this.pendingOutcome = { choice: choice.text, text, lesson, effects, landed, next: choice.next || null };
+    (landed ? audio.playTick : audio.playError)();
+  }
+
+  /** Tap past the reaction card: on to the next node, or to the challenge / receipt. */
+  continueOutcome() {
+    const o = this.pendingOutcome;
+    if (!o) return;
+    this.pendingOutcome = null;
+    if (o.next) this.enterNode(getNode(this.currentGig.choiceTree, o.next));
     else this.afterChoices();
+  }
+
+  /** Every takeaway the player was shown this run, once each, for the day-30 summary. */
+  noteLesson(lesson) {
+    if (!lesson) return;
+    const seen = this.state.lessonsSeen || (this.state.lessonsSeen = []);
+    if (!seen.includes(lesson)) seen.push(lesson);
   }
 
   afterChoices() {
@@ -398,6 +431,7 @@ export class Game {
     s.cash += fx.cash || 0;
     s.clamp();
     if (result.success) { s.eiWins += 1; triggerTint('#2ecc71', 0.2); } else triggerShake(5, 0.2);
+    this.noteLesson(result.lesson);
     this.outcomeTexts.push(result.summary || (result.success ? 'You read the room.' : 'You misread the room.'));
     this.qte = null;
     this.qteKind = null;
@@ -421,6 +455,7 @@ export class Game {
   finishGig(qteResult) {
     const s = this.state;
     const gig = this.currentGig;
+    if (qteResult) this.noteLesson(qteResult.lesson);
     s.energy -= gigEnergyCost(gig, s);
     s.hoursLeft -= gig.hours;
     s.monthMath.paidHours += gig.hours;
@@ -441,10 +476,11 @@ export class Game {
         items.push({ label: 'Fumbled the challenge (-30%)', amount: -cut });
         payout -= cut;
         s.reputation -= 0.2;
-        // 5, was 10: since 2026-09-29 six gigs have a challenge instead of three, so a month holds
-        // about twice as many chances to fumble; this keeps the month's total stress where the
-        // balance bands (tests/unit/balance.test.js) were designed.
-        s.stress += 5;
+        // 3, was 5 (and 10 before that): nine gigs have a challenge since 2026-10-02 (six since
+        // 2026-09-29, three before), so a month holds proportionally more chances to fumble; 10 x
+        // 3/9 keeps the month's total stress where the balance bands (tests/unit/balance.test.js)
+        // were designed.
+        s.stress += 3;
         spawnFloatingText(229, 20, '+stress', { color: '#e74c3c', size: 14 });
       }
     }
@@ -493,6 +529,8 @@ export class Game {
     // A client's one-line review, in the player's pronouns. Picked by gig count, not Math.random,
     // so it never shifts the random sequence the rest of the game (and its tests) depend on.
     const pleased = s.reputation >= this.snapshot.rep;
+    // The client remembers: a job that left your reputation intact and paid in full went well.
+    rememberClient(s, gig.client, gig.title, pleased && !scamText);
     const pool = pleased ? GOOD_REVIEWS : MIXED_REVIEWS;
     const review = withPronouns(pool[s.gigsCompleted % pool.length], s.character);
     this.results = {
@@ -615,6 +653,7 @@ export class Game {
 
   finishEveningGame(result) {
     const s = this.state;
+    this.noteLesson(result.lesson);
     const fx = result.effects || {};
     if (this.qte && this.qte.name === 'WIND DOWN') {
       const relief = Math.round((8 + Math.round((result.score / 100) * 12)) * windDownMultiplier(s.twist));
@@ -861,7 +900,7 @@ export class Game {
           this.qteEndTimer += dt;
           // The result card (stars, score, what it earned or cost) holds long enough to read, and
           // any tap after the first 0.4 s moves on.
-          if (this.qteEndTimer > resultHold(this.qteKind)) {
+          if (this.qteEndTimer > resultHold(this.qteKind, result)) {
             this.qteEndTimer = 0;
             if (this.qteKind === 'skill') this.finishGig(result);
             else if (this.qteKind === 'ei') this.finishEIGame(result);
@@ -961,7 +1000,7 @@ export class Game {
         continue;
       }
       if ((this.phase === 'GIG' || this.phase === 'EVENING_GAME') && this.qte && this.qte.done && !this.settingsOpen) {
-        if (this.qteEndTimer > 0.4) this.qteEndTimer = Math.max(this.qteEndTimer, resultHold(this.qteKind));
+        if (this.qteEndTimer > 0.4) this.qteEndTimer = Math.max(this.qteEndTimer, resultHold(this.qteKind, this.qte.result));
         continue;
       }
       if ((this.phase === 'GIG' || this.phase === 'EVENING_GAME') && this.qte && !this.qte.done && !this.settingsOpen) {

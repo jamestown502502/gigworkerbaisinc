@@ -9,6 +9,14 @@
 //   Yard Work            -> RAKE!       sweep the leaves into the pile before the wind does
 //   Logo Design          -> PROOFREAD!  catch the client's typos before the flyer prints
 //   Mystery Shopping     -> SORT!       judge each return by the store's rules
+//   Assemble IKEA        -> ASSEMBLE!   put the build steps in the right order        (2026-10-02)
+//   Tutoring             -> PERCENT!    work the student's percent problems with them (2026-10-02)
+//   Product Photography  -> FRAME!      place the product by the rule of thirds       (2026-10-02)
+//
+// Every result now carries a `lesson`: one real-world takeaway about doing the job well, shown on
+// the result card. Where it fit, the lesson is the rule the game is scored on (PACK's heavy-goes-
+// low, FRAME's thirds, PERCENT's arithmetic), because learning sticks best when it is the mechanic
+// rather than a caption on it (Habgood & Ainsworth, 2011, "intrinsic integration").
 //
 // Stress shows up in your hands: the harder the day (difficultyFactor: stress, fatigue, low
 // balance), the more the targets drift under your finger, and the tighter the timing. A calm
@@ -17,7 +25,7 @@
 // Every instance keeps the skill-QTE contract loop.js relies on: update(dt), render(ctx),
 // handleTap(pt), done, result { success, score }.
 import { difficultyFactor, AREA } from './qte.js';
-import { drawText, roundRectPath } from '../ui/text.js';
+import { drawText, drawWrapped, roundRectPath } from '../ui/text.js';
 import { playTick, playSuccess, playFail, playError, playGood } from '../engine/audio.js';
 import { InputManager } from '../engine/input.js';
 
@@ -44,12 +52,32 @@ function timerBar(ctx, frac) {
 
 function inRect(pt, r) { return pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h; }
 
+/** One real-world takeaway per job, shown on the result card. Kept short enough for two lines
+ *  there (tests/unit/microgames.test.js holds them to it). */
+export const LESSONS = {
+  lift: 'Agree on a count out loud, then lift with your legs, back straight. Lift together or not at all.',
+  untangle: 'Unwind tangled leashes from the top of the pile down. Pulling one from the bottom tightens the knot.',
+  pack: 'Heavy items ride low and forward. Up high, they slide and crush what is under them when you brake.',
+  rake: 'Work with the wind, not against it. Rake small piles and bag them before a gust undoes the work.',
+  proofread: 'Read slowly, one word at a time. Reading for meaning lets your eye skip right over typos.',
+  sort: 'A receipt proves the price paid; tags prove it is unused. No receipt usually means store credit.',
+  assemble: 'Read every step before the first screw, and sort the hardware. Order matters more than speed.',
+  percent: 'Percent means "out of 100". Find 10% by moving the decimal one place, then build from there.',
+  frame: 'Rule of thirds: put the subject on a third line, off center, with space on the side it faces.',
+};
+
 // ---------------------------------------------------------------- LIFT! (Help Move Furniture)
 const LIFT_LEAD = 0.45;
+/** Seconds the finger must be held during the count for the lift to count as knees-bent. */
+export const SQUAT_MIN = 0.35;
+// Knees first (2026-10-02): press and hold during the count to bend your knees, let go on THREE to
+// lift. A tap on THREE without bending still lifts, but with your back: half the score and not a
+// clean lift. The skill being scored is the real one, a shared count AND a leg lift.
 export class LiftOnThree {
   constructor(state) {
     this.name = 'LIFT!';
-    this.hint = 'Your partner counts to three. Tap on THREE, together.';
+    this.hint = 'Hold to bend your knees during the count. Let go on THREE to lift together.';
+    this.squat = 0; this.clean = [];
     this.d = difficultyFactor(state);
     this.items = shuffle(['Couch', 'Fridge', 'Dresser', 'Mattress']);
     this.beat = 0.62;
@@ -60,18 +88,20 @@ export class LiftOnThree {
   }
   liftAt() { return LIFT_LEAD + this.beat * 2; }
   count() { return this.t < LIFT_LEAD ? -1 : Math.min(2, Math.floor((this.t - LIFT_LEAD) / this.beat)); }
-  update(dt) {
+  bent() { return this.squat >= SQUAT_MIN; }
+  update(dt, pointer = InputManager.pointer) {
     if (this.done) return;
     if (this.rest > 0) {
       this.rest -= dt;
       if (this.rest <= 0) {
         this.idx += 1;
         if (this.idx >= this.items.length) return this.finish();
-        this.t = 0; this.tapped = false; this.feedback = null; this.lastCount = -1;
+        this.t = 0; this.tapped = false; this.feedback = null; this.lastCount = -1; this.squat = 0;
       }
       return;
     }
     this.t += dt;
+    if (pointer?.down && !this.tapped) this.squat += dt;   // holding = knees bent
     const c = this.count();
     if (c !== this.lastCount && c >= 0) { this.lastCount = c; c < 2 ? playTick() : playGood(); }
     if (!this.tapped && this.t > this.liftAt() + this.window) this.endLift(0, 'Too slow. It drops back down.');
@@ -79,19 +109,22 @@ export class LiftOnThree {
   handleTap() {
     if (this.done || this.tapped || this.rest > 0) return;
     const diff = this.t - this.liftAt();
-    if (Math.abs(diff) <= this.window) this.endLift(Math.round(100 - (Math.abs(diff) / this.window) * 60), 'Together. Up it goes.');
-    else this.endLift(0, diff < 0 ? 'Too early. You lift alone.' : 'Too late. They lift alone.');
+    if (Math.abs(diff) > this.window) return this.endLift(0, diff < 0 ? 'Too early. You lift alone.' : 'Too late. They lift alone.');
+    const timing = Math.round(100 - (Math.abs(diff) / this.window) * 60);
+    if (this.bent()) this.endLift(timing, 'Knees bent, together. Up it goes.', true);
+    else this.endLift(Math.round(timing * 0.5), 'On time, but with your back. Hold first to bend your knees.');
   }
-  endLift(score, text) {
+  endLift(score, text, clean = false) {
     this.tapped = true;
+    this.clean.push(clean);
     this.scores.push(score);
     this.feedback = { ok: score > 0, text };
     score > 0 ? playTick() : playError();
     this.rest = 0.85;
   }
   finish() {
-    const good = this.scores.filter((s) => s > 0).length;
-    this.result = { success: good >= 3, score: Math.round(this.scores.reduce((a, b) => a + b, 0) / this.items.length) };
+    const good = this.clean.filter(Boolean).length;
+    this.result = { success: good >= 3, score: Math.round(this.scores.reduce((a, b) => a + b, 0) / this.items.length), lesson: LESSONS.lift };
     this.done = true;
     this.result.success ? playSuccess() : playFail();
   }
@@ -111,7 +144,9 @@ export class LiftOnThree {
     drawText(ctx, this.items[Math.min(this.idx, this.items.length - 1)], cx + sh.x, iy + h / 2 + 6, { size: 18, weight: 'bold', color: '#ffffff', align: 'center', outline: true });
     // you and your partner, holding the ends
     for (const side of [-1, 1]) {
-      const px = cx + side * (w / 2 + 34), top = floor - 110 - lifted * 20;
+      // you crouch while your knees are bent (holding), your partner on every count
+      const crouch = side < 0 ? (!this.tapped && this.squat > 0 ? 22 : 0) : (!this.tapped && this.count() >= 0 ? 14 : 0);
+      const px = cx + side * (w / 2 + 34), top = floor - 110 - lifted * 20 + crouch;
       ctx.fillStyle = side < 0 ? '#3498db' : '#e67e22';
       ctx.beginPath(); ctx.arc(px, top, 16, 0, Math.PI * 2); ctx.fill();
       ctx.fillRect(px - 12, top + 18, 24, 50);
@@ -125,6 +160,7 @@ export class LiftOnThree {
     const color = this.tapped ? (ok ? '#2ecc71' : '#ff6b5e') : c === 2 ? '#f1c40f' : '#ffffff';
     drawText(ctx, say, cx, AREA.y + 70, { size: this.tapped ? 20 : 30, weight: 'bold', color, align: 'center', outline: true });
     drawText(ctx, `Lift ${Math.min(this.idx + 1, this.items.length)} of ${this.items.length}`, cx, AREA.y + AREA.h - 18, { size: 15, color: '#f0f0f0', align: 'center' });
+    if (!this.tapped) drawText(ctx, this.bent() ? 'Knees bent. Let go on THREE.' : 'Press and hold to bend your knees', cx, AREA.y + 104, { size: 15, weight: 'bold', color: this.bent() ? '#9fe0b5' : '#f5deb3', align: 'center', outline: true });
   }
 }
 
@@ -166,11 +202,12 @@ export class UntangleLeash {
       if (this.stack.length === 0) this.finish(true);
     } else {
       this.timeLeft = Math.max(0.1, this.timeLeft - 1.2); this.flash = 1; playError();
+      this.flashText = `${DOG_NAMES[hit.i]}'s leash is under ${DOG_NAMES[this.top()]}'s. Top of the pile first.`;
     }
   }
   finish(success) {
     const freed = this.dogs.filter((d) => d.free).length;
-    this.result = { success, score: success ? Math.round(50 + 50 * (this.timeLeft / this.timeMax)) : Math.round((freed / this.dogs.length) * 40) };
+    this.result = { success, score: success ? Math.round(50 + 50 * (this.timeLeft / this.timeMax)) : Math.round((freed / this.dogs.length) * 40), lesson: LESSONS.untangle };
     this.done = true;
     success ? playSuccess() : playFail();
   }
@@ -198,22 +235,25 @@ export class UntangleLeash {
       drawText(ctx, dog.free ? `${DOG_NAMES[dog.i]} ✓` : DOG_NAMES[dog.i], p.x, p.y + 46, { size: 13, weight: 'bold', color: dog.free ? '#2ecc71' : '#ffffff', align: 'center', outline: true });
     }
     ctx.fillStyle = '#f5deb3'; ctx.beginPath(); ctx.arc(this.anchor.x, this.anchor.y, 12, 0, Math.PI * 2); ctx.fill();
-    if (this.flash > 0) drawText(ctx, 'Tighter! That one was underneath.', AREA.x + AREA.w / 2, AREA.y + 150, { size: 17, weight: 'bold', color: '#ff6b5e', align: 'center', outline: true });
+    if (this.flash > 0) drawText(ctx, this.flashText || 'That one was underneath.', AREA.x + AREA.w / 2, AREA.y + 300, { size: 16, weight: 'bold', color: '#ff8a7e', align: 'center', outline: true, maxWidth: AREA.w - 30 });
   }
 }
 
 // ---------------------------------------------------------------- PACK! (Clean Out Garage)
 const GRID = { cols: 4, rows: 3, cell: 72, x: AREA.x + 40, y: AREA.y + 90 };
 const PIECES = [[2, 2, 'Toolbox'], [2, 1, 'Bike rack'], [2, 1, 'Paint cans'], [1, 2, 'Lamp'], [1, 1, 'Box'], [1, 1, 'Fan']];
+/** The heavy pieces. Packed for real, they ride on the floor of the trunk: up high they slide and
+ *  crush what is under them when you brake. Scored, not just captioned. */
+export const HEAVY = new Set(['Toolbox', 'Paint cans']);
 const PIECE_COLORS = ['#8e6e4e', '#5d7a8a', '#9b59b6', '#c0873f', '#6f8f4e', '#b85c4e'];
 export class PackTheCar {
   constructor(state) {
     this.name = 'PACK!';
-    this.hint = 'Tap a space in the trunk to drop the next item there. Tap the item to turn it.';
+    this.hint = 'Tap the trunk to drop the next item. Heavy items go on the floor (bottom row).';
     this.d = difficultyFactor(state);
     this.queue = shuffle(PIECES.map((p, i) => ({ w: p[0], h: p[1], label: p[2], color: PIECE_COLORS[i] })));
     this.grid = Array.from({ length: GRID.rows }, () => Array(GRID.cols).fill(null));
-    this.packed = 0; this.skipped = 0;
+    this.packed = 0; this.skipped = 0; this.heavyHigh = 0; this.warn = null;
     this.timeMax = 24 / this.d; this.timeLeft = this.timeMax; this.t = 0;
     this.flash = 0; this.done = false; this.result = null;
     this.preview = { x: AREA.x + 400, y: AREA.y + 100, w: 170, h: 170 };
@@ -229,6 +269,8 @@ export class PackTheCar {
     const p = this.current();
     if (!p || !this.fits(p, col, row)) { this.flash = 1; playError(); return false; }
     for (let r = row; r < row + p.h; r++) for (let c = col; c < col + p.w; c++) this.grid[r][c] = p.color;
+    // heavy and not touching the floor: it still fits, but it will slide
+    if (HEAVY.has(p.label) && row + p.h < GRID.rows) { this.heavyHigh += 1; this.warn = { text: `${p.label} up high will slide when you brake.`, t: 1.6 }; playError(); }
     this.queue.shift(); this.packed += 1; playTick();
     if (this.queue.length === 0) this.finish();
     return true;
@@ -238,6 +280,7 @@ export class PackTheCar {
   update(dt) {
     if (this.done) return;
     this.t += dt; this.flash = Math.max(0, this.flash - dt * 2);
+    if (this.warn) { this.warn.t -= dt; if (this.warn.t <= 0) this.warn = null; }
     this.timeLeft -= dt;
     if (this.timeLeft <= 0) { this.skipped += this.queue.length; this.queue = []; this.finish(); }
   }
@@ -252,7 +295,8 @@ export class PackTheCar {
   finish() {
     const total = PIECES.length;
     const success = this.packed >= total - 1;
-    this.result = { success, score: Math.round((this.packed / total) * 80 + (success ? 20 * Math.max(0, this.timeLeft) / this.timeMax : 0)) };
+    const raw = (this.packed / total) * 80 + (success ? 20 * Math.max(0, this.timeLeft) / this.timeMax : 0) - this.heavyHigh * 15;
+    this.result = { success, score: Math.max(0, Math.round(raw)), lesson: LESSONS.pack };
     this.done = true;
     success ? playSuccess() : playFail();
   }
@@ -260,6 +304,9 @@ export class PackTheCar {
     timerBar(ctx, this.timeLeft / this.timeMax);
     const s = shakeOffset(this.d, this.t);
     drawText(ctx, 'The trunk', GRID.x + (GRID.cols * GRID.cell) / 2, GRID.y - 14, { size: 15, weight: 'bold', color: '#c9a876', align: 'center' });
+    // the floor of the trunk, where heavy things belong
+    ctx.fillStyle = 'rgba(255, 210, 122, 0.18)';
+    ctx.fillRect(GRID.x + s.x, GRID.y + (GRID.rows - 1) * GRID.cell + s.y, GRID.cols * GRID.cell, GRID.cell);
     for (let r = 0; r < GRID.rows; r++) for (let c = 0; c < GRID.cols; c++) {
       const x = GRID.x + c * GRID.cell + s.x, y = GRID.y + r * GRID.cell + s.y;
       ctx.fillStyle = this.grid[r][c] ?? 'rgba(20,14,8,0.8)';
@@ -275,12 +322,13 @@ export class PackTheCar {
       const px = this.preview.x + (this.preview.w - pw) / 2, py = this.preview.y + (this.preview.h - ph) / 2 - 8;
       ctx.fillStyle = p.color; ctx.fillRect(px, py, pw, ph);
       ctx.strokeStyle = '#1d150d'; ctx.lineWidth = 2; ctx.strokeRect(px, py, pw, ph);
-      drawText(ctx, p.label, this.preview.x + this.preview.w / 2, this.preview.y + this.preview.h - 14, { size: 14, weight: 'bold', color: '#ffffff', align: 'center' });
+      drawText(ctx, HEAVY.has(p.label) ? `${p.label} (heavy)` : p.label, this.preview.x + this.preview.w / 2, this.preview.y + this.preview.h - 14, { size: 14, weight: 'bold', color: HEAVY.has(p.label) ? '#ffd27a' : '#ffffff', align: 'center' });
     }
     ctx.fillStyle = '#5d4023'; roundRectPath(ctx, this.backSeat.x, this.backSeat.y, this.backSeat.w, this.backSeat.h, 9); ctx.fill();
     drawText(ctx, 'Back seat (skip)', this.backSeat.x + this.backSeat.w / 2, this.backSeat.y + 30, { size: 14, weight: 'bold', color: '#ffffff', align: 'center' });
     drawText(ctx, `Packed ${this.packed} of ${PIECES.length}`, AREA.x + AREA.w / 2, AREA.y + AREA.h - 18, { size: 15, color: '#f0f0f0', align: 'center' });
-    if (this.flash > 0) drawText(ctx, "Doesn't fit there.", GRID.x + (GRID.cols * GRID.cell) / 2, GRID.y + GRID.rows * GRID.cell + 26, { size: 15, weight: 'bold', color: '#ff6b5e', align: 'center', outline: true });
+    const msg = this.flash > 0 ? "Doesn't fit there." : this.warn ? this.warn.text : 'Floor of the trunk (heavy items)';
+    drawText(ctx, msg, GRID.x + (GRID.cols * GRID.cell) / 2, GRID.y + GRID.rows * GRID.cell + 26, { size: 14, weight: this.flash > 0 || this.warn ? 'bold' : 'normal', color: this.flash > 0 || this.warn ? '#ff8a7e' : '#ffd27a', align: 'center', outline: true, maxWidth: GRID.cols * GRID.cell + 40 });
   }
 }
 
@@ -289,19 +337,33 @@ const LEAF_COLORS = ['#d35400', '#e67e22', '#c0392b', '#f39c12'];
 export class RakeThePile {
   constructor(state) {
     this.name = 'RAKE!';
-    this.hint = 'Drag across the leaves to sweep them into the pile. Tapping near leaves nudges them too.';
+    this.hint = 'Check the wind, tap where the pile goes, then drag the leaves into it.';
     this.d = difficultyFactor(state);
-    this.pile = { x: AREA.x + AREA.w - 90, y: AREA.y + AREA.h - 80, r: 62 };
+    // Downwind (2026-10-02): the wind blows one way this time; you choose where the pile goes. Gusts
+    // carry loose leaves downwind, so a pile set downwind collects them and one set upwind loses
+    // them. Reading the wind before you rake is the skill.
+    this.wind = Math.random() < 0.5 ? 1 : -1;
+    this.spots = [-1, 1].map((side) => ({ side, x: side < 0 ? AREA.x + 90 : AREA.x + AREA.w - 90, y: AREA.y + AREA.h - 80 }));
+    this.pile = null; this.downwind = null; this.placeT = 0;
     this.leaves = Array.from({ length: 22 }, (_, i) => ({
-      x: AREA.x + 40 + Math.random() * (AREA.w - 260), y: AREA.y + 70 + Math.random() * (AREA.h - 130),
+      x: AREA.x + 160 + Math.random() * (AREA.w - 320), y: AREA.y + 90 + Math.random() * (AREA.h - 170),
       color: LEAF_COLORS[i % LEAF_COLORS.length], a: Math.random() * Math.PI, inPile: false,
     }));
-    this.timeMax = 14 / this.d; this.timeLeft = this.timeMax; this.t = 0;
+    this.timeMax = 16 / this.d; this.timeLeft = this.timeMax; this.t = 0; // 14 + ~2 s to read the wind
     this.last = null; this.nextGust = 3.2; this.gust = 0;
     this.done = false; this.result = null;
   }
   inPileCount() { return this.leaves.filter((l) => l.inPile).length; }
+  /** Put the pile on one side: -1 left, 1 right. */
+  placePile(side) {
+    if (this.pile) return;
+    const spot = this.spots.find((sp) => sp.side === side);
+    this.pile = { x: spot.x, y: spot.y, r: 62 };
+    this.downwind = side === this.wind;
+    playTick();
+  }
   settle(l) {
+    if (!this.pile) return;
     if (!l.inPile && Math.hypot(l.x - this.pile.x, l.y - this.pile.y) <= this.pile.r) {
       l.inPile = true;
       const a = Math.random() * Math.PI * 2, r = Math.random() * this.pile.r * 0.6;
@@ -312,7 +374,9 @@ export class RakeThePile {
   update(dt, pointer = InputManager.pointer) {
     if (this.done) return;
     this.t += dt; this.gust = Math.max(0, this.gust - dt);
-    if (pointer?.down) {
+    // no choice after a few seconds: the pile goes where you are standing (the left), no-fail
+    if (!this.pile) { this.placeT += dt; if (this.placeT >= 4) this.placePile(-1); }
+    if (pointer?.down && this.pile) {
       if (this.last) {
         const dx = pointer.x - this.last.x, dy = pointer.y - this.last.y;
         for (const l of this.leaves) {
@@ -326,16 +390,25 @@ export class RakeThePile {
       }
       this.last = { x: pointer.x, y: pointer.y };
     } else this.last = null;
-    this.nextGust -= dt;
-    if (this.nextGust <= 0) {          // the wind takes a few loose ones back
+    if (this.pile) this.nextGust -= dt;
+    if (this.nextGust <= 0 && this.pile) {   // a gust carries a few loose leaves downwind
       this.nextGust = 3.4; this.gust = 0.8;
-      for (const l of shuffle(this.leaves.filter((x) => !x.inPile)).slice(0, 3)) { l.x -= 30 + Math.random() * 30; l.y += (Math.random() - 0.5) * 40; l.x = Math.max(AREA.x + 10, l.x); }
+      for (const l of shuffle(this.leaves.filter((x) => !x.inPile)).slice(0, 4)) {
+        l.x = Math.max(AREA.x + 10, Math.min(AREA.x + AREA.w - 10, l.x + this.wind * (40 + Math.random() * 40)));
+        l.y += (Math.random() - 0.5) * 30;
+        this.settle(l);
+      }
     }
     this.timeLeft -= dt;
     if (this.inPileCount() === this.leaves.length || this.timeLeft <= 0) this.finish();
   }
   handleTap(pt) {
     if (this.done) return;
+    if (!this.pile) {
+      const spot = this.spots.find((sp) => Math.hypot(pt.x - sp.x, pt.y - sp.y) <= 80);
+      if (spot) this.placePile(spot.side);
+      return;
+    }
     for (const l of this.leaves) {
       if (l.inPile || Math.hypot(l.x - pt.x, l.y - pt.y) > 56) continue;
       const dx = this.pile.x - l.x, dy = this.pile.y - l.y, dist = Math.hypot(dx, dy) || 1;
@@ -345,23 +418,35 @@ export class RakeThePile {
   }
   finish() {
     const pct = this.inPileCount() / this.leaves.length;
-    this.result = { success: pct >= 0.7, score: Math.round(pct * 100) };
+    this.result = { success: pct >= 0.7, score: Math.round(pct * 100), lesson: LESSONS.rake, downwind: this.downwind };
     this.done = true;
     this.result.success ? playSuccess() : playFail();
   }
   render(ctx) {
     timerBar(ctx, this.timeLeft / this.timeMax);
     ctx.fillStyle = 'rgba(46, 90, 40, 0.35)'; ctx.fillRect(AREA.x, AREA.y + 62, AREA.w, AREA.h - 62);
-    ctx.fillStyle = 'rgba(120, 70, 30, 0.45)';
-    ctx.beginPath(); ctx.ellipse(this.pile.x, this.pile.y, this.pile.r, this.pile.r * 0.65, 0, 0, Math.PI * 2); ctx.fill();
-    drawText(ctx, 'The pile', this.pile.x, this.pile.y + this.pile.r * 0.65 + 18, { size: 14, weight: 'bold', color: '#f5deb3', align: 'center', outline: true });
+    // the wind, always visible
+    drawText(ctx, this.wind > 0 ? 'Wind  →  →' : '←  ←  Wind', AREA.x + AREA.w / 2, AREA.y + 82, { size: 17, weight: 'bold', color: '#d6eaf8', align: 'center', outline: true });
+    if (!this.pile) {
+      for (const sp of this.spots) {
+        ctx.strokeStyle = '#f5deb3'; ctx.lineWidth = 2; ctx.setLineDash([6, 6]);
+        ctx.beginPath(); ctx.ellipse(sp.x, sp.y, 62, 40, 0, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+        drawText(ctx, 'Pile here?', sp.x, sp.y + 6, { size: 14, weight: 'bold', color: '#f5deb3', align: 'center', outline: true });
+      }
+      drawText(ctx, 'Tap where the pile goes', AREA.x + AREA.w / 2, AREA.y + AREA.h - 46, { size: 16, weight: 'bold', color: '#ffd27a', align: 'center', outline: true });
+    } else {
+      ctx.fillStyle = 'rgba(120, 70, 30, 0.45)';
+      ctx.beginPath(); ctx.ellipse(this.pile.x, this.pile.y, this.pile.r, this.pile.r * 0.65, 0, 0, Math.PI * 2); ctx.fill();
+      drawText(ctx, this.downwind ? 'The pile (downwind)' : 'The pile (upwind)', this.pile.x, this.pile.y + this.pile.r * 0.65 + 18, { size: 14, weight: 'bold', color: this.downwind ? '#9fe0b5' : '#ffb3a8', align: 'center', outline: true });
+    }
     const s = shakeOffset(this.d, this.t);
     for (const l of this.leaves) {
       ctx.save(); ctx.translate(l.x + (l.inPile ? 0 : s.x * 0.5), l.y + (l.inPile ? 0 : s.y * 0.5)); ctx.rotate(l.a);
       ctx.fillStyle = l.color; ctx.beginPath(); ctx.ellipse(0, 0, 10, 5, 0, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     }
-    if (this.gust > 0) drawText(ctx, 'A gust of wind!', AREA.x + 140, AREA.y + 60, { size: 16, weight: 'bold', color: '#d6eaf8', align: 'center', outline: true });
+    if (this.gust > 0) drawText(ctx, this.downwind ? 'A gust! It blows leaves into your pile.' : 'A gust! It blows leaves away from your pile.', AREA.x + AREA.w / 2, AREA.y + 110, { size: 15, weight: 'bold', color: '#d6eaf8', align: 'center', outline: true });
     drawText(ctx, `${this.inPileCount()} of ${this.leaves.length} in the pile`, AREA.x + AREA.w / 2, AREA.y + AREA.h - 18, { size: 15, color: '#f0f0f0', align: 'center', outline: true });
   }
 }
@@ -404,7 +489,7 @@ export class ProofreadFlyer {
   }
   finish(success) {
     const found = this.words.filter((x) => x.typo && x.found).length;
-    this.result = { success, score: success ? Math.round(50 + 50 * (this.timeLeft / this.timeMax)) : Math.round((found / 3) * 40) };
+    this.result = { success, score: success ? Math.round(50 + 50 * (this.timeLeft / this.timeMax)) : Math.round((found / 3) * 40), lesson: LESSONS.proofread };
     this.done = true;
     success ? playSuccess() : playFail();
   }
@@ -478,7 +563,7 @@ export class SortReturns {
     if (b) this.judge(b.id);
   }
   finish() {
-    this.result = { success: this.correct >= this.items.length - 1, score: Math.round((this.correct / this.items.length) * 100) };
+    this.result = { success: this.correct >= this.items.length - 1, score: Math.round((this.correct / this.items.length) * 100), lesson: LESSONS.sort };
     this.done = true;
     this.result.success ? playSuccess() : playFail();
   }
@@ -503,6 +588,261 @@ export class SortReturns {
   }
 }
 
+// ---------------------------------------------------------------- ASSEMBLE! (Assemble IKEA Furniture)
+// The build's steps, shuffled; tap them in the order you would do them. Each recipe hides one real
+// rule of flat-pack assembly (the back panel squares the frame; bolts stay loose until the end;
+// tall furniture gets anchored), and a wrong tap says which step has to come first.
+export const RECIPES = [
+  { piece: 'Wardrobe', steps: ['Read every step first', 'Sort screws and dowels', 'Build the frame', 'Nail on the back panel', 'Slide in the shelves', 'Hang the doors'],
+    why: 'The back panel squares the frame, so it goes on before shelves and doors.' },
+  { piece: 'Desk', steps: ['Read every step first', 'Sort the hardware', 'Bolt legs on loosely', 'Add the cross brace', 'Tighten every bolt', 'Flip it onto its feet'],
+    why: 'Bolts stay loose until every piece is in, or the last piece will not line up.' },
+  { piece: 'Bookshelf', steps: ['Read every step first', 'Sort the hardware', 'Join sides to the base', 'Nail on the back panel', 'Add the shelves', 'Anchor it to the wall'],
+    why: 'Tall furniture tips over. The wall anchor is the step people skip and the one that matters.' },
+];
+export class AssembleSteps {
+  constructor(state, recipe) {
+    this.name = 'ASSEMBLE!';
+    this.hint = 'Tap the build steps in the order you would actually do them.';
+    this.d = difficultyFactor(state);
+    this.recipe = recipe ?? RECIPES[Math.floor(Math.random() * RECIPES.length)];
+    const order = shuffle(this.recipe.steps.map((text, i) => ({ text, i })));
+    this.cards = order.map((c, k) => ({ ...c, done: false, box: { x: AREA.x + 22 + (k % 3) * 190, y: AREA.y + 96 + Math.floor(k / 3) * 96, w: 176, h: 80 } }));
+    this.next = 0;
+    this.timeMax = 18 / this.d; this.timeLeft = this.timeMax; this.t = 0;
+    this.flash = 0; this.flashText = ''; this.mistakes = 0;
+    this.done = false; this.result = null;
+  }
+  update(dt) {
+    if (this.done) return;
+    this.t += dt; this.flash = Math.max(0, this.flash - dt * 0.8);
+    this.timeLeft -= dt;
+    if (this.timeLeft <= 0) this.finish(false);
+  }
+  handleTap(pt) {
+    if (this.done) return;
+    const s = shakeOffset(this.d, this.t);
+    const c = this.cards.find((x) => !x.done && inRect({ x: pt.x - s.x, y: pt.y - s.y }, x.box));
+    if (!c) return;
+    if (c.i === this.next) {
+      c.done = true; this.next += 1; playTick();
+      if (this.next >= this.cards.length) this.finish(true);
+    } else {
+      this.mistakes += 1; this.timeLeft = Math.max(0.1, this.timeLeft - 1.5); playError();
+      this.flash = 1; this.flashText = `Not yet: "${this.recipe.steps[this.next]}" comes first.`;
+    }
+  }
+  finish(success) {
+    const placed = this.next;
+    const score = success ? Math.round(55 + 45 * (this.timeLeft / this.timeMax)) - this.mistakes * 6 : Math.round((placed / this.cards.length) * 40);
+    this.result = { success, score: Math.max(0, Math.min(100, score)), lesson: LESSONS.assemble };
+    this.done = true;
+    success ? playSuccess() : playFail();
+  }
+  render(ctx) {
+    timerBar(ctx, this.timeLeft / this.timeMax);
+    drawText(ctx, `Building: ${this.recipe.piece}`, AREA.x + AREA.w / 2, AREA.y + 80, { size: 16, weight: 'bold', color: '#c9a876', align: 'center' });
+    const s = shakeOffset(this.d, this.t);
+    for (const c of this.cards) {
+      const b = { x: c.box.x + s.x, y: c.box.y + s.y, w: c.box.w, h: c.box.h };
+      ctx.fillStyle = c.done ? '#2c6e49' : '#2b3d4f'; roundRectPath(ctx, b.x, b.y, b.w, b.h, 10); ctx.fill();
+      ctx.strokeStyle = '#c9a876'; ctx.lineWidth = 2; roundRectPath(ctx, b.x, b.y, b.w, b.h, 10); ctx.stroke();
+      if (c.done) drawText(ctx, `${c.i + 1}`, b.x + 16, b.y + 24, { size: 16, weight: 'bold', color: '#ffd27a', align: 'center' });
+      drawWrapped(ctx, c.text, b.x + b.w / 2 + (c.done ? 8 : 0), b.y + 34, b.w - 36, 19, { size: 15, weight: 'bold', color: '#ffffff', align: 'center', shadow: false });
+    }
+    if (this.flash > 0) drawText(ctx, this.flashText, AREA.x + AREA.w / 2, AREA.y + 312, { size: 15, weight: 'bold', color: '#ff8a7e', align: 'center', outline: true, maxWidth: AREA.w - 40 });
+    else if (this.done && this.result.success) drawText(ctx, this.recipe.why, AREA.x + AREA.w / 2, AREA.y + 312, { size: 14, color: '#9fe0b5', align: 'center', maxWidth: AREA.w - 40 });
+    drawText(ctx, `Step ${Math.min(this.next + 1, this.cards.length)} of ${this.cards.length}`, AREA.x + AREA.w / 2, AREA.y + AREA.h - 18, { size: 15, color: '#f0f0f0', align: 'center' });
+  }
+}
+
+// ---------------------------------------------------------------- PERCENT! (Tutoring — High School Math)
+// The student's homework is the game: three percent problems about money they will actually meet
+// (sales, tips, savings, rent, tax). Every answer, right or wrong, shows the working, because a
+// worked example after each attempt is how the method transfers.
+export const PERCENT_PROBLEMS = [
+  { q: 'A $80 jacket is 25% off. What does it cost now?', answer: '$60', wrong: ['$55', '$20'], why: '25% is a quarter. A quarter of $80 is $20, and $80 - $20 = $60.' },
+  { q: 'Dinner is $40. What is a 20% tip?', answer: '$8', wrong: ['$4', '$12'], why: '10% of $40 is $4 (move the decimal). 20% is double that: $8.' },
+  { q: 'You earn $120 and save 15% of it. How much is saved?', answer: '$18', wrong: ['$15', '$12'], why: '10% is $12 and 5% is half of that, $6. $12 + $6 = $18.' },
+  { q: 'Rent goes from $600 to $660. What percent increase?', answer: '10%', wrong: ['6%', '60%'], why: 'It rose $60. $60 out of $600 is 60/600, which is 10%.' },
+  { q: 'A $50 game is on sale for $35. What percent off?', answer: '30%', wrong: ['15%', '35%'], why: '$15 off out of $50. 15/50 = 30/100, so 30% off.' },
+  { q: 'Sales tax is 8%. What is the tax on $25?', answer: '$2', wrong: ['$8', '$0.80'], why: '1% of $25 is $0.25. Eight of those is $2.' },
+  { q: 'You got 30 of 40 questions right. What is your score?', answer: '75%', wrong: ['70%', '30%'], why: '30 out of 40 is 3/4, which is 75 out of 100.' },
+  { q: 'A $200 phone drops 50%, then 10% more off that price. Final?', answer: '$90', wrong: ['$80', '$100'], why: 'Half of $200 is $100. 10% off $100 is $10. So $90, not 60% off.' },
+];
+export class PercentTutor {
+  constructor(state, problems) {
+    this.name = 'PERCENT!';
+    this.hint = 'Work through the student\'s homework with them. Pick the right answer.';
+    this.d = difficultyFactor(state);
+    this.problems = (problems ?? shuffle(PERCENT_PROBLEMS).slice(0, 3)).map((p) => ({ ...p, options: shuffle([p.answer, ...p.wrong]) }));
+    this.idx = 0; this.correct = 0;
+    this.perQ = 11 / this.d; this.qLeft = this.perQ; this.t = 0;
+    this.timeMax = this.perQ * this.problems.length;
+    this.reveal = null; this.buttons = [];
+    this.done = false; this.result = null;
+  }
+  current() { return this.problems[Math.min(this.idx, this.problems.length - 1)]; }
+  answer(opt) {
+    if (this.done || this.reveal) return;
+    const p = this.current();
+    const right = opt === p.answer;
+    if (right) { this.correct += 1; playGood(); } else playError();
+    this.reveal = { right, picked: opt, t: 2.6 };
+  }
+  update(dt) {
+    if (this.done) return;
+    this.t += dt;
+    if (this.reveal) {
+      this.reveal.t -= dt;
+      if (this.reveal.t <= 0) {
+        this.reveal = null; this.idx += 1; this.qLeft = this.perQ;
+        if (this.idx >= this.problems.length) this.finish();
+      }
+      return;
+    }
+    this.qLeft -= dt;
+    if (this.qLeft <= 0) this.answer(null);
+  }
+  handleTap(pt) {
+    if (this.done || this.reveal) return;
+    const s = shakeOffset(this.d, this.t);
+    const b = this.buttons.find((x) => inRect({ x: pt.x - s.x, y: pt.y - s.y }, x));
+    if (b) this.answer(b.opt);
+  }
+  finish() {
+    const n = this.problems.length;
+    this.result = { success: this.correct >= n - 1, score: Math.round((this.correct / n) * 100), lesson: LESSONS.percent };
+    this.done = true;
+    this.result.success ? playSuccess() : playFail();
+  }
+  render(ctx) {
+    timerBar(ctx, this.reveal ? 0 : this.qLeft / this.perQ);
+    const p = this.current();
+    drawWrapped(ctx, p.q, AREA.x + AREA.w / 2, AREA.y + 98, AREA.w - 80, 26, { size: 20, weight: 'bold', color: '#ffffff', align: 'center' });
+    const s = shakeOffset(this.d, this.t);
+    this.buttons = p.options.map((opt, i) => ({ opt, x: AREA.x + 45 + i * 180, y: AREA.y + 170, w: 150, h: 64 }));
+    for (const b of this.buttons) {
+      let fill = '#2b3d4f';
+      if (this.reveal && b.opt === p.answer) fill = '#2c6e49';
+      else if (this.reveal && b.opt === this.reveal.picked) fill = '#7a2e26';
+      ctx.fillStyle = fill; roundRectPath(ctx, b.x + s.x, b.y + s.y, b.w, b.h, 10); ctx.fill();
+      ctx.strokeStyle = '#c9a876'; ctx.lineWidth = 2; roundRectPath(ctx, b.x + s.x, b.y + s.y, b.w, b.h, 10); ctx.stroke();
+      drawText(ctx, b.opt, b.x + b.w / 2 + s.x, b.y + b.h / 2 + s.y, { size: 22, weight: 'bold', color: '#ffffff', align: 'center', baseline: 'middle' });
+    }
+    if (this.reveal) {
+      drawText(ctx, this.reveal.right ? 'Right.' : this.reveal.picked ? `Not ${this.reveal.picked}. It is ${p.answer}.` : `Time. It is ${p.answer}.`, AREA.x + AREA.w / 2, AREA.y + 272, { size: 17, weight: 'bold', color: this.reveal.right ? '#2ecc71' : '#ff8a7e', align: 'center' });
+      drawWrapped(ctx, p.why, AREA.x + AREA.w / 2, AREA.y + 302, AREA.w - 80, 20, { size: 15, color: '#f5deb3', align: 'center' });
+    }
+    drawText(ctx, `Problem ${Math.min(this.idx + 1, this.problems.length)} of ${this.problems.length}`, AREA.x + AREA.w / 2, AREA.y + AREA.h - 18, { size: 15, color: '#f0f0f0', align: 'center' });
+  }
+}
+
+// ---------------------------------------------------------------- FRAME! (Photography — Product Shots)
+// A viewfinder with the thirds drawn on it. Place the product on a third line, with the open space
+// on the side it faces. Dead center still gets the shot, just a flat one; the wrong side crowds it.
+export const FRAME_SHOTS = [
+  { label: 'Coffee mug, spout facing right', facing: 'right' },
+  { label: 'Sneaker, toe pointing left', facing: 'left' },
+  { label: 'Potted plant, growing up', facing: 'up' },
+  { label: 'Teapot, spout facing left', facing: 'left' },
+  { label: 'Desk lamp, shining right', facing: 'right' },
+  { label: 'Wristwatch, lying flat', facing: 'none' },
+];
+const VF = { x: AREA.x + 100, y: AREA.y + 92, w: 400, h: 240 };
+/** The five places you can put the product: four thirds intersections and dead center. */
+export const FRAME_SPOTS = [
+  { id: 'tl', col: 1, row: 1 }, { id: 'tr', col: 2, row: 1 },
+  { id: 'bl', col: 1, row: 2 }, { id: 'br', col: 2, row: 2 },
+  { id: 'c', col: 1.5, row: 1.5 },
+];
+/** How good a spot is for a shot: 'good' (thirds, facing into space), 'flat' (center), or 'crowded'. */
+export function frameVerdict(shot, spotId) {
+  if (spotId === 'c') return 'flat';
+  const left = spotId[1] === 'l', bottom = spotId[0] === 'b';
+  if (shot.facing === 'right') return left ? 'good' : 'crowded';
+  if (shot.facing === 'left') return left ? 'crowded' : 'good';
+  if (shot.facing === 'up') return bottom ? 'good' : 'crowded';
+  return 'good';
+}
+const FRAME_WHY = {
+  good: 'On a third, with room on the side it faces. That reads as a real product shot.',
+  flat: 'Dead center works, but it reads flat. Move it onto a third line.',
+  crowded: 'It faces straight into the edge. Leave the open space on the side it faces.',
+};
+export class FrameShot {
+  constructor(state, shots) {
+    this.name = 'FRAME!';
+    this.hint = 'Tap where the product goes: on a third, with space on the side it faces.';
+    this.d = difficultyFactor(state);
+    this.shots = shots ?? shuffle(FRAME_SHOTS).slice(0, 3);
+    this.idx = 0; this.scores = [];
+    this.perShot = 8 / this.d; this.shotLeft = this.perShot; this.t = 0;
+    this.timeMax = this.perShot * this.shots.length;
+    this.reveal = null;
+    this.done = false; this.result = null;
+  }
+  current() { return this.shots[Math.min(this.idx, this.shots.length - 1)]; }
+  spotPos(spot) { return { x: VF.x + (VF.w / 3) * spot.col, y: VF.y + (VF.h / 3) * spot.row }; }
+  place(spotId) {
+    if (this.done || this.reveal) return;
+    const v = spotId ? frameVerdict(this.current(), spotId) : 'crowded';
+    this.scores.push(v === 'good' ? 100 : v === 'flat' ? 45 : 0);
+    v === 'good' ? playGood() : playError();
+    this.reveal = { spotId, verdict: spotId ? v : 'time', t: 2.2 };
+  }
+  update(dt) {
+    if (this.done) return;
+    this.t += dt;
+    if (this.reveal) {
+      this.reveal.t -= dt;
+      if (this.reveal.t <= 0) {
+        this.reveal = null; this.idx += 1; this.shotLeft = this.perShot;
+        if (this.idx >= this.shots.length) this.finish();
+      }
+      return;
+    }
+    this.shotLeft -= dt;
+    if (this.shotLeft <= 0) this.place(null);
+  }
+  handleTap(pt) {
+    if (this.done || this.reveal) return;
+    const s = shakeOffset(this.d, this.t);
+    const spot = FRAME_SPOTS.find((sp) => { const p = this.spotPos(sp); return Math.hypot(pt.x - s.x - p.x, pt.y - s.y - p.y) <= 34; });
+    if (spot) this.place(spot.id);
+  }
+  finish() {
+    const good = this.scores.filter((x) => x === 100).length;
+    this.result = { success: good >= 2, score: Math.round(this.scores.reduce((a, b) => a + b, 0) / this.shots.length), lesson: LESSONS.frame };
+    this.done = true;
+    this.result.success ? playSuccess() : playFail();
+  }
+  render(ctx) {
+    timerBar(ctx, this.reveal ? 0 : this.shotLeft / this.perShot);
+    const shot = this.current();
+    drawText(ctx, shot.label, AREA.x + AREA.w / 2, AREA.y + 80, { size: 17, weight: 'bold', color: '#ffd27a', align: 'center' });
+    const s = shakeOffset(this.d, this.t);
+    ctx.fillStyle = 'rgba(10, 10, 14, 0.85)'; ctx.fillRect(VF.x + s.x, VF.y + s.y, VF.w, VF.h);
+    ctx.strokeStyle = 'rgba(240, 240, 240, 0.35)'; ctx.lineWidth = 1;
+    for (let k = 1; k <= 2; k++) {
+      ctx.beginPath(); ctx.moveTo(VF.x + (VF.w / 3) * k + s.x, VF.y + s.y); ctx.lineTo(VF.x + (VF.w / 3) * k + s.x, VF.y + VF.h + s.y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(VF.x + s.x, VF.y + (VF.h / 3) * k + s.y); ctx.lineTo(VF.x + VF.w + s.x, VF.y + (VF.h / 3) * k + s.y); ctx.stroke();
+    }
+    ctx.strokeStyle = '#c9a876'; ctx.lineWidth = 2; ctx.strokeRect(VF.x + s.x, VF.y + s.y, VF.w, VF.h);
+    for (const sp of FRAME_SPOTS) {
+      const p = this.spotPos(sp);
+      const chosen = this.reveal && this.reveal.spotId === sp.id;
+      ctx.fillStyle = chosen ? (this.reveal.verdict === 'good' ? '#2ecc71' : '#e67e22') : 'rgba(255, 210, 122, 0.55)';
+      ctx.beginPath(); ctx.arc(p.x + s.x, p.y + s.y, chosen ? 18 : 11, 0, Math.PI * 2); ctx.fill();
+    }
+    if (this.reveal) {
+      const text = this.reveal.verdict === 'time' ? 'The light changed. Shot missed.' : FRAME_WHY[this.reveal.verdict];
+      drawText(ctx, text, AREA.x + AREA.w / 2, VF.y + VF.h + 30, { size: 15, weight: 'bold', color: this.reveal.verdict === 'good' ? '#9fe0b5' : '#ffb3a8', align: 'center', maxWidth: AREA.w - 30 });
+    }
+    drawText(ctx, `Shot ${Math.min(this.idx + 1, this.shots.length)} of ${this.shots.length}`, AREA.x + AREA.w / 2, AREA.y + AREA.h - 18, { size: 15, color: '#f0f0f0', align: 'center' });
+  }
+}
+
 /** Which microgame each gig plays, by its choice tree (unique per gig template). */
 export const MICROGAME_BY_TREE = {
   movingHelp: LiftOnThree,
@@ -511,6 +851,9 @@ export const MICROGAME_BY_TREE = {
   yardWork: RakeThePile,
   creativeGig: ProofreadFlyer,
   mysteryShop: SortReturns,
+  furnitureAssembly: AssembleSteps,
+  tutoring: PercentTutor,
+  photoGig: FrameShot,
 };
 
 export function createQTE(gig, state) {

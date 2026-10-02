@@ -44,6 +44,7 @@ function playRun(seed, strategy, twist = null) {
       } else if (game.phase === 'GIG') {
         if (game.qteKind === 'ei') game.finishEIGame({ success: rnd() < (strategy === 'cautious' ? 0.8 : 0.5), score: 60, effects: { rep: 0.2 }, summary: 'x' });
         else if (game.qteKind === 'skill') game.finishGig({ success: rnd() < (state.stress > 70 ? 0.4 : 0.7), score: 60 });
+        else if (game.pendingOutcome) game.continueOutcome();
         else if (game.node) game.choose(game.node.choices[strategy === 'greedy' ? 0 : 1 % game.node.choices.length]);
         else game.afterChoices();
       } else if (game.phase === 'RESULTS') {

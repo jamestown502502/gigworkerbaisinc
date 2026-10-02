@@ -106,6 +106,8 @@ export const BREATH_PATTERNS = {
     { label: 'Rest', short: 'REST', press: false, tone: null, color: '#c9a876', secs: 4 },
   ] },
 };
+/** Why it works, for the result card. */
+export const BREATH_LESSON = 'Long, slow out-breaths calm the stress response in your body. A few minutes a day beats one long session.';
 export const BREATH_GRACE = 0.45;       // seconds at the start of each side that are not scored
 export const BREATH_CHOOSE_SECS = 10;   // no choice by then: Calm starts on its own
 
@@ -185,7 +187,7 @@ export class Breathe {
     }
     this.elapsed += dt;
     if (this.elapsed >= this.duration) {
-      this.result = { success: true, score: Math.round(this.sync() * 100) };
+      this.result = { success: true, score: Math.round(this.sync() * 100), lesson: BREATH_LESSON };
       this.done = true;
       playWarm();
     }
@@ -433,6 +435,20 @@ export const READ_CLIENT_SCENARIOS = [
 ];
 const READ_FACE_AT = 0.7, READ_CUE1_AT = 1.5, READ_CUE2_AT = 2.4;
 const FEELING_LABEL = { rushed: 'Rushed', suspicious: 'Wary', lonely: 'Lonely', embarrassed: 'Embarrassed', angry: 'Frustrated', grateful: 'Grateful' };
+/** The principle behind the good reply, per feeling: why it landed, so the next client with the same
+ *  feeling and different words is readable too (2026-10-02). Shown on the result card. */
+export const FEELING_LESSON = {
+  rushed: 'Rushed people want something taken off their plate. Ask what matters most, then get out of the way.',
+  suspicious: 'Wary people need proof, not promises. Offer ID or a way to check you, and never argue with the doubt.',
+  lonely: 'Lonely people mostly want to be heard. Your attention is part of the service.',
+  embarrassed: 'Embarrassed people need it to be normal. Make it small and move on, kindly.',
+  angry: 'Name the frustration first, then give clear facts. Arguing with a feeling makes it louder.',
+  grateful: 'Accept thanks warmly. Brushing it off can feel like refusing a gift.',
+};
+export const THREAD_LESSON = {
+  client: 'Acknowledge first, then offer a next step. Defending yourself raises the temperature, even when you are right.',
+  friend: 'Ask about them before talking about you. Support is built by listening, not by trading complaints.',
+};
 
 export class ReadClient {
   constructor(state, scenario) {
@@ -467,7 +483,7 @@ export class ReadClient {
     const feelingRight = this.picked === this.s.feeling;
     const resp = this.response;
     const score = (feelingRight ? 50 : 0) + (resp.good ? 50 : 0);
-    this.result = { success: score >= 50, score, effects: { ...resp.effects }, summary: feelingRight ? `You read them right (${FEELING_LABEL[this.s.feeling].toLowerCase()}).` : `They were ${FEELING_LABEL[this.s.feeling].toLowerCase()}, not ${FEELING_LABEL[this.picked].toLowerCase()}.` };
+    this.result = { success: score >= 50, score, lesson: FEELING_LESSON[this.s.feeling], effects: { ...resp.effects }, summary: feelingRight ? `You read them right (${FEELING_LABEL[this.s.feeling].toLowerCase()}).` : `They were ${FEELING_LABEL[this.s.feeling].toLowerCase()}, not ${FEELING_LABEL[this.picked].toLowerCase()}.` };
     if (!feelingRight) this.result.effects.rep = (this.result.effects.rep || 0) - 0.1;
     this.done = true;
     score >= 50 ? playWarm() : playFail();
@@ -766,11 +782,11 @@ export class ThreadGame {
     if (this.mode === 'client') {
       const success = this.heat <= 40;
       const acks = this.tags.filter((t) => t === 'ack').length;
-      this.result = { success, score: Math.round(100 - this.heat), effects: { rep: success ? 0.2 + acks * 0.05 : -0.2, stress: success ? -4 : 6 }, summary: (success ? 'The client cooled off. They\'ll remember that.' : 'The client stayed hot. That review won\'t be kind.') + this.rewriteNote() };
+      this.result = { success, score: Math.round(100 - this.heat), lesson: THREAD_LESSON.client, effects: { rep: success ? 0.2 + acks * 0.05 : -0.2, stress: success ? -4 : 6 }, summary: (success ? 'The client cooled off. They\'ll remember that.' : 'The client stayed hot. That review won\'t be kind.') + this.rewriteNote() };
       success ? playSuccess() : playFail();
     } else {
       const emp = this.tags.filter((t) => t === 'emp').length;
-      this.result = { success: true, score: Math.round((emp / this.thread.msgs.length) * 100), effects: { support: 4 + emp * 4, stress: -3 - emp * 2 }, summary: (emp >= 2 ? `${this.thread.title} sounded better by the end. So did you.` : `${this.thread.title} was glad you called, even if the call was mostly about you.`) + this.rewriteNote() };
+      this.result = { success: true, score: Math.round((emp / this.thread.msgs.length) * 100), lesson: THREAD_LESSON.friend, effects: { support: 4 + emp * 4, stress: -3 - emp * 2 }, summary: (emp >= 2 ? `${this.thread.title} sounded better by the end. So did you.` : `${this.thread.title} was glad you called, even if the call was mostly about you.`) + this.rewriteNote() };
       playWarm();
     }
     this.done = true;

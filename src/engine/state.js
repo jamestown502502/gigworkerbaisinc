@@ -60,6 +60,9 @@ export class GameState {
     this.lateGigTomorrow = null; // accepted late ping → an extra listing tomorrow
     this.eiWins = 0;
     this.eiDecks = {};           // no-repeat scenario decks for the EI games (see qte.js drawFromDeck)
+    this.clientLog = {};         // per client: visits, last job, whether it went well (game/clients.js)
+    this.lessonsSeen = [];       // takeaways shown this run, for the day-30 summary (2026-10-02)
+    this.recallDone = [];        // takeaways already asked back on a recall morning (game/recall.js)
     // The month's real numbers, for the day-30 / eviction "math of the month" page (2026-09-29).
     this.monthMath = { paidHours: 0, gigs: 0, lostToNonPayment: 0, rentPaid: 0, phonePaid: 0, travelEnergy: 0, sickDays: 0 };
     this.runComplete = false;    // day 30 finished

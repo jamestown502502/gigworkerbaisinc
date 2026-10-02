@@ -15,6 +15,7 @@ function runGig(game, gig, { choiceIdx = 0, qte = null } = {}) {
   while (game.phase === 'GIG' && guard++ < 10) {
     if (game.qteKind === 'ei') { game.finishEIGame({ success: true, score: 100, effects: { rep: 0.3, stress: -3 }, summary: 'ok' }); continue; }
     if (game.qteKind === 'skill') { game.finishGig(qte || { success: true, score: 80 }); break; }
+    if (game.pendingOutcome) { game.continueOutcome(); continue; }
     if (game.node) { game.choose(game.node.choices[choiceIdx % game.node.choices.length]); continue; }
     break;
   }

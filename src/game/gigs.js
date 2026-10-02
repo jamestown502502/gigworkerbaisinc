@@ -1,17 +1,18 @@
 import { extraListings, weirdGigStars, payMultiplier, repeatClientBonus } from './twists.js';
+import { CLIENT_NAMES } from './clients.js';
 
 export const GIG_TEMPLATES = [
   { title: 'Help Move Furniture', type: 'physical', payout: [60, 120], hours: [2, 4], risk: [10, 30], location: 'okay', skillReq: 'strength', hasQTE: true, choiceTree: 'movingHelp', outdoor: true },
   { title: 'Yard Work — Leaves & Mowing', type: 'physical', payout: [40, 80], hours: [2, 3], risk: [5, 15], location: 'safe', skillReq: 'none', hasQTE: true, choiceTree: 'yardWork', outdoor: true },
   { title: 'Dog Walking — Energetic Husky', type: 'service', payout: [25, 50], hours: [1, 2], risk: [5, 20], location: 'safe', skillReq: 'none', hasQTE: true, choiceTree: 'dogWalking', outdoor: true },
-  { title: 'Assemble IKEA Furniture', type: 'service', payout: [50, 100], hours: [2, 4], risk: [5, 10], location: 'okay', skillReq: 'tech', hasQTE: false, choiceTree: 'furnitureAssembly', outdoor: false },
+  { title: 'Assemble IKEA Furniture', type: 'service', payout: [50, 100], hours: [2, 4], risk: [5, 10], location: 'okay', skillReq: 'tech', hasQTE: true, choiceTree: 'furnitureAssembly', outdoor: false },
   { title: 'Logo Design — Small Business', type: 'creative', payout: [80, 150], hours: [3, 5], risk: [15, 30], location: 'safe', skillReq: 'tech', hasQTE: true, choiceTree: 'creativeGig', outdoor: false },
-  { title: 'Photography — Product Shots', type: 'creative', payout: [60, 120], hours: [2, 4], risk: [10, 25], location: 'okay', skillReq: 'tech', hasQTE: false, choiceTree: 'photoGig', outdoor: false },
+  { title: 'Photography — Product Shots', type: 'creative', payout: [60, 120], hours: [2, 4], risk: [10, 25], location: 'okay', skillReq: 'tech', hasQTE: true, choiceTree: 'photoGig', outdoor: false },
   { title: 'Water Slide Tester', type: 'weird', payout: [80, 150], hours: [1, 3], risk: [5, 15], location: 'safe', skillReq: 'none', hasQTE: false, choiceTree: 'waterSlide', outdoor: true },
   { title: 'Professional Cuddler', type: 'weird', payout: [60, 80], hours: [1, 2], risk: [20, 40], location: 'okay', skillReq: 'social', hasQTE: false, choiceTree: 'cuddler', outdoor: false },
   { title: 'Mattress Tester — Hotel Review', type: 'weird', payout: [50, 100], hours: [6, 8], risk: [5, 10], location: 'safe', skillReq: 'none', hasQTE: false, choiceTree: 'mattressTest', outdoor: false },
   { title: 'Clean Out Garage', type: 'physical', payout: [50, 90], hours: [3, 4], risk: [10, 20], location: 'okay', skillReq: 'strength', hasQTE: true, choiceTree: 'garageClean', outdoor: true },
-  { title: 'Tutoring — High School Math', type: 'service', payout: [30, 60], hours: [1, 2], risk: [5, 10], location: 'safe', skillReq: 'social', hasQTE: false, choiceTree: 'tutoring', outdoor: false },
+  { title: 'Tutoring — High School Math', type: 'service', payout: [30, 60], hours: [1, 2], risk: [5, 10], location: 'safe', skillReq: 'social', hasQTE: true, choiceTree: 'tutoring', outdoor: false },
   { title: 'Mystery Shopping — Review Store', type: 'weird', payout: [40, 70], hours: [1, 2], risk: [5, 15], location: 'okay', skillReq: 'none', hasQTE: true, choiceTree: 'mysteryShop', outdoor: false },
 ];
 
@@ -20,8 +21,6 @@ const FLAVOR = {
   okay: ['Busy part of town, keep your wits.', 'The address checks out... mostly.', 'A little out of the way, but fine.'],
   sketchy: ['The listing has three typos and no photo.', 'Cash only. No questions.', 'The neighbors are watching from windows.'],
 };
-
-const CLIENT_NAMES = ['Marge', 'Dev', 'Tony', 'Priya', 'Walt', 'June', 'Otis', 'Rosa', 'Kip', 'Lena'];
 
 const randInt = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];

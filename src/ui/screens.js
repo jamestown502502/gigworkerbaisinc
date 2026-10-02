@@ -398,11 +398,18 @@ export function gigScreen(ctx, game) {
     return;
   }
 
+  if (game.pendingOutcome) { outcomeCard(ctx, game); return; }
+
   const node = game.node;
   if (!node) return;
 
-  panel(ctx, 80, 120, 640, 140);
-  drawWrapped(ctx, node.text, 105, 158, 590, 26, { size: 17, color: '#f0f0f0' });
+  // The client at the door (a first meeting, or how last time went), then the situation.
+  panel(ctx, 80, 108, 640, 164);
+  let ty = 146;
+  if (game.clientGreeting) {
+    ty = drawWrapped(ctx, game.clientGreeting, 105, 136, 590, 20, { size: 15, color: '#e8c98a' }) + 10;
+  }
+  drawWrapped(ctx, node.text, 105, ty, 590, 25, { size: 17, color: '#f0f0f0' });
 
   const s = game.state;
   node.choices.forEach((choice, i) => {
@@ -417,6 +424,33 @@ export function gigScreen(ctx, game) {
       onDisabled: () => { playError(); game.message = `You need a ${needsItem} for that.`; },
     });
   });
+}
+
+/** "+$20  ·  -15 energy  ·  +10 stress", from a choice's effects. */
+export function effectLine(fx = {}) {
+  const parts = [];
+  if (fx.cash) parts.push(`${fx.cash > 0 ? '+' : '-'}$${Math.abs(Math.round(fx.cash))}`);
+  if (fx.energy) parts.push(`${signed(fx.energy)} energy`);
+  if (fx.stress) parts.push(`${signed(fx.stress)} stress`);
+  if (fx.rep) parts.push(`${signed(fx.rep)} reputation`);
+  return parts.join('  ·  ');
+}
+
+/** After a choice: what the client did about it, what it cost or earned, and the takeaway. */
+function outcomeCard(ctx, game) {
+  const o = game.pendingOutcome;
+  panel(ctx, 80, 108, 640, 176);
+  drawText(ctx, `You: ${o.choice}`, 105, 136, { size: 14, color: '#c9a876', maxWidth: 590 });
+  const ey = drawWrapped(ctx, o.text, 105, 168, 590, 24, { size: 17, color: '#f0f0f0' });
+  const fx = effectLine(o.effects);
+  drawText(ctx, fx || 'No change', 105, Math.min(ey + 8, 270), { size: 15, weight: 'bold', color: '#f5deb3' });  // neutral: a cost is not shown as a win
+  if (o.lesson) {
+    panel(ctx, 80, 300, 640, 128);
+    ctx.fillStyle = '#f1c40f'; ctx.fillRect(82, 302, 636, 4);
+    drawText(ctx, 'TAKEAWAY', 105, 332, { size: 13, weight: 'bold', color: '#f1c40f' });
+    drawWrapped(ctx, o.lesson, 105, 362, 590, 24, { size: 17, color: '#ffffff' });
+  }
+  button(ctx, 300, 448, 200, 52, 'Continue', { color: '#2c6e49', onClick: () => game.continueOutcome() });
 }
 
 /** Shared frame for every minigame (skill QTE, EI game, evening game). */
@@ -476,10 +510,14 @@ function starRow(ctx, cx, y, n, k) {
     const appear = Math.max(0, Math.min(1, (k - 0.25 - i * 0.15) / 0.18));
     const on = i < n;
     const scale = on ? 0.6 + 0.4 * appear + (appear > 0 && appear < 1 ? 0.25 * Math.sin(Math.PI * appear) : 0) : 1;
+    // scaled about its own centre, drawn at its real position (so the text probe measures where it is);
+    // unlit stars are #7d6b4f, 3.7:1 on the card (was #4a3d2a at 1.79:1, under the 3:1 graphics floor)
+    const sx = cx + (i - 1) * 46;
     ctx.save();
-    ctx.translate(cx + (i - 1) * 46, y);
+    ctx.translate(sx, y);
     ctx.scale(scale, scale);
-    drawText(ctx, '★', 0, 0, { size: 38, color: on && appear > 0 ? '#f1c40f' : '#4a3d2a', align: 'center', baseline: 'middle', shadow: false });
+    ctx.translate(-sx, -y);
+    drawText(ctx, '★', sx, y, { size: 38, color: on && appear > 0 ? '#f1c40f' : '#7d6b4f', align: 'center', baseline: 'middle', shadow: false });
     ctx.restore();
   }
 }
@@ -500,7 +538,7 @@ function resultCard(ctx, game) {
   if (game.qteKind === 'skill') {
     title = !r.success ? 'FUMBLED' : score >= 85 ? 'GREAT WORK!' : score >= 60 ? 'GOOD JOB' : 'GOT IT DONE';
     const base = game.currentGig ? game.currentGig.payout : 0;
-    lines.push(r.success ? `Pay bonus +$${Math.round(base * (score / 500))}  ·  Reputation +0.1` : `Pay cut -$${Math.round(base * 0.3)}  ·  Reputation -0.2  ·  Stress +5`);
+    lines.push(r.success ? `Pay bonus +$${Math.round(base * (score / 500))}  ·  Reputation +0.1` : `Pay cut -$${Math.round(base * 0.3)}  ·  Reputation -0.2  ·  Stress +3`);
   } else if (game.qteKind === 'ei') {
     title = r.success ? 'YOU READ THE ROOM' : 'MISREAD';
     const fx = r.effects || {};
@@ -518,7 +556,7 @@ function resultCard(ctx, game) {
   if (globalThis.__textProbe) globalThis.__textProbe.push({ layer: true });
   ctx.fillStyle = `rgba(8, 6, 4, ${0.88 * k})`;
   roundRectPath(ctx, 92, 102, 616, 426, 12); ctx.fill();
-  const x = 190, y = 160, w = 420, h = 290;
+  const x = 190, y = r.lesson ? 146 : 160, w = 420, h = r.lesson ? 330 : 290;
   ctx.save();
   modalScale(ctx, t, 400, y + h / 2);
   panel(ctx, x, y, w, h, { alpha: 0.98 });
@@ -533,6 +571,8 @@ function resultCard(ctx, game) {
   ctx.fillStyle = '#f5deb3'; ctx.fillRect(bx + bw * 0.6 - 1, by - 3, 2, 20);
   drawText(ctx, `Score ${Math.round(score * k)} / 100`, 400, by + 36, { size: 15, weight: 'bold', color: '#ffffff', align: 'center' });
   lines.forEach((l, i) => drawText(ctx, l, 400, by + 62 + i * 20, { size: 14, color: '#f5deb3', align: 'center', maxWidth: w - 30 }));
+  // The why: one real-world takeaway, so the score comes with a reason (2026-10-02).
+  if (r.lesson) drawWrapped(ctx, r.lesson, 400, by + 70 + lines.length * 20, w - 44, 18, { size: 14, color: '#e8c98a', align: 'center' });
   if (t > 0.4) drawText(ctx, 'Tap to continue', 400, y + h - 16, { size: 13, color: '#e8d9b8', align: 'center' });
   ctx.restore();
 }
@@ -987,6 +1027,7 @@ export function summaryScreen(ctx, game) {
     ['Balance', `${Math.round(s.health)} — ${balanceVerdict(s.health)}`],
     ['Evenings rested', `${s.eveningsRested}`],
     ['Clients read well', `${s.eiWins}`],
+    ['Lessons learned on the job', `${(s.lessonsSeen || []).length}`],
   ];
   if (goal) rows.push(['Side goal', (s.sideGoalDone || goal.check(s)) ? 'Done ✓' : 'Missed']);
   const gy = 224;
