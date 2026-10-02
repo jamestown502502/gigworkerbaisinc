@@ -328,3 +328,11 @@ Tester report: 27 rows (`GigWorkerBaisinic - Issue Report Round 2.xlsx`). Full b
 - **UI:** `UI.lastHit` + `UI.onPress` (click + haptic) give every button a release flash;
   `button(..., { ghost: true })` is the secondary style. Settings and Shop close on outside tap.
 - Tests: 114 unit; e2e 83/87 locally, the 4 being Windows-WebKit timeouts that pass alone.
+
+## 9. Round 3: settings is a pause (2026-10-02, same day)
+
+User-reported: opening Settings during a timed challenge let the timer run out behind the panel
+("games break after going to settings"). `Game.update()` now returns early while `settingsOpen`
+or `resumePrompt` is up, after FX/transition/tooltip housekeeping — game time (morning intro,
+travel, every minigame, results count-up) freezes; presentation keeps animating. Unit tests in
+`tests/unit/twists.test.js` ("settings is a pause").
