@@ -363,3 +363,18 @@ dialogue). Full critique, rankings and before/after:
 - e2e hooks added: `window.__choices`, `window.__clients`. New readability test renders every
   reaction card, every client greeting, every result card with a lesson, and the new games' reveals.
 - Tests: `tests/unit/depth.test.js` (15).
+
+### 10a. Part 2, same day: skill-testing mechanics and spaced recall
+
+- **LIFT!** knees first: `update(dt, pointer)` adds to `squat` while the finger is down during the
+  count; the release (tap) lifts. Bent (`squat >= SQUAT_MIN`, 0.35 s) and on time = a clean lift;
+  on time but not bent = a back lift at half score. Success = 3 clean lifts (`clean[]`).
+- **RAKE!** downwind: `wind` is +1/-1 per play; the first tap on a "Pile here?" spot calls
+  `placePile(side)` (auto-left after 4 s); gusts move up to 4 loose leaves downwind and `settle()`
+  them, so a downwind pile collects and an upwind one loses. `result.downwind`. Timer 16/d (was 14).
+- **UNTANGLE!** a wrong tap names whose leash is on top (`flashText`), drawn below the dog names.
+- **Recall** (`src/game/recall.js`): `RECALL_BANK` (19 questions, each tied to a real lesson
+  string), `recallCard(state)` on `RECALL_DAYS` 10/17/24 for a lesson in `lessonsSeen` and not in
+  `recallDone`; unshifted onto the morning queue in `beginMorning`. Options carry `after`, which
+  `chooseEventOption` puts in the card's `subtext`. Right = -4 stress.
+- e2e hook `window.__recall`; readability test "the new mechanics and every recall card".

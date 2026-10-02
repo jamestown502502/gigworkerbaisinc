@@ -443,7 +443,7 @@ function outcomeCard(ctx, game) {
   drawText(ctx, `You: ${o.choice}`, 105, 136, { size: 14, color: '#c9a876', maxWidth: 590 });
   const ey = drawWrapped(ctx, o.text, 105, 168, 590, 24, { size: 17, color: '#f0f0f0' });
   const fx = effectLine(o.effects);
-  drawText(ctx, fx || 'No change', 105, Math.min(ey + 8, 270), { size: 15, weight: 'bold', color: o.landed ? '#9fe0b5' : '#ffb3a8' });
+  drawText(ctx, fx || 'No change', 105, Math.min(ey + 8, 270), { size: 15, weight: 'bold', color: '#f5deb3' });  // neutral: a cost is not shown as a win
   if (o.lesson) {
     panel(ctx, 80, 300, 640, 128);
     ctx.fillStyle = '#f1c40f'; ctx.fillRect(82, 302, 636, 4);

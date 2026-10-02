@@ -8,6 +8,7 @@ import { LESSONS, HEAVY, PackTheCar, AssembleSteps, RECIPES, PercentTutor, PERCE
 import { FEELING_LESSON, THREAD_LESSON, BREATH_LESSON, ReadClient, ThreadGame, READ_CLIENT_SCENARIOS } from '../../src/game/qte.js';
 import { GIG_TEMPLATES } from '../../src/game/gigs.js';
 import { makeGame, withRandom } from './helpers.js';
+import { RECALL_BANK, RECALL_DAYS, recallCard, recallCandidates } from '../../src/game/recall.js';
 
 const CALM = { stress: 0, energy: 100, health: 100, settings: {} };
 const DT = 1 / 60;
@@ -198,5 +199,42 @@ describe('FRAME!', () => {
     const idle = new FrameShot(CALM);
     for (let t = 0; t < 60 && !idle.done; t += DT) idle.update(DT);
     expect(idle.result.success).toBe(false);
+  });
+});
+
+
+describe('spaced recall: an earlier takeaway comes back as a question', () => {
+  it('every question is about a real lesson, with three distinct options that fit their buttons', () => {
+    const lessons = new Set([...Object.values(LESSONS), ...Object.values(FEELING_LESSON), ...Object.values(THREAD_LESSON), BREATH_LESSON, ...allChoices().map(({ c }) => c.lesson)]);
+    for (const r of RECALL_BANK) {
+      expect(lessons.has(r.lesson), r.q).toBe(true);
+      expect(new Set(r.options).size, r.q).toBe(3);
+      for (const o of r.options) expect(o.length, o).toBeLessThanOrEqual(40);
+      expect(r.q.length, r.q).toBeLessThanOrEqual(80);
+    }
+  });
+  it('only asks about lessons this run has shown, only on recall days, and never twice', () => {
+    const state = { day: RECALL_DAYS[0], lessonsSeen: [LESSONS.pack], recallDone: [], stress: 50 };
+    expect(recallCard({ ...state, day: 9 })).toBe(null);
+    expect(recallCard({ ...state, lessonsSeen: [] })).toBe(null);
+    const card = recallCard(state);
+    expect(card.text).toMatch(/toolbox/);
+    const right = card.choices.find((o) => o.text === 'On the floor, low');
+    expect(right.apply(state)).toMatch(/Right/);
+    expect(state.stress).toBe(46);
+    expect(recallCandidates(state)).toEqual([]);
+    const wrong = recallCard({ ...state, recallDone: [] }).choices.find((o) => o.text !== 'On the floor, low');
+    expect(wrong.after).toContain('The answer: On the floor, low.');
+    expect(wrong.after).toContain(LESSONS.pack);
+  });
+  it('the morning queue opens with the question, and the answer explains itself once chosen', () => {
+    const { game, state } = makeGame({ day: RECALL_DAYS[1], lessonsSeen: [LESSONS.sort] });
+    game.beginMorning();
+    while (game.ticker.idx < game.ticker.lines.length) game.ticker.idx += 1;
+    game.startNextEvent();
+    expect(game.activeEvent.label).toBe('REMEMBER THIS?');
+    game.chooseEventOption(game.activeEvent.choices[0]);
+    expect(game.activeEvent.subtext).toContain(LESSONS.sort);
+    expect(state.recallDone).toEqual([LESSONS.sort]);
   });
 });

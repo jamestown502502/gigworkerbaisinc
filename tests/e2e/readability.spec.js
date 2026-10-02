@@ -234,3 +234,48 @@ test('every reaction card, client greeting and takeaway is readable', async ({ p
 
   expect(problems, problems.join('\n')).toEqual([]);
 });
+
+// Skill-testing mechanics and spaced recall (2026-10-02, part 2): LIFT while bending, RAKE before
+// and after the pile is placed (both sides of the wind, mid-gust), UNTANGLE's named-leash line, and
+// every recall question before and after it is answered (right and wrong).
+test('the new mechanics and every recall card are readable', async ({ page }) => {
+  test.setTimeout(240000);
+  await boot(page, { save: { tutorialSeen: true, energy: 100, cash: 300, day: 5 } });
+  await settleMorning(page);
+  await page.evaluate(() => { window.__loopPaused = true; });
+  const problems = [];
+  const micro = async (setup, label) => {
+    await page.evaluate(setup);
+    problems.push(...await audit(page, label));
+  };
+  const base = 'const g = window.__game, M = window.__micro; g.phase = "GIG"; g.qteKind = "skill"; g.qteReadyT = 99; g.qteIntroHold = false; g.qteEndTimer = 0; g.pendingOutcome = null; g.currentGig = g.state.todayGigs[0];';
+  await micro(new Function(`${base} g.qte = new M.LiftOnThree(g.state); g.qte.t = 0.6;`), 'lift counting');
+  await micro(new Function(`${base} g.qte = new M.LiftOnThree(g.state); g.qte.t = 0.8; g.qte.squat = 0.5;`), 'lift knees bent');
+  await micro(new Function(`${base} g.qte = new M.LiftOnThree(g.state); g.qte.t = g.qte.liftAt(); g.qte.handleTap();`), 'lift back-lift line');
+  for (const wind of [1, -1]) {
+    await micro(new Function(`${base} g.qte = new M.RakeThePile(g.state); g.qte.wind = ${wind};`), `rake place wind ${wind}`);
+    for (const side of [1, -1]) {
+      await micro(new Function(`${base} g.qte = new M.RakeThePile(g.state); g.qte.wind = ${wind}; g.qte.placePile(${side}); g.qte.gust = 0.5;`), `rake pile ${side} wind ${wind} gust`);
+    }
+  }
+  await micro(new Function(`${base} g.qte = new M.UntangleLeash(g.state); const u = g.qte.dogs[g.qte.stack[0]]; g.qte.handleTap(g.qte.dogPos(u));`), 'untangle wrong leash');
+
+  const n = await page.evaluate(() => window.__recall.RECALL_BANK.length);
+  for (let i = 0; i < n; i++) {
+    for (const pick of ['open', 'right', 'wrong']) {
+      await page.evaluate(({ i, pick }) => {
+        const g = window.__game, R = window.__recall;
+        g.qte = null; g.qteKind = null; g.phase = 'MORNING';
+        const r = R.RECALL_BANK[i];
+        const s = g.state; s.day = R.RECALL_DAYS[0]; s.lessonsSeen = [r.lesson]; s.recallDone = [];
+        const card = R.recallCard(s, () => 0);
+        g.eventQueue = []; g.activeEvent = { ...card }; g.eventT = 1; g.eventOutcome = '';
+        if (pick !== 'open') g.chooseEventOption(card.choices.find((o) => (o.text === r.options[0]) === (pick === 'right')));
+        g.eventT = 1;
+      }, { i, pick });
+      problems.push(...await audit(page, `recall ${i} ${pick}`));
+    }
+  }
+
+  expect(problems, problems.join('\n')).toEqual([]);
+});

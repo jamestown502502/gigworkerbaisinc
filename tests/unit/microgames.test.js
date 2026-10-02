@@ -43,14 +43,24 @@ describe('every gig with a challenge plays its own job', () => {
 });
 
 describe('LIFT!', () => {
-  it('lifting on three every time succeeds with a high score', () => {
+  it('knees bent during the count, then lifting on three, succeeds with a high score', () => {
     const g = new LiftOnThree(CALM);
     for (let guard = 0; guard < 5000 && !g.done; guard++) {
-      if (!g.tapped && g.rest <= 0 && g.t >= g.liftAt()) g.handleTap();
-      g.update(DT);
+      if (!g.tapped && g.rest <= 0 && g.t >= g.liftAt()) g.handleTap();   // the release
+      g.update(DT, { down: !g.tapped });                                  // holding through the count
     }
     expect(g.result.success).toBe(true);
     expect(g.result.score).toBeGreaterThan(80);
+  });
+  it('lifting on three without bending is a back lift: half the score, never a clean lift', () => {
+    const g = new LiftOnThree(CALM);
+    for (let guard = 0; guard < 5000 && !g.done; guard++) {
+      if (!g.tapped && g.rest <= 0 && g.t >= g.liftAt()) g.handleTap();
+      g.update(DT, { down: false });
+    }
+    expect(g.result.success).toBe(false);
+    expect(g.result.score).toBeLessThanOrEqual(50);
+    expect(g.clean.every((c) => !c)).toBe(true);
   });
   it('tapping on "one" is too early; doing nothing drops everything', () => {
     const early = new LiftOnThree(CALM);
@@ -76,6 +86,7 @@ describe('UNTANGLE!', () => {
     const under = g.dogs[g.stack[0]];
     const before = g.timeLeft;
     g.handleTap(g.dogPos(under));
+    expect(g.flashText).toMatch(/Top of the pile first/);
     expect(g.timeLeft).toBeLessThan(before);
     expect(under.free).toBe(false);
     expect(runIdle(new UntangleLeash(CALM)).result.success).toBe(false);
@@ -126,6 +137,7 @@ describe('PACK!', () => {
 describe('RAKE!', () => {
   it('sweeping every leaf to the pile succeeds', () => {
     const g = new RakeThePile(CALM);
+    g.placePile(g.wind);
     for (const l of g.leaves) {
       if (g.done) break;
       if (l.inPile) continue;
@@ -141,6 +153,8 @@ describe('RAKE!', () => {
   });
   it('taps alone can do it too (no dragging needed)', () => {
     const g = new RakeThePile(CALM);
+    g.handleTap(g.spots.find((sp) => sp.side === g.wind));   // the first tap places the pile
+    expect(g.downwind).toBe(true);
     for (let k = 0; k < 400 && !g.done; k++) {
       const loose = g.leaves.find((l) => !l.inPile);
       if (!loose) break;
@@ -152,6 +166,25 @@ describe('RAKE!', () => {
   });
   it('doing nothing fails when the clock runs out', () => {
     expect(runIdle(new RakeThePile(CALM)).result.success).toBe(false);
+  });
+  it('the wind decides: a pile downwind collects what the gusts carry, one upwind does not', () => {
+    const collected = (side) => {
+      const g = new RakeThePile(CALM);
+      g.wind = 1;
+      g.placePile(side);
+      // every loose leaf sits just upwind of the right-hand spot, so a gust can reach it
+      for (const l of g.leaves) { l.x = g.spots[1].x - 70; l.y = g.spots[1].y; }
+      for (let t = 0; t < 12 && !g.done; t += DT) g.update(DT, { down: false });
+      return g.inPileCount();
+    };
+    expect(collected(1)).toBeGreaterThan(0);
+    expect(collected(-1)).toBe(0);
+  });
+  it('no choice in four seconds: the pile goes on the left, so the game always goes on', () => {
+    const g = new RakeThePile(CALM);
+    for (let t = 0; t < 4.2; t += DT) g.update(DT, { down: false });
+    expect(g.pile).toBeTruthy();
+    expect(g.pile.x).toBe(g.spots[0].x);
   });
 });
 

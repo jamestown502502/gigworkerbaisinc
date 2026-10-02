@@ -12,6 +12,7 @@ import { createQTE } from './microgames.js';
 import { rollDailyEvents, generateMorningFlavor } from './events.js';
 import { rollWeather } from './weather.js';
 import { neighborBeat } from './neighbor.js';
+import { recallCard } from './recall.js';
 import { rollMonth, rentExtra, supportMultiplier, scamMultiplier, windDownMultiplier, goalOf, twistOf } from './twists.js';
 import { UI } from '../ui/screens.js';
 import * as screens from '../ui/screens.js';
@@ -259,6 +260,9 @@ export class Game {
     // Dee across the hall opens each new week (src/game/neighbor.js).
     const beat = inTutorial ? null : neighborBeat(s);
     if (beat) this.eventQueue.unshift(beat);
+    // ...and the morning after each visit, one earlier takeaway comes back as a question (recall.js).
+    const quiz = inTutorial ? null : recallCard(s);
+    if (quiz) this.eventQueue.unshift(quiz);
     s.save();
   }
 
@@ -277,7 +281,8 @@ export class Game {
 
   chooseEventOption(opt) {
     this.eventOutcome = opt.apply(this.state) || '';
-    this.activeEvent = { ...this.activeEvent, choices: null, resolved: true };
+    // `after`: an option may explain itself once chosen (the recall card's answer and reason).
+    this.activeEvent = { ...this.activeEvent, choices: null, resolved: true, subtext: opt.after || this.activeEvent.subtext };
     this.eventT = 0;
     this.state.clamp();
     this.state.save();

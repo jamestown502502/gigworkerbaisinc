@@ -68,10 +68,16 @@ export const LESSONS = {
 
 // ---------------------------------------------------------------- LIFT! (Help Move Furniture)
 const LIFT_LEAD = 0.45;
+/** Seconds the finger must be held during the count for the lift to count as knees-bent. */
+export const SQUAT_MIN = 0.35;
+// Knees first (2026-10-02): press and hold during the count to bend your knees, let go on THREE to
+// lift. A tap on THREE without bending still lifts, but with your back: half the score and not a
+// clean lift. The skill being scored is the real one, a shared count AND a leg lift.
 export class LiftOnThree {
   constructor(state) {
     this.name = 'LIFT!';
-    this.hint = 'Your partner counts to three. Tap on THREE, together.';
+    this.hint = 'Hold to bend your knees during the count. Let go on THREE to lift together.';
+    this.squat = 0; this.clean = [];
     this.d = difficultyFactor(state);
     this.items = shuffle(['Couch', 'Fridge', 'Dresser', 'Mattress']);
     this.beat = 0.62;
@@ -82,18 +88,20 @@ export class LiftOnThree {
   }
   liftAt() { return LIFT_LEAD + this.beat * 2; }
   count() { return this.t < LIFT_LEAD ? -1 : Math.min(2, Math.floor((this.t - LIFT_LEAD) / this.beat)); }
-  update(dt) {
+  bent() { return this.squat >= SQUAT_MIN; }
+  update(dt, pointer = InputManager.pointer) {
     if (this.done) return;
     if (this.rest > 0) {
       this.rest -= dt;
       if (this.rest <= 0) {
         this.idx += 1;
         if (this.idx >= this.items.length) return this.finish();
-        this.t = 0; this.tapped = false; this.feedback = null; this.lastCount = -1;
+        this.t = 0; this.tapped = false; this.feedback = null; this.lastCount = -1; this.squat = 0;
       }
       return;
     }
     this.t += dt;
+    if (pointer?.down && !this.tapped) this.squat += dt;   // holding = knees bent
     const c = this.count();
     if (c !== this.lastCount && c >= 0) { this.lastCount = c; c < 2 ? playTick() : playGood(); }
     if (!this.tapped && this.t > this.liftAt() + this.window) this.endLift(0, 'Too slow. It drops back down.');
@@ -101,18 +109,21 @@ export class LiftOnThree {
   handleTap() {
     if (this.done || this.tapped || this.rest > 0) return;
     const diff = this.t - this.liftAt();
-    if (Math.abs(diff) <= this.window) this.endLift(Math.round(100 - (Math.abs(diff) / this.window) * 60), 'Together. Up it goes.');
-    else this.endLift(0, diff < 0 ? 'Too early. You lift alone.' : 'Too late. They lift alone.');
+    if (Math.abs(diff) > this.window) return this.endLift(0, diff < 0 ? 'Too early. You lift alone.' : 'Too late. They lift alone.');
+    const timing = Math.round(100 - (Math.abs(diff) / this.window) * 60);
+    if (this.bent()) this.endLift(timing, 'Knees bent, together. Up it goes.', true);
+    else this.endLift(Math.round(timing * 0.5), 'On time, but with your back. Hold first to bend your knees.');
   }
-  endLift(score, text) {
+  endLift(score, text, clean = false) {
     this.tapped = true;
+    this.clean.push(clean);
     this.scores.push(score);
     this.feedback = { ok: score > 0, text };
     score > 0 ? playTick() : playError();
     this.rest = 0.85;
   }
   finish() {
-    const good = this.scores.filter((s) => s > 0).length;
+    const good = this.clean.filter(Boolean).length;
     this.result = { success: good >= 3, score: Math.round(this.scores.reduce((a, b) => a + b, 0) / this.items.length), lesson: LESSONS.lift };
     this.done = true;
     this.result.success ? playSuccess() : playFail();
@@ -133,7 +144,9 @@ export class LiftOnThree {
     drawText(ctx, this.items[Math.min(this.idx, this.items.length - 1)], cx + sh.x, iy + h / 2 + 6, { size: 18, weight: 'bold', color: '#ffffff', align: 'center', outline: true });
     // you and your partner, holding the ends
     for (const side of [-1, 1]) {
-      const px = cx + side * (w / 2 + 34), top = floor - 110 - lifted * 20;
+      // you crouch while your knees are bent (holding), your partner on every count
+      const crouch = side < 0 ? (!this.tapped && this.squat > 0 ? 22 : 0) : (!this.tapped && this.count() >= 0 ? 14 : 0);
+      const px = cx + side * (w / 2 + 34), top = floor - 110 - lifted * 20 + crouch;
       ctx.fillStyle = side < 0 ? '#3498db' : '#e67e22';
       ctx.beginPath(); ctx.arc(px, top, 16, 0, Math.PI * 2); ctx.fill();
       ctx.fillRect(px - 12, top + 18, 24, 50);
@@ -147,6 +160,7 @@ export class LiftOnThree {
     const color = this.tapped ? (ok ? '#2ecc71' : '#ff6b5e') : c === 2 ? '#f1c40f' : '#ffffff';
     drawText(ctx, say, cx, AREA.y + 70, { size: this.tapped ? 20 : 30, weight: 'bold', color, align: 'center', outline: true });
     drawText(ctx, `Lift ${Math.min(this.idx + 1, this.items.length)} of ${this.items.length}`, cx, AREA.y + AREA.h - 18, { size: 15, color: '#f0f0f0', align: 'center' });
+    if (!this.tapped) drawText(ctx, this.bent() ? 'Knees bent. Let go on THREE.' : 'Press and hold to bend your knees', cx, AREA.y + 104, { size: 15, weight: 'bold', color: this.bent() ? '#9fe0b5' : '#f5deb3', align: 'center', outline: true });
   }
 }
 
@@ -188,6 +202,7 @@ export class UntangleLeash {
       if (this.stack.length === 0) this.finish(true);
     } else {
       this.timeLeft = Math.max(0.1, this.timeLeft - 1.2); this.flash = 1; playError();
+      this.flashText = `${DOG_NAMES[hit.i]}'s leash is under ${DOG_NAMES[this.top()]}'s. Top of the pile first.`;
     }
   }
   finish(success) {
@@ -220,7 +235,7 @@ export class UntangleLeash {
       drawText(ctx, dog.free ? `${DOG_NAMES[dog.i]} ✓` : DOG_NAMES[dog.i], p.x, p.y + 46, { size: 13, weight: 'bold', color: dog.free ? '#2ecc71' : '#ffffff', align: 'center', outline: true });
     }
     ctx.fillStyle = '#f5deb3'; ctx.beginPath(); ctx.arc(this.anchor.x, this.anchor.y, 12, 0, Math.PI * 2); ctx.fill();
-    if (this.flash > 0) drawText(ctx, 'Tighter! That one was underneath.', AREA.x + AREA.w / 2, AREA.y + 150, { size: 17, weight: 'bold', color: '#ff6b5e', align: 'center', outline: true });
+    if (this.flash > 0) drawText(ctx, this.flashText || 'That one was underneath.', AREA.x + AREA.w / 2, AREA.y + 300, { size: 16, weight: 'bold', color: '#ff8a7e', align: 'center', outline: true, maxWidth: AREA.w - 30 });
   }
 }
 
@@ -322,19 +337,33 @@ const LEAF_COLORS = ['#d35400', '#e67e22', '#c0392b', '#f39c12'];
 export class RakeThePile {
   constructor(state) {
     this.name = 'RAKE!';
-    this.hint = 'Drag across the leaves to sweep them into the pile. Tapping near leaves nudges them too.';
+    this.hint = 'Check the wind, tap where the pile goes, then drag the leaves into it.';
     this.d = difficultyFactor(state);
-    this.pile = { x: AREA.x + AREA.w - 90, y: AREA.y + AREA.h - 80, r: 62 };
+    // Downwind (2026-10-02): the wind blows one way this time; you choose where the pile goes. Gusts
+    // carry loose leaves downwind, so a pile set downwind collects them and one set upwind loses
+    // them. Reading the wind before you rake is the skill.
+    this.wind = Math.random() < 0.5 ? 1 : -1;
+    this.spots = [-1, 1].map((side) => ({ side, x: side < 0 ? AREA.x + 90 : AREA.x + AREA.w - 90, y: AREA.y + AREA.h - 80 }));
+    this.pile = null; this.downwind = null; this.placeT = 0;
     this.leaves = Array.from({ length: 22 }, (_, i) => ({
-      x: AREA.x + 40 + Math.random() * (AREA.w - 260), y: AREA.y + 70 + Math.random() * (AREA.h - 130),
+      x: AREA.x + 160 + Math.random() * (AREA.w - 320), y: AREA.y + 90 + Math.random() * (AREA.h - 170),
       color: LEAF_COLORS[i % LEAF_COLORS.length], a: Math.random() * Math.PI, inPile: false,
     }));
-    this.timeMax = 14 / this.d; this.timeLeft = this.timeMax; this.t = 0;
+    this.timeMax = 16 / this.d; this.timeLeft = this.timeMax; this.t = 0; // 14 + ~2 s to read the wind
     this.last = null; this.nextGust = 3.2; this.gust = 0;
     this.done = false; this.result = null;
   }
   inPileCount() { return this.leaves.filter((l) => l.inPile).length; }
+  /** Put the pile on one side: -1 left, 1 right. */
+  placePile(side) {
+    if (this.pile) return;
+    const spot = this.spots.find((sp) => sp.side === side);
+    this.pile = { x: spot.x, y: spot.y, r: 62 };
+    this.downwind = side === this.wind;
+    playTick();
+  }
   settle(l) {
+    if (!this.pile) return;
     if (!l.inPile && Math.hypot(l.x - this.pile.x, l.y - this.pile.y) <= this.pile.r) {
       l.inPile = true;
       const a = Math.random() * Math.PI * 2, r = Math.random() * this.pile.r * 0.6;
@@ -345,7 +374,9 @@ export class RakeThePile {
   update(dt, pointer = InputManager.pointer) {
     if (this.done) return;
     this.t += dt; this.gust = Math.max(0, this.gust - dt);
-    if (pointer?.down) {
+    // no choice after a few seconds: the pile goes where you are standing (the left), no-fail
+    if (!this.pile) { this.placeT += dt; if (this.placeT >= 4) this.placePile(-1); }
+    if (pointer?.down && this.pile) {
       if (this.last) {
         const dx = pointer.x - this.last.x, dy = pointer.y - this.last.y;
         for (const l of this.leaves) {
@@ -359,16 +390,25 @@ export class RakeThePile {
       }
       this.last = { x: pointer.x, y: pointer.y };
     } else this.last = null;
-    this.nextGust -= dt;
-    if (this.nextGust <= 0) {          // the wind takes a few loose ones back
+    if (this.pile) this.nextGust -= dt;
+    if (this.nextGust <= 0 && this.pile) {   // a gust carries a few loose leaves downwind
       this.nextGust = 3.4; this.gust = 0.8;
-      for (const l of shuffle(this.leaves.filter((x) => !x.inPile)).slice(0, 3)) { l.x -= 30 + Math.random() * 30; l.y += (Math.random() - 0.5) * 40; l.x = Math.max(AREA.x + 10, l.x); }
+      for (const l of shuffle(this.leaves.filter((x) => !x.inPile)).slice(0, 4)) {
+        l.x = Math.max(AREA.x + 10, Math.min(AREA.x + AREA.w - 10, l.x + this.wind * (40 + Math.random() * 40)));
+        l.y += (Math.random() - 0.5) * 30;
+        this.settle(l);
+      }
     }
     this.timeLeft -= dt;
     if (this.inPileCount() === this.leaves.length || this.timeLeft <= 0) this.finish();
   }
   handleTap(pt) {
     if (this.done) return;
+    if (!this.pile) {
+      const spot = this.spots.find((sp) => Math.hypot(pt.x - sp.x, pt.y - sp.y) <= 80);
+      if (spot) this.placePile(spot.side);
+      return;
+    }
     for (const l of this.leaves) {
       if (l.inPile || Math.hypot(l.x - pt.x, l.y - pt.y) > 56) continue;
       const dx = this.pile.x - l.x, dy = this.pile.y - l.y, dist = Math.hypot(dx, dy) || 1;
@@ -378,23 +418,35 @@ export class RakeThePile {
   }
   finish() {
     const pct = this.inPileCount() / this.leaves.length;
-    this.result = { success: pct >= 0.7, score: Math.round(pct * 100), lesson: LESSONS.rake };
+    this.result = { success: pct >= 0.7, score: Math.round(pct * 100), lesson: LESSONS.rake, downwind: this.downwind };
     this.done = true;
     this.result.success ? playSuccess() : playFail();
   }
   render(ctx) {
     timerBar(ctx, this.timeLeft / this.timeMax);
     ctx.fillStyle = 'rgba(46, 90, 40, 0.35)'; ctx.fillRect(AREA.x, AREA.y + 62, AREA.w, AREA.h - 62);
-    ctx.fillStyle = 'rgba(120, 70, 30, 0.45)';
-    ctx.beginPath(); ctx.ellipse(this.pile.x, this.pile.y, this.pile.r, this.pile.r * 0.65, 0, 0, Math.PI * 2); ctx.fill();
-    drawText(ctx, 'The pile', this.pile.x, this.pile.y + this.pile.r * 0.65 + 18, { size: 14, weight: 'bold', color: '#f5deb3', align: 'center', outline: true });
+    // the wind, always visible
+    drawText(ctx, this.wind > 0 ? 'Wind  →  →' : '←  ←  Wind', AREA.x + AREA.w / 2, AREA.y + 82, { size: 17, weight: 'bold', color: '#d6eaf8', align: 'center', outline: true });
+    if (!this.pile) {
+      for (const sp of this.spots) {
+        ctx.strokeStyle = '#f5deb3'; ctx.lineWidth = 2; ctx.setLineDash([6, 6]);
+        ctx.beginPath(); ctx.ellipse(sp.x, sp.y, 62, 40, 0, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+        drawText(ctx, 'Pile here?', sp.x, sp.y + 6, { size: 14, weight: 'bold', color: '#f5deb3', align: 'center', outline: true });
+      }
+      drawText(ctx, 'Tap where the pile goes', AREA.x + AREA.w / 2, AREA.y + AREA.h - 46, { size: 16, weight: 'bold', color: '#ffd27a', align: 'center', outline: true });
+    } else {
+      ctx.fillStyle = 'rgba(120, 70, 30, 0.45)';
+      ctx.beginPath(); ctx.ellipse(this.pile.x, this.pile.y, this.pile.r, this.pile.r * 0.65, 0, 0, Math.PI * 2); ctx.fill();
+      drawText(ctx, this.downwind ? 'The pile (downwind)' : 'The pile (upwind)', this.pile.x, this.pile.y + this.pile.r * 0.65 + 18, { size: 14, weight: 'bold', color: this.downwind ? '#9fe0b5' : '#ffb3a8', align: 'center', outline: true });
+    }
     const s = shakeOffset(this.d, this.t);
     for (const l of this.leaves) {
       ctx.save(); ctx.translate(l.x + (l.inPile ? 0 : s.x * 0.5), l.y + (l.inPile ? 0 : s.y * 0.5)); ctx.rotate(l.a);
       ctx.fillStyle = l.color; ctx.beginPath(); ctx.ellipse(0, 0, 10, 5, 0, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     }
-    if (this.gust > 0) drawText(ctx, 'A gust of wind!', AREA.x + 140, AREA.y + 60, { size: 16, weight: 'bold', color: '#d6eaf8', align: 'center', outline: true });
+    if (this.gust > 0) drawText(ctx, this.downwind ? 'A gust! It blows leaves into your pile.' : 'A gust! It blows leaves away from your pile.', AREA.x + AREA.w / 2, AREA.y + 110, { size: 15, weight: 'bold', color: '#d6eaf8', align: 'center', outline: true });
     drawText(ctx, `${this.inPileCount()} of ${this.leaves.length} in the pile`, AREA.x + AREA.w / 2, AREA.y + AREA.h - 18, { size: 15, color: '#f0f0f0', align: 'center', outline: true });
   }
 }
