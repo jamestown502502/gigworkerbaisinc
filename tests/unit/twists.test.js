@@ -112,3 +112,32 @@ describe('Dee across the hall (story thread)', () => {
     expect(state.day).toBe(8);
   });
 });
+
+describe('settings is a pause (round 3)', () => {
+  it('a timed challenge does not advance while settings is open, and resumes after', () => {
+    const { game } = makeGame({ energy: 100 });
+    game.phase = 'GIG';
+    game.currentGig = { title: 'Yard Work', type: 'physical', choiceTree: 'yardWork', hasQTE: true, payout: 60, hours: 2 };
+    game.afterChoices();
+    game.qteIntroHold = false;
+    game.qteReadyT = 99;
+    const before = game.qte.timeLeft;
+    game.settingsOpen = true;
+    for (let i = 0; i < 300; i++) game.update(1 / 60); // five seconds behind the panel
+    expect(game.qte.timeLeft).toBe(before);
+    game.settingsOpen = false;
+    game.update(1 / 60);
+    expect(game.qte.timeLeft).toBeLessThan(before);
+  });
+
+  it('the morning ticker and events hold for the welcome-back prompt too', () => {
+    const { game } = makeGame();
+    game.ticker = { lines: ['a', 'b'], idx: 0, t: 0 };
+    game.resumePrompt = true;
+    for (let i = 0; i < 400; i++) game.update(1 / 60);
+    expect(game.ticker.idx).toBe(0);
+    game.resumePrompt = false;
+    for (let i = 0; i < 400; i++) game.update(1 / 60);
+    expect(game.ticker.idx).toBeGreaterThan(0);
+  });
+});

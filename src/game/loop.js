@@ -814,6 +814,11 @@ export class Game {
     } else if (Math.abs(repDelta) > 0 && Math.abs(repDelta) < 0.25) {
       this.repShown += repDelta * Math.min(1, dt * 4);
     }
+    // Settings (or the Welcome back prompt) is a pause, not an overlay the game plays behind
+    // (round 3: opening Settings mid-challenge let the timer run out behind the panel, so the
+    // player came back to FUMBLED). Everything below is game time; everything above — FX,
+    // transitions, tooltips — is presentation and keeps animating.
+    if (this.settingsOpen || this.resumePrompt) return;
     if (this.phase === 'MORNING' && !this.tutorialVisible()) {
       if (this.ticker.idx < this.ticker.lines.length) {
         this.ticker.t += dt;
