@@ -302,3 +302,29 @@ under that name — the closest is Steady Hand; the overlap sweep now guards eve
 - Two report-based Text Back threads (rating threat, tip baiting); `TEXT_BACK_THREADS` is 7.
 - **Tests:** `window.__loopPaused = true` stops the real-time loop for audits that drive time with
   `game.step()`; without it the slower profiles let a game finish between two measurements.
+
+## 8. QA round 2 (2026-10-02)
+
+Tester report: 27 rows (`GigWorkerBaisinic - Issue Report Round 2.xlsx`). Full before/after:
+`C:\Users\Jbthi\Claude Cowork\BAIS_Round2_QA_StoreCopy_BeforeAfter_2026-10-02.md`.
+
+- **Layout:** `index.html` pins `#game` to the safe area with `position: fixed` and
+  `overflow: hidden`; nothing scrolls. Portrait phones get a non-blocking rotate hint above the game.
+- **Canvas:** `engine/canvas.js` sizes the backing store to the displayed size x DPR (max 3x) with
+  one base transform; drawing code still uses 800x600. Full-screen paintings go through
+  `drawFullscreen` (`engine/sprites.js`), a per-size cache pre-scaled once. Smoothing is on at
+  'low' quality for everything else. WebKit text-overlap test went 51 s (main) -> 31 s.
+- **Audio:** BGM is a MediaElementSource into a music GainNode; everything goes through a master
+  gain. Mute = gain 0 + pause + `el.muted`; unmute restarts. `setBackgrounded()` on
+  visibilitychange suspends the context and pauses the element. `tests/unit/audio.test.js`.
+- **Transitions:** `Game.snapshotFrame()` freezes the outgoing frame; `render()` draws it for the
+  first half. Fixes every "outgoing screen re-rendered with changed state" glitch at once.
+- **Minigames:** `qteIntroHold` (first meeting, persisted in `state.seenMicrogames`), 1.6 s count-in,
+  `resultCard` in `ui/screens.js`; `resultHold(kind)` = 2.4 s skill / 1.6 s others, tap skips after 0.4 s.
+- **Replayability:** `src/game/twists.js` (6 month twists, 6 side goals; hooks in weather, gigs,
+  loop). Drawn in the Game constructor only for a run that has not started, and on New run;
+  never repeats `lastTwist`. Every twist runs through the Monte Carlo in `balance.test.js`.
+- **Story:** `src/game/neighbor.js`, Dee across the hall on days 8/15/22/29, two variants.
+- **UI:** `UI.lastHit` + `UI.onPress` (click + haptic) give every button a release flash;
+  `button(..., { ghost: true })` is the secondary style. Settings and Shop close on outside tap.
+- Tests: 114 unit; e2e 83/87 locally, the 4 being Windows-WebKit timeouts that pass alone.
