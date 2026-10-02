@@ -34,12 +34,36 @@ export function withPronouns(template, character) {
   return template.replace(/\{(Subj|subj|obj|poss|was|is)\}/g, (_, k) => p[k]);
 }
 
+// What Randomize leans toward for each pronoun set (QA round 2 #7: with she/her picked, Randomize
+// kept producing beards, which read as the button ignoring the choice). Weights only: every option
+// stays reachable by hand, and they/them stays fully open. Index order follows HAIR_STYLES
+// (Short, Buzz, Long, Bun, Curls, Bald), FACIAL_HAIR (None, Stubble, Mustache, Beard), BUILDS.
+const RANDOM_WEIGHTS = {
+  she: { hairStyle: [2, 1, 5, 4, 4, 0.5], facialHair: [1, 0, 0, 0], body: [3, 1, 3] },
+  he: { hairStyle: [5, 4, 1, 1, 3, 2], facialHair: [3, 3, 2, 3], body: [2, 3, 2] },
+  they: { hairStyle: [1, 1, 1, 1, 1, 1], facialHair: [3, 1, 1, 1], body: [1, 1, 1] },
+};
+
+function weightedIndex(weights, rand) {
+  const total = weights.reduce((a, w) => a + w, 0);
+  let r = rand() * total;
+  for (let i = 0; i < weights.length; i++) { r -= weights[i]; if (r < 0) return i; }
+  return weights.length - 1;
+}
+
 /** A random look, for the creator's Randomize button. Pronouns are never randomized: they are
- *  the player's to state, not a roll of the dice. */
+ *  the player's to state, not a roll of the dice; the look leans toward what those pronouns
+ *  usually go with (see RANDOM_WEIGHTS). */
 export function randomLook(character, rand = Math.random) {
   const pick = (arr) => arr[Math.floor(rand() * arr.length)];
-  const idx = (n) => Math.floor(rand() * n);
-  return { ...character, body: idx(BUILDS.length), hairStyle: idx(HAIR_STYLES.length), facialHair: idx(FACIAL_HAIR.length), skin: pick(SKIN_TONES), hair: pick(HAIR_COLORS), shirt: pick(SHIRT_COLORS) };
+  const w = RANDOM_WEIGHTS[character?.pronouns] ?? RANDOM_WEIGHTS.they;
+  return {
+    ...character,
+    body: weightedIndex(w.body, rand),
+    hairStyle: weightedIndex(w.hairStyle, rand),
+    facialHair: weightedIndex(w.facialHair, rand),
+    skin: pick(SKIN_TONES), hair: pick(HAIR_COLORS), shirt: pick(SHIRT_COLORS),
+  };
 }
 
 // Simple geometric pixel rep on an 8x16 unit grid scaled to w x h.
@@ -109,6 +133,13 @@ export function optionRow(ctx, x, y, label, options, selected, onPick, register,
       ctx.lineWidth = on ? 4 : 1;
       ctx.strokeStyle = on ? '#f1c40f' : '#8b5a2b'; // a visible edge even on the darkest swatches
       ctx.strokeRect(sx, y + 2, size, size);
+      if (on) {
+        // The same check mark the text chips use, so selection reads the same everywhere (QA round
+        // 2 #15). A dark disc behind it keeps it visible on the lightest and darkest swatches alike.
+        ctx.fillStyle = 'rgba(20,14,8,0.82)';
+        ctx.beginPath(); ctx.arc(sx + size / 2, y + 2 + size / 2, 13, 0, Math.PI * 2); ctx.fill();
+        drawText(ctx, '✓', sx + size / 2, y + 3 + size / 2, { size: 14, weight: 'bold', color: '#f1c40f', align: 'center', baseline: 'middle', shadow: false });
+      }
       register(sx - 2, y, size + 4, size + 4, () => onPick(color));
     });
     return y + 40;

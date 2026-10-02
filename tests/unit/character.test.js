@@ -39,6 +39,17 @@ describe('character options', () => {
       for (let i = 0; i < 20; i++) expect(randomLook({ ...DEFAULT_CHARACTER, pronouns: p }, rand).pronouns).toBe(p);
     }
   });
+
+  it('randomize leans toward the chosen pronouns: she/her never rolls facial hair (QA round 2 #7)', () => {
+    const rand = seededRandom(11);
+    const she = Array.from({ length: 200 }, () => randomLook({ ...DEFAULT_CHARACTER, pronouns: 'she' }, rand));
+    expect(she.every((c) => c.facialHair === 0)).toBe(true);
+    expect(she.some((c) => c.hairStyle === 2 || c.hairStyle === 3)).toBe(true); // long / bun appear
+    const he = Array.from({ length: 200 }, () => randomLook({ ...DEFAULT_CHARACTER, pronouns: 'he' }, rand));
+    expect(he.some((c) => c.facialHair > 0)).toBe(true);
+    const they = Array.from({ length: 400 }, () => randomLook({ ...DEFAULT_CHARACTER, pronouns: 'they' }, rand));
+    expect(new Set(they.map((c) => c.hairStyle)).size).toBe(HAIR_STYLES.length); // fully open
+  });
 });
 
 describe('pronouns reach the text', () => {

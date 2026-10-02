@@ -10,25 +10,36 @@
   <link rel="icon" href="/icons/icon-192.png" type="image/png" />
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png" />
   <style>
+    /* The game is a full-screen app, never a scrolling page (QA round 2 #1, #6, #16): nothing is
+       ever below the fold, so there is nothing to scroll to, on a landscape phone, a desktop
+       window, or inside an Android WebView. #game is pinned to the visible safe area with fixed
+       positioning instead of 100vh, which on mobile browsers is the height BEHIND the toolbar. */
     html, body {
-      margin: 0; padding: 0; background: #1d150d; height: 100%;
+      margin: 0; padding: 0; background: #1d150d; height: 100%; width: 100%;
+      overflow: hidden;
       overscroll-behavior: none; /* kill pull-to-refresh / rubber-band scroll during QTEs */
-      touch-action: manipulation; /* belt-and-suspenders on top of the viewport meta above */
+      touch-action: manipulation;
     }
     #game {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      /* keep the canvas clear of a notch/home-indicator on the sides+bottom */
-      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-      box-sizing: border-box;
+      position: fixed;
+      top: env(safe-area-inset-top, 0px); right: env(safe-area-inset-right, 0px);
+      bottom: env(safe-area-inset-bottom, 0px); left: env(safe-area-inset-left, 0px);
+      display: flex; align-items: center; justify-content: center;
     }
-    #game canvas { max-width: 100%; max-height: 100%; touch-action: none; }
+    #game canvas { display: block; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+    /* Portrait phones: the 4:3 game is small there. A hint in the empty band above the game, never
+       over it and never blocking a tap (pointer-events: none). */
+    #rotate-hint {
+      display: none; position: fixed; left: 16px; right: 16px; top: calc(env(safe-area-inset-top, 0px) + 16px);
+      pointer-events: none; text-align: center; font: 600 15px/1.35 system-ui, sans-serif;
+      color: #f5deb3; background: rgba(60, 40, 22, 0.92); border: 1px solid #c9a876; border-radius: 12px; padding: 10px 14px;
+    }
+    @media (orientation: portrait) and (max-width: 600px) { #rotate-hint { display: block; } }
   </style>
 </head>
 <body>
   <div id="game"></div>
+  <div id="rotate-hint" aria-hidden="true">&#x21bb; Turn your phone sideways for a bigger, easier view</div>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

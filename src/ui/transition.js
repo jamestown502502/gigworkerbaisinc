@@ -19,7 +19,7 @@ export function easeInOut(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 
 /** Create a transition record. `apply` runs exactly once at the midpoint. */
 export function createTransition(kind, apply, { reduceMotion = false, meta = {} } = {}) {
   const k = reduceMotion || !DURATION[kind] ? 'fade' : kind;
-  return { kind: k, t: 0, dur: reduceMotion ? 0.14 : DURATION[k], applied: false, apply, meta, skyline: k === 'commute' ? makeSkyline() : null };
+  return { kind: k, t: 0, dur: reduceMotion ? 0.14 : meta.firstDay ? 1.5 : DURATION[k], applied: false, apply, meta, skyline: k === 'commute' ? makeSkyline() : null };
 }
 
 /** Advance; returns true when finished. */
@@ -96,7 +96,12 @@ export function renderTransition(ctx, tr) {
       // Fade to black with the day counter rolling over like an odometer, then a warm sunrise ramp.
       ctx.fillStyle = `rgba(8,6,4,${Math.min(1, cover * 1.6)})`;
       ctx.fillRect(0, 0, 800, 600);
-      if (cover > 0.55 && tr.meta.fromDay !== undefined) {
+      if (cover > 0.55 && tr.meta.firstDay) {
+        // A new run: a title card for Day 1, no odometer roll from a day that never existed.
+        drawText(ctx, 'Day 1', 400, 300, { size: 48, weight: 'bold', color: '#ffd700', align: 'center', font: 'monospace' });
+        drawText(ctx, 'Rent is due in 7 days.', 400, 340, { size: 16, color: '#c9a876', align: 'center' });
+        if (tr.meta.twist) drawText(ctx, `This month: ${tr.meta.twist}`, 400, 370, { size: 16, weight: 'bold', color: '#f5deb3', align: 'center' });
+      } else if (cover > 0.55 && tr.meta.fromDay !== undefined) {
         const roll = Math.min(1, Math.max(0, (p - 0.35) / 0.3));
         const e = easeInOut(roll);
         ctx.save();

@@ -92,14 +92,29 @@ test('debt buttons work during the morning ticker (QA #10)', async ({ page }) =>
 });
 
 test('every screen has a way back or forward; evening has Back (QA #21)', async ({ page }) => {
-  await boot(page);
+  await boot(page, { save: { tutorialSeen: true, energy: 100 } });
   await settleMorning(page);
-  await tapLogical(page, 635, 552); // Sleep In → evening
+  await tapLogical(page, 165, 552); // Check Listings
   await step(page, 1);
+  await tapLogical(page, 550, 552); // Call It a Day → evening
+  await step(page, 1);
+  await page.evaluate(() => { window.__game.ping = null; window.__game.step(1 / 60); });
   expect(await phase(page)).toBe('EVENING');
   await tapLogical(page, 325, 552); // Back
   await step(page, 1);
   expect(await phase(page)).toBe('MORNING');
+});
+
+test('after Sleep In (skip day) the evening has no Back to the morning (QA round 2 #18)', async ({ page }) => {
+  await boot(page);
+  await settleMorning(page);
+  await tapLogical(page, 635, 552); // Sleep In → evening
+  await step(page, 1);
+  await page.evaluate(() => { window.__game.ping = null; window.__game.step(1 / 60); });
+  expect(await phase(page)).toBe('EVENING');
+  await tapLogical(page, 325, 552); // where Back used to be
+  await step(page, 1);
+  expect(await phase(page)).toBe('EVENING');
 });
 
 test('settings: reset progress needs a confirm and keeps settings (QA #18)', async ({ page }) => {
@@ -179,4 +194,27 @@ test('boots offline after one online visit (Android TWA readiness)', async ({ pa
   const art = await page.evaluate(async () => !!(await caches.match('/media/apartment.png')));
   expect(art).toBe(true);
   await context.setOffline(false);
+});
+
+test('settings closes on a tap outside the panel, not inside it (QA round 2 #10)', async ({ page }) => {
+  await boot(page);
+  await tapLogical(page, 778, 16); // gear
+  expect(await page.evaluate(() => window.__game.settingsOpen)).toBe(true);
+  await tapLogical(page, 400, 300); // inside the panel, on no button
+  expect(await page.evaluate(() => window.__game.settingsOpen)).toBe(true);
+  await tapLogical(page, 60, 300); // outside
+  expect(await page.evaluate(() => window.__game.settingsOpen)).toBe(false);
+});
+
+test('the shop hides the day\u2019s buttons and closes from inside its own panel (QA round 2 #22, #26)', async ({ page }) => {
+  await boot(page, { save: { tutorialSeen: true, energy: 100 } });
+  await settleMorning(page);
+  await tapLogical(page, 400, 552); // Shop
+  expect(await page.evaluate(() => window.__game.shopOpen)).toBe(true);
+  await tapLogical(page, 165, 552); // where Check Listings was: now the dimmed backdrop, outside the panel
+  expect(await phase(page)).toBe('MORNING');
+  expect(await page.evaluate(() => window.__game.shopOpen)).toBe(false); // outside tap closed it, nothing else fired
+  await tapLogical(page, 400, 552); // Shop again
+  await tapLogical(page, 400, 556); // Close Shop, inside the panel
+  expect(await page.evaluate(() => window.__game.shopOpen)).toBe(false);
 });

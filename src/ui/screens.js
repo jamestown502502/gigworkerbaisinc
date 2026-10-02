@@ -1,14 +1,14 @@
 // Screen renderers + immediate-mode UI helpers.
-import { drawSprite } from '../engine/sprites.js';
+import { drawSprite, drawFullscreen } from '../engine/sprites.js';
 import { InputManager } from '../engine/input.js';
 import { drawCharacter, optionRow, pronounsFor, pronounPreview, randomLook, BUILDS, FACIAL_HAIR, HAIR_COLORS, HAIR_STYLES, PRONOUNS, SHIRT_COLORS, SKIN_TONES } from './character.js';
 import { travelCost } from '../game/gigs.js';
 import { UPGRADES, CONSUMABLES, EVENING_OPTIONS } from '../game/loop.js';
-import { drawText, drawWrapped, roundRectPath } from './text.js';
+import { drawText, drawWrapped, roundRectPath, wrapLines } from './text.js';
+import { twistOf, goalOf, windDownMultiplier } from '../game/twists.js';
 import { playError, applyAudioSettings } from '../engine/audio.js';
 import { QTE_READY_DURATION } from '../game/qte.js';
 import { RUN_LENGTH_DAYS } from '../engine/state.js';
-import { drawStars } from './hud.js';
 
 // ---------- immediate-mode UI ----------
 export const UI = {
@@ -22,10 +22,18 @@ export const UI = {
     // text-probe layer marker: anything drawn before this is under the modal backdrop
     if (globalThis.__textProbe) globalThis.__textProbe.push({ layer: true });
   },
+  /** The last real button hit, for the release flash every button draws (QA round 2 #25). */
+  lastHit: null,
+  /** Set by loop.js: sound + haptic on every real button press, in one place. */
+  onPress: null,
   handleClick(pt) {
     for (let i = this.hotspots.length - 1; i >= 0; i--) {
       const b = this.hotspots[i];
       if (pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h) {
+        if (b.onClick) {
+          this.lastHit = { x: b.x, y: b.y, w: b.w, h: b.h, at: performance.now() };
+          this.onPress?.();
+        }
         b.onClick?.();
         return true;
       }
@@ -44,11 +52,30 @@ function isHovered(x, y, w, h) {
 
 // Rounded, styled button. Signature preserved so existing call sites work. A held press
 // squashes the button slightly (0.96) — the one micro-interaction every tap gets.
-export function button(ctx, x, y, w, h, label, { color = '#5d4023', textColor = '#ffffff', disabled = false, onClick = null, onDisabled = null, fontSize = 16, border = '#c9a876' } = {}) {
+export function button(ctx, x, y, w, h, label, { color = '#5d4023', textColor = '#ffffff', disabled = false, onClick = null, onDisabled = null, fontSize = 16, border = '#c9a876', ghost = false } = {}) {
   const hov = !disabled && isHovered(x, y, w, h);
   const pressed = !disabled && InputManager.isPressedIn(x, y, w, h);
+  // A tap on a phone is down and up within one or two frames, so the held squash alone was
+  // invisible there (QA round 2 #25). Every button also flashes and springs back for 180 ms
+  // after the press lands, whatever the input device.
+  const hit = UI.lastHit;
+  const since = hit && hit.x === x && hit.y === y && hit.w === w && hit.h === h ? performance.now() - hit.at : Infinity;
+  const flash = since < 180 ? 1 - since / 180 : 0;
   ctx.save();
-  if (pressed) { ctx.translate(x + w / 2, y + h / 2); ctx.scale(0.96, 0.96); ctx.translate(-(x + w / 2), -(y + h / 2)); }
+  const sq = pressed ? 0.96 : flash > 0 ? 1 - 0.05 * Math.sin(Math.PI * (1 - flash)) : 1;
+  if (sq !== 1) { ctx.translate(x + w / 2, y + h / 2); ctx.scale(sq, sq); ctx.translate(-(x + w / 2), -(y + h / 2)); }
+  if (ghost) {
+    // Secondary action: outline only, so the primary button next to it clearly leads.
+    ctx.fillStyle = hov ? 'rgba(255,255,255,0.12)' : 'rgba(20,14,8,0.72)';
+    roundRectPath(ctx, x, y, w, h, 9); ctx.fill();
+    ctx.strokeStyle = hov ? '#f1c40f' : '#a08560'; ctx.lineWidth = 1.5;
+    roundRectPath(ctx, x, y, w, h, 9); ctx.stroke();
+    drawText(ctx, label, x + w / 2, y + h / 2, { size: fontSize, weight: 'bold', color: '#e8d9b8', align: 'center', baseline: 'middle', maxWidth: w - 12, shadow: false });
+    if (flash > 0) { ctx.fillStyle = `rgba(255,236,170,${0.35 * flash})`; roundRectPath(ctx, x, y, w, h, 9); ctx.fill(); }
+    ctx.restore();
+    if (onClick) UI.register(x, y, w, h, onClick);
+    return;
+  }
   const base = disabled ? '#3a3128' : color;
   const grad = ctx.createLinearGradient(x, y, x, y + h);
   grad.addColorStop(0, hov ? lighten(base, 28) : lighten(base, 12));
@@ -71,6 +98,7 @@ export function button(ctx, x, y, w, h, label, { color = '#5d4023', textColor = 
     outline: !disabled,
     maxWidth: w - 12,
   });
+  if (flash > 0) { ctx.fillStyle = `rgba(255,236,170,${0.35 * flash})`; roundRectPath(ctx, x, y, w, h, 9); ctx.fill(); }
   ctx.restore();
 
   if (!disabled && onClick) UI.register(x, y, w, h, onClick);
@@ -98,7 +126,7 @@ export function panel(ctx, x, y, w, h, { alpha = 0.9 } = {}) {
 
 // Cover-fit a background sprite, then a dark overlay so text stays readable.
 export function drawBackground(ctx, key, dim = 0.5) {
-  drawSprite(ctx, key, 0, 0, 800, 600);
+  drawFullscreen(ctx, key);
   ctx.fillStyle = `rgba(8, 6, 4, ${dim})`;
   ctx.fillRect(0, 0, 800, 600);
 }
@@ -113,7 +141,7 @@ export function drawWeatherOverlay(ctx, weather) {
   const key = weather && WEATHER_OVERLAY_BY_ID[weather.id];
   if (!key) return;
   ctx.globalAlpha = 0.28;
-  drawSprite(ctx, key, 0, 0, 800, 600);
+  drawFullscreen(ctx, key);
   ctx.globalAlpha = 1;
 }
 
@@ -163,8 +191,24 @@ export function creatorScreen(ctx, game) {
   y = optionRow(ctx, 340, y, 'Hair color', HAIR_COLORS, c.hair, (col) => set({ hair: col }), reg, { swatch: true });
   optionRow(ctx, 340, y, 'Shirt', SHIRT_COLORS, c.shirt, (col) => set({ shirt: col }), reg, { swatch: true });
 
-  button(ctx, 320, 500, 190, 50, 'Randomize look', { fontSize: 14, onClick: () => set(randomLook(s.character)) });
-  button(ctx, 560, 500, 210, 50, game.creatorEditing ? 'Done' : 'Start Day 1', { color: '#2c6e49', fontSize: 15, onClick: () => game.finishCreator() });
+  // Randomize is the secondary action, styled as an outline so "Start Day 1" clearly leads (QA round
+  // 2 #17). It respects the pronouns picked above (QA round 2 #7); every option stays open by hand.
+  button(ctx, 330, 504, 170, 42, 'Randomize', { ghost: true, fontSize: 14, onClick: () => set(randomLook(s.character)) });
+  if (game.creatorEditing) {
+    // Editing an existing look: Save stays disabled until something changes (QA round 2 #13), and
+    // Back leaves without changing anything, so there is always a way out.
+    const changed = JSON.stringify(s.character) !== game.creatorOriginal;
+    button(ctx, 40, 500, 150, 50, '< Back', { color: '#5d4023', fontSize: 15, onClick: () => game.cancelCreator() });
+    button(ctx, 560, 500, 210, 50, 'Save look', {
+      color: '#2c6e49', fontSize: 16, disabled: !changed, onClick: () => game.finishCreator(),
+      onDisabled: () => { playError(); game.creatorHint = 'Change something first, or tap Back.'; game.creatorHintAt = performance.now(); },
+    });
+    if (game.creatorHint && performance.now() - game.creatorHintAt < 2200) {
+      drawText(ctx, game.creatorHint, 665, 572, { size: 13, color: '#f1c40f', align: 'center' });
+    }
+  } else {
+    button(ctx, 560, 500, 210, 50, 'Start Day 1  >', { color: '#2c6e49', fontSize: 17, onClick: () => game.finishCreator() });
+  }
 }
 
 // ---------- APARTMENT (morning) ----------
@@ -181,8 +225,6 @@ export function apartmentScreen(ctx, game) {
   button(ctx, 80, 410, 200, 44, 'Edit look', { fontSize: 14, onClick: () => { if (!game.activeEvent) game.openCreator(); } });
 
   // stats summary panel
-  panel(ctx, 360, 120, 410, 220);
-  drawText(ctx, `Morning — Day ${s.day}${s.freePlay && s.day > RUN_LENGTH_DAYS ? ' (free play)' : ''}`, 380, 152, { size: 22, weight: 'bold', color: '#ffffff' });
   const lines = [
     `Hours available today: ${s.hoursLeft}`,
     `Gigs on the board: ${s.todayGigs.length}`,
@@ -193,14 +235,28 @@ export function apartmentScreen(ctx, game) {
   if (s.unpaidRent > 0) lines.push(`OVERDUE RENT: $${s.unpaidRent} (${14 - s.rentOverdueDays} days to eviction!)`);
   if (s.phoneCut) lines.push(`Phone cut — pay $${s.unpaidPhone} to restore listings`);
   if (s.hungry) lines.push('Hungry — energy costs are doubled. Buy groceries in the Shop.');
+  const twist = twistOf(s), goal = goalOf(s);
+  if (twist) lines.push(`This month: ${twist.name}`);
+  if (goal) lines.push(s.sideGoalDone ? `Side goal done: ${goal.text}` : `Side goal: ${goal.text} (${goal.progress(s)})`);
+  // The panel grows to fit its lines (a hungry, phone-cut, overdue morning has nine of them).
+  let need = 0;
+  for (const line of lines) {
+    const small = line.startsWith('This month') || line.startsWith('Side goal');
+    const shown = /OVERDUE|Phone cut|Hungry/.test(line) ? '⚠ ' + line : line;
+    need += wrapLines(ctx, shown, 370, { size: small ? 13 : 14 }).length * (small ? 18 : 20);
+  }
+  const panelH = Math.max(220, 76 + need);
+  panel(ctx, 360, 120, 410, panelH);
+  drawText(ctx, `Morning — Day ${s.day}${s.freePlay && s.day > RUN_LENGTH_DAYS ? ' (free play)' : ''}`, 380, 152, { size: 22, weight: 'bold', color: '#ffffff' });
   let ly = 180;
   for (const line of lines) {
     const warn = /OVERDUE|Phone cut|Hungry/.test(line);
-    ly = drawWrapped(ctx, warn ? '⚠ ' + line : line, 380, ly, 370, 20, { size: 14, color: warn ? '#ff6b5e' : line.startsWith('Rested') ? '#2ecc71' : '#e0e0e0' });
+    const monthLine = line.startsWith('This month') || line.startsWith('Side goal');
+    ly = drawWrapped(ctx, warn ? '⚠ ' + line : line, 380, ly, 370, monthLine ? 18 : 20, { size: monthLine ? 13 : 14, color: warn ? '#ff6b5e' : line.startsWith('Rested') || line.startsWith('Side goal done') ? '#2ecc71' : monthLine ? '#f5deb3' : '#e0e0e0' });
   }
 
-  // debt quick-pay
-  let by = 350;
+  // debt quick-pay, right under the panel
+  let by = 130 + panelH;
   if (s.unpaidRent > 0 && s.cash >= s.unpaidRent) {
     button(ctx, 360, by, 250, 40, `Pay Overdue Rent $${s.unpaidRent}`, { color: '#7a3020', onClick: () => game.payDebt('rent') });
     by += 48;
@@ -214,7 +270,9 @@ export function apartmentScreen(ctx, game) {
     drawText(ctx, "You're too run down to work today. Rest up.", 400, 460, { size: 17, weight: 'bold', color: '#ff6b5e', align: 'center' });
     drawText(ctx, '+20 balance from a day in bed', 400, 482, { size: 13, color: '#c9a876', align: 'center' });
     button(ctx, 295, 526, 210, 52, 'Sleep', { color: '#2c6e49', onClick: () => { game.goEvening(); } });
-  } else if (game.morningReady) {
+  } else if (game.morningReady && !game.shopOpen) {
+    // While the shop is open the day's actions are not drawn at all (QA round 2 #26): they used to
+    // show at full brightness below the shop's dimmer, looking tappable when they were not.
     const noListings = s.phoneCut || s.listingsLockedToday;
     button(ctx, 60, 526, 210, 52, 'Check Listings', {
       color: noListings ? '#3a3128' : '#2c6e49',
@@ -225,8 +283,8 @@ export function apartmentScreen(ctx, game) {
         game.message = s.phoneCut ? `Phone's cut off — pay the $${s.unpaidPhone} bill to see listings.` : 'Your phone is dead. No listings today.';
       },
     });
-    button(ctx, 295, 526, 210, 52, game.shopOpen ? 'Close Shop' : 'Shop', { color: '#2c3e50', onClick: () => { game.shopOpen = !game.shopOpen; } });
-    button(ctx, 530, 526, 210, 52, 'Sleep In (skip day)', { color: '#5d4023', onClick: () => game.goEvening() });
+    button(ctx, 295, 526, 210, 52, 'Shop', { color: '#2c3e50', onClick: () => { game.shopOpen = true; } });
+    button(ctx, 530, 526, 210, 52, 'Sleep In (skip day)', { color: '#5d4023', onClick: () => { game.skippedDay = true; game.goEvening(); } });
   }
 
   if (game.shopOpen) shopOverlay(ctx, game);
@@ -238,7 +296,12 @@ export function apartmentScreen(ctx, game) {
     ctx.globalAlpha = alpha;
     drawText(ctx, game.ticker.lines[game.ticker.idx], 400, 108, { size: 15, color: '#aaaaaa', align: 'center', shadow: false, maxWidth: 680 });
     ctx.globalAlpha = 1;
-    drawText(ctx, 'tap to skip', 400, 500, { size: 12, color: '#b5a488', align: 'center', shadow: false });
+    // A real pill, not faint 12 px text on the painting (QA round 2 #21).
+    ctx.fillStyle = 'rgba(20, 14, 8, 0.88)';
+    roundRectPath(ctx, 330, 482, 140, 30, 15); ctx.fill();
+    ctx.strokeStyle = '#c9a876'; ctx.lineWidth = 1.5;
+    roundRectPath(ctx, 330, 482, 140, 30, 15); ctx.stroke();
+    drawText(ctx, 'Tap to skip  >>', 400, 497, { size: 14, weight: 'bold', color: '#f5deb3', align: 'center', baseline: 'middle', shadow: false });
   } else if (game.activeEvent) {
     eventModal(ctx, game);
   }
@@ -256,8 +319,9 @@ function eventModal(ctx, game) {
 
   const accents = { 1: '#8a99a8', 2: '#f1c40f', 3: '#e74c3c' };
   const labels = { 1: 'MORNING NOTE', 2: 'SOMETHING CAME UP', 3: 'CRISIS' };
-  const accent = accents[e.tier] || '#8a99a8';
-  const h = e.choices ? 140 + e.choices.length * 58 : 200;
+  const accent = e.label ? '#f1c40f' : accents[e.tier] || '#8a99a8';
+  const textLines = wrapLines(ctx, e.text, 410, { size: 15 }).length + (e.subtext ? wrapLines(ctx, e.subtext, 410, { size: 15 }).length + 0.6 : 0);
+  const h = e.choices ? 140 + e.choices.length * 58 : Math.max(200, 150 + Math.ceil(textLines * 21));
   const y = Math.max(80, 300 - h / 2);
 
   ctx.save();
@@ -265,8 +329,9 @@ function eventModal(ctx, game) {
   panel(ctx, 160, y, 480, h, { alpha: 0.97 });
   ctx.fillStyle = accent;
   ctx.fillRect(162, y + 2, 476, 4);
-  drawText(ctx, labels[e.tier] || '', 400, y + 32, { size: 13, weight: 'bold', color: accent, align: 'center' });
-  const ty = drawWrapped(ctx, e.text, 195, y + 62, 410, 21, { size: 15, color: '#e0e0e0', shadow: false });
+  drawText(ctx, e.label || labels[e.tier] || '', 400, y + 32, { size: 13, weight: 'bold', color: accent, align: 'center' });
+  let ty = drawWrapped(ctx, e.text, 195, y + 62, 410, 21, { size: 15, color: '#e0e0e0', shadow: false });
+  if (e.subtext) ty = drawWrapped(ctx, e.subtext, 195, ty + 12, 410, 21, { size: 15, color: '#f5deb3', shadow: false });
   ctx.restore();
 
   if (e.choices) {
@@ -360,19 +425,116 @@ function minigamePanel(ctx, game) {
   drawText(ctx, game.qte.name, 400, 130, { size: 22, weight: 'bold', color: '#f1c40f', align: 'center' });
   drawText(ctx, game.qte.hint, 400, 154, { size: 14, color: '#e0e0e0', align: 'center', maxWidth: 580 });
   game.qte.render(ctx);
-  if (game.qteKind === 'skill' && game.qteReadyT < QTE_READY_DURATION) {
-    const pulse = 1 + 0.08 * Math.sin(game.qteReadyT * 14);
+  if (game.qteKind === 'skill' && game.qteIntroHold) {
+    howToCard(ctx, game);
+  } else if (game.qteKind === 'skill' && game.qteReadyT < QTE_READY_DURATION) {
+    getReady(ctx, game);
+  }
+  if (game.qte.done && game.qte.result) resultCard(ctx, game);
+}
+
+/** First meeting with a microgame: what it is, what to do, how long you have. Waits for a tap. */
+function howToCard(ctx, game) {
+  const q = game.qte;
+  if (globalThis.__textProbe) globalThis.__textProbe.push({ layer: true });
+  ctx.fillStyle = 'rgba(8, 6, 4, 0.86)';
+  roundRectPath(ctx, 92, 102, 616, 426, 12); ctx.fill();
+  const x = 160, y = 150, w = 480, h = 320;
+  panel(ctx, x, y, w, h, { alpha: 0.98 });
+  ctx.fillStyle = '#f1c40f'; ctx.fillRect(x + 2, y + 2, w - 4, 4);
+  drawText(ctx, 'NEW JOB SKILL', 400, y + 36, { size: 13, weight: 'bold', color: '#c9a876', align: 'center' });
+  drawText(ctx, q.name, 400, y + 80, { size: 34, weight: 'bold', color: '#ffd700', align: 'center', outline: true });
+  const ny = drawWrapped(ctx, q.hint, 400, y + 124, w - 70, 24, { size: 18, color: '#ffffff', align: 'center' });
+  const secs = q.timeMax ? Math.max(1, Math.round(q.timeMax)) : null;
+  drawText(ctx, secs ? `You'll have about ${secs} seconds. Do it well for a pay bonus.` : 'Do it well for a pay bonus. Fumble it and the client pays less.', 400, Math.min(ny + 6, y + h - 74), { size: 13, color: '#c9a876', align: 'center', maxWidth: w - 40 });
+  const pulse = 0.75 + 0.25 * Math.sin(performance.now() / 260);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = '#2c6e49';
+  roundRectPath(ctx, 300, y + h - 60, 200, 42, 21); ctx.fill();
+  ctx.globalAlpha = 1;
+  drawText(ctx, 'Tap to start', 400, y + h - 39, { size: 17, weight: 'bold', color: '#ffffff', align: 'center', baseline: 'middle', outline: true });
+}
+
+/** The count-in: GET READY plus the one-line goal, big, so a repeat play still says what to do. */
+function getReady(ctx, game) {
+  if (globalThis.__textProbe) globalThis.__textProbe.push({ layer: true });
+  ctx.fillStyle = 'rgba(8, 6, 4, 0.72)';
+  roundRectPath(ctx, 92, 162, 616, 364, 12); ctx.fill();
+  const left = Math.max(0, QTE_READY_DURATION - game.qteReadyT);
+  const pulse = 1 + 0.08 * Math.sin(game.qteReadyT * 14);
+  ctx.save();
+  ctx.translate(400, 270);
+  ctx.scale(pulse, pulse);
+  drawText(ctx, left > 0.6 ? 'GET READY' : 'GO!', 0, 0, { size: 34, weight: 'bold', color: left > 0.6 ? '#ffffff' : '#2ecc71', align: 'center', outline: true });
+  ctx.restore();
+  drawWrapped(ctx, game.qte.hint, 400, 330, 520, 24, { size: 18, color: '#f5deb3', align: 'center' });
+}
+
+function starRow(ctx, cx, y, n, k) {
+  // Stars pop in one after another as the card opens.
+  for (let i = 0; i < 3; i++) {
+    const appear = Math.max(0, Math.min(1, (k - 0.25 - i * 0.15) / 0.18));
+    const on = i < n;
+    const scale = on ? 0.6 + 0.4 * appear + (appear > 0 && appear < 1 ? 0.25 * Math.sin(Math.PI * appear) : 0) : 1;
     ctx.save();
-    ctx.translate(400, 316);
-    ctx.scale(pulse, pulse);
-    drawText(ctx, 'GET READY', 0, 0, { size: 30, weight: 'bold', color: '#ffffff', align: 'center', outline: true });
+    ctx.translate(cx + (i - 1) * 46, y);
+    ctx.scale(scale, scale);
+    drawText(ctx, '★', 0, 0, { size: 38, color: on && appear > 0 ? '#f1c40f' : '#4a3d2a', align: 'center', baseline: 'middle', shadow: false });
     ctx.restore();
   }
-  if (game.qte.done && game.qte.result && game.qteKind === 'skill') {
-    drawText(ctx, game.qte.result.success ? 'NICE!' : 'FUMBLED...', 400, 320, {
-      size: 34, weight: 'bold', color: game.qte.result.success ? '#2ecc71' : '#e74c3c', align: 'center', outline: true,
-    });
+}
+
+function signed(v, unit = '') {
+  const n = Math.round(v * 10) / 10;
+  return `${n >= 0 ? '+' : ''}${n}${unit}`;
+}
+
+/** After every minigame: how it went against the goal, as stars, a score bar, and what it earned
+ *  or cost. It replaces a 0.8 s "NICE!" that said nothing about the score or the consequence. */
+function resultCard(ctx, game) {
+  const q = game.qte, r = q.result, t = game.qteEndTimer || 0;
+  const k = Math.min(1, t / 0.9);
+  const score = Math.max(0, Math.min(100, Math.round(r.score ?? (r.success ? 70 : 20))));
+  const stars = !r.success ? 0 : score >= 85 ? 3 : score >= 60 ? 2 : 1;
+  let title, lines = [];
+  if (game.qteKind === 'skill') {
+    title = !r.success ? 'FUMBLED' : score >= 85 ? 'GREAT WORK!' : score >= 60 ? 'GOOD JOB' : 'GOT IT DONE';
+    const base = game.currentGig ? game.currentGig.payout : 0;
+    lines.push(r.success ? `Pay bonus +$${Math.round(base * (score / 500))}  ·  Reputation +0.1` : `Pay cut -$${Math.round(base * 0.3)}  ·  Reputation -0.2  ·  Stress +5`);
+  } else if (game.qteKind === 'ei') {
+    title = r.success ? 'YOU READ THE ROOM' : 'MISREAD';
+    const fx = r.effects || {};
+    const parts = [];
+    if (fx.rep) parts.push(`Reputation ${signed(fx.rep)}`);
+    if (fx.stress) parts.push(`Stress ${signed(fx.stress)}`);
+    if (fx.cash) parts.push(`Cash ${fx.cash >= 0 ? '+' : '-'}$${Math.abs(Math.round(fx.cash))}`);
+    if (parts.length) lines.push(parts.join('  ·  '));
+  } else {
+    const isBreath = q.name === 'WIND DOWN';
+    title = isBreath ? (score >= 85 ? 'DEEPLY CALM' : score >= 60 ? 'SETTLED' : 'A LITTLE CALMER') : (r.success ? 'GOOD TALK' : 'IT WAS SOMETHING');
+    if (isBreath) lines.push(`Stress -${Math.round((8 + Math.round((score / 100) * 12)) * windDownMultiplier(game.state.twist))}  ·  Balance +3  ·  Easier timing tomorrow`);
+    else lines.push(`Support +${(r.effects && r.effects.support) || 0}  ·  Balance +2`);
   }
+  if (globalThis.__textProbe) globalThis.__textProbe.push({ layer: true });
+  ctx.fillStyle = `rgba(8, 6, 4, ${0.88 * k})`;
+  roundRectPath(ctx, 92, 102, 616, 426, 12); ctx.fill();
+  const x = 190, y = 160, w = 420, h = 290;
+  ctx.save();
+  modalScale(ctx, t, 400, y + h / 2);
+  panel(ctx, x, y, w, h, { alpha: 0.98 });
+  const accent = r.success ? '#2ecc71' : '#e74c3c';
+  ctx.fillStyle = accent; ctx.fillRect(x + 2, y + 2, w - 4, 4);
+  drawText(ctx, title, 400, y + 46, { size: 28, weight: 'bold', color: r.success ? '#2ecc71' : '#ff6b5e', align: 'center', outline: true });
+  starRow(ctx, 400, y + 96, stars, k);
+  // score bar fills to the score; the notch marks the "good job" line
+  const bx = x + 50, bw = w - 100, by = y + 136;
+  ctx.fillStyle = '#3a2d1f'; roundRectPath(ctx, bx, by, bw, 14, 7); ctx.fill();
+  ctx.fillStyle = accent; roundRectPath(ctx, bx, by, Math.max(8, bw * (score / 100) * k), 14, 7); ctx.fill();
+  ctx.fillStyle = '#f5deb3'; ctx.fillRect(bx + bw * 0.6 - 1, by - 3, 2, 20);
+  drawText(ctx, `Score ${Math.round(score * k)} / 100`, 400, by + 36, { size: 15, weight: 'bold', color: '#ffffff', align: 'center' });
+  lines.forEach((l, i) => drawText(ctx, l, 400, by + 62 + i * 20, { size: 14, color: '#f5deb3', align: 'center', maxWidth: w - 30 }));
+  if (t > 0.4) drawText(ctx, 'Tap to continue', 400, y + h - 16, { size: 13, color: '#e8d9b8', align: 'center' });
+  ctx.restore();
 }
 
 // ---------- RESULTS ----------
@@ -459,10 +621,11 @@ export function eveningScreen(ctx, game) {
   // evening choice panel (right)
   eveningChoicePanel(ctx, game, 410, 100, 340, 400);
 
-  const canBack = !game.billsOpen && !game.wrapUpOpen && !game.restDay;
-  button(ctx, 60, 526, 200, 52, 'Sleep', { color: '#2c6e49', disabled: game.billsOpen || game.wrapUpOpen, onClick: () => game.sleep() });
-  if (canBack) button(ctx, 270, 526, 110, 52, '← Back', { color: '#5d4023', onClick: () => game.backFromEvening() });
-  if (s.unpaidRent > 0 && s.cash >= s.unpaidRent) {
+  // After "Sleep In (skip day)" the day is over: no Back to the morning (QA round 2 #18).
+  const canBack = !game.billsOpen && !game.wrapUpOpen && !game.restDay && !game.skippedDay;
+  if (!game.shopOpen) button(ctx, 60, 526, 200, 52, 'Sleep', { color: '#2c6e49', disabled: game.billsOpen || game.wrapUpOpen, onClick: () => game.sleep() });
+  if (canBack && !game.shopOpen) button(ctx, 270, 526, 110, 52, '← Back', { color: '#5d4023', onClick: () => game.backFromEvening() });
+  if (!game.shopOpen && s.unpaidRent > 0 && s.cash >= s.unpaidRent) {
     button(ctx, 390, 526, 240, 52, `Pay Rent Debt $${s.unpaidRent}`, { color: '#7a3020', onClick: () => game.payDebt('rent') });
   }
 
@@ -569,23 +732,27 @@ function wrapUpHeadline(earned) {
 
 function shopPanel(ctx, game, x, y, w, h) {
   const s = game.state;
-  panel(ctx, x, y, w, h);
-  drawSprite(ctx, 'items', x + w - 46, y + 8, 36, 36);
-  drawText(ctx, 'SHOP', x + 18, y + 30, { size: 16, weight: 'bold', color: '#ffd700' });
+  panel(ctx, x, y, w, h, { alpha: 0.98 });
+  // Icon beside the title, clear of every Buy button (QA round 2 #8: it sat on top of the first one).
+  drawSprite(ctx, 'items', x + 16, y + 10, 30, 30);
+  drawText(ctx, 'SHOP', x + 54, y + 31, { size: 18, weight: 'bold', color: '#ffd700' });
+  drawText(ctx, `Cash $${Math.round(s.cash)}`, x + w - 18, y + 31, { size: 14, weight: 'bold', color: '#2ecc71', align: 'right', font: 'monospace' });
   const rows = [
     ...CONSUMABLES.map((c) => ({ ...c, kind: 'food', canBuyNow: c.canBuy(s) })),
     ...UPGRADES.filter((u) => !s.upgradesOwned.includes(u.name)).map((u) => ({ ...u, kind: 'upgrade', canBuyNow: true })),
   ];
   if (rows.length === 0) {
-    drawText(ctx, 'Nothing left to buy!', x + 18, y + 62, { size: 14, color: '#e0e0e0' });
+    drawText(ctx, 'Nothing left to buy!', x + 18, y + 72, { size: 14, color: '#e0e0e0' });
     return;
   }
-  const perPage = Math.floor((h - 60) / 62);
+  const PITCH = 50; // all eight items fit; the eighth (Sturdy Leash) used to be cut off
+  const perPage = Math.floor((h - 52 - 64) / PITCH);
   rows.slice(0, perPage).forEach((up, i) => {
-    const uy = y + 44 + i * 62;
-    drawText(ctx, `${up.kind === 'food' ? '🍞 ' : ''}${up.name} — $${up.cost}`, x + 18, uy + 15, { size: 14, weight: 'bold', color: '#f0f0f0', maxWidth: w - 110 });
-    drawText(ctx, up.canBuyNow ? up.effect : 'Already ate today', x + 18, uy + 32, { size: 11, color: '#a89878', maxWidth: w - 110 });
-    button(ctx, x + w - 78, uy + 2, 64, 40, 'Buy', {
+    const uy = y + 50 + i * PITCH;
+    if (i > 0) { ctx.strokeStyle = 'rgba(139,90,43,0.45)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x + 16, uy - 4); ctx.lineTo(x + w - 16, uy - 4); ctx.stroke(); }
+    drawText(ctx, `${up.kind === 'food' ? '🍞 ' : ''}${up.name} — $${up.cost}`, x + 18, uy + 17, { size: 14, weight: 'bold', color: '#f0f0f0', maxWidth: w - 120 });
+    drawText(ctx, up.canBuyNow ? up.effect : 'Already ate today', x + 18, uy + 35, { size: 12, color: '#b5a488', maxWidth: w - 120 });
+    button(ctx, x + w - 86, uy + 4, 68, 40, 'Buy', {
       color: '#2c6e49',
       disabled: s.cash < up.cost || !up.canBuyNow,
       fontSize: 13,
@@ -596,13 +763,16 @@ function shopPanel(ctx, game, x, y, w, h) {
 }
 
 function shopOverlay(ctx, game) {
-  ctx.fillStyle = 'rgba(8, 6, 4, 0.7)';
-  ctx.fillRect(0, 56, 800, 460);
+  // The whole screen dims (it stopped at y=516 and left the day's buttons lit), and the shop's own
+  // Close sits inside the panel, centred under its rows (QA round 2 #22, #26).
+  ctx.fillStyle = 'rgba(8, 6, 4, 0.78)';
+  ctx.fillRect(0, 56, 800, 544);
   UI.absorb();
-  shopPanel(ctx, game, 200, 90, 400, 424);
-  // keep the toggle reachable above the absorbing backdrop
-  const onMorning = game.phase === 'MORNING';
-  button(ctx, onMorning ? 295 : 428, onMorning ? 526 : 442, onMorning ? 210 : 304, onMorning ? 52 : 40, 'Close Shop', { color: '#2c3e50', fontSize: 14, onClick: () => { game.shopOpen = false; } });
+  UI.register(0, 56, 800, 544, () => { game.shopOpen = false; }); // tap outside the panel closes it
+  const x = 170, y = 66, w = 460, h = 524;
+  UI.register(x, y, w, h, null);
+  shopPanel(ctx, game, x, y, w, h);
+  button(ctx, x + w / 2 - 100, y + h - 56, 200, 44, 'Close Shop', { color: '#2c3e50', fontSize: 15, onClick: () => { game.shopOpen = false; } });
 }
 
 function billsModal(ctx, game) {
@@ -672,7 +842,7 @@ function volumeRow(ctx, game, x, y, label, key) {
 
 function toggleRow(ctx, x, y, label, get, set) {
   drawText(ctx, label, x, y + 24, { size: 15, color: '#f0f0f0' });
-  button(ctx, x + 250, y, 90, 40, get() ? 'ON' : 'OFF', {
+  button(ctx, x + 280, y, 90, 40, get() ? 'ON' : 'OFF', {
     color: get() ? '#2c6e49' : '#3a3128',
     fontSize: 14,
     onClick: () => set(!get()),
@@ -681,33 +851,41 @@ function toggleRow(ctx, x, y, label, get, set) {
 
 export function settingsModal(ctx, game) {
   const s = game.state.settings;
+  const close = () => { game.settingsOpen = false; game.confirmReset = false; };
   ctx.fillStyle = 'rgba(6, 4, 2, 0.85)';
   ctx.fillRect(0, 0, 800, 600);
   UI.absorb();
-  panel(ctx, 170, 40, 460, 530, { alpha: 0.98 });
-  drawText(ctx, 'SETTINGS', 400, 76, { size: 24, weight: 'bold', color: '#ffd700', align: 'center' });
+  // Tap outside the panel to close (QA round 2 #10); taps on the panel itself are absorbed.
+  UI.register(0, 0, 800, 600, close);
+  const PX = 160, PY = 16, PW = 480, PH = 572;
+  UI.register(PX, PY, PW, PH, null);
+  panel(ctx, PX, PY, PW, PH, { alpha: 0.98 });
+  drawText(ctx, 'SETTINGS', 400, 50, { size: 24, weight: 'bold', color: '#ffd700', align: 'center' });
 
-  let y = 110;
-  volumeRow(ctx, game, 204, y, 'Master Volume', 'masterVolume'); y += 52;
-  volumeRow(ctx, game, 204, y, 'Music Volume', 'musicVolume'); y += 52;
-  volumeRow(ctx, game, 204, y, 'SFX Volume', 'sfxVolume'); y += 60;
+  // A flow layout: each row starts below whatever the row above actually used, including a
+  // description that wraps to two lines on a narrower font. Fixed y offsets let a wrapped line
+  // run into the next button on iPhone (QA round 2 #24).
+  let y = 82;
+  volumeRow(ctx, game, 196, y, 'Master Volume', 'masterVolume'); y += 52;
+  volumeRow(ctx, game, 196, y, 'Music Volume', 'musicVolume'); y += 52;
+  volumeRow(ctx, game, 196, y, 'SFX Volume', 'sfxVolume'); y += 58;
 
-  toggleRow(ctx, 204, y, 'Mute All', () => s.muted, (v) => { s.muted = v; applyAudioSettings(); game.state.save(); }); y += 48;
-  toggleRow(ctx, 204, y, 'Reduce Timing Pressure', () => s.reduceTimingPressure, (v) => { s.reduceTimingPressure = v; game.state.save(); }); y += 44;
-  drawWrapped(ctx, 'Widens timed-challenge windows and slows their timers.', 204, y, 380, 15, { size: 12, color: '#b5a488' }); y += 22;
-  toggleRow(ctx, 204, y, 'Reduce Motion', () => s.reduceMotion, (v) => { s.reduceMotion = v; game.state.save(); }); y += 44;
-  drawWrapped(ctx, 'Replaces screen transitions with a quick fade.', 204, y, 380, 15, { size: 12, color: '#b5a488' }); y += 30;
+  toggleRow(ctx, 196, y, 'Mute All', () => s.muted, (v) => { s.muted = v; applyAudioSettings(); game.state.save(); }); y += 50;
+  toggleRow(ctx, 196, y, 'Reduce Timing Pressure', () => s.reduceTimingPressure, (v) => { s.reduceTimingPressure = v; game.state.save(); }); y += 54;
+  y = drawWrapped(ctx, 'Wider timing windows and slower timers.', 196, y, 400, 16, { size: 12, color: '#b5a488' }) + 8;
+  toggleRow(ctx, 196, y, 'Reduce Motion', () => s.reduceMotion, (v) => { s.reduceMotion = v; game.state.save(); }); y += 54;
+  y = drawWrapped(ctx, 'Quick fades instead of screen transitions.', 196, y, 400, 16, { size: 12, color: '#b5a488' }) + 10;
 
-  button(ctx, 204, y, 180, 40, 'Replay tutorial', { color: '#2c5a6e', fontSize: 13, onClick: () => game.replayTutorial() });
+  button(ctx, 196, y, 190, 40, 'Replay tutorial', { color: '#2c5a6e', fontSize: 13, onClick: () => game.replayTutorial() });
   if (game.confirmReset) {
-    button(ctx, 400, y, 190, 40, 'Start over? YES', { color: '#7a3020', fontSize: 13, onClick: () => { game.newGame(); game.settingsOpen = false; game.confirmReset = false; } });
+    button(ctx, 414, y, 190, 40, 'Start over? YES', { color: '#7a3020', fontSize: 13, onClick: () => { game.newGame(); game.settingsOpen = false; game.confirmReset = false; } });
   } else {
-    button(ctx, 400, y, 190, 40, 'Start new game', { color: '#5d4023', fontSize: 13, onClick: () => { game.confirmReset = true; } });
+    button(ctx, 414, y, 190, 40, 'Start new game', { color: '#5d4023', fontSize: 13, onClick: () => { game.confirmReset = true; } });
   }
-  y += 58; // room for the warning between the buttons and Close (it was squeezed against both)
+  y += 58;
   if (game.confirmReset) drawText(ctx, 'This deletes the current run. Settings are kept.', 400, y, { size: 12, color: '#ff8a7e', align: 'center' });
 
-  button(ctx, 300, 528, 200, 38, 'Close', { color: '#2c6e49', onClick: () => { game.settingsOpen = false; game.confirmReset = false; } });
+  button(ctx, 300, PY + PH - 50, 200, 40, 'Close', { color: '#2c6e49', onClick: close });
 }
 
 // ---------- WELCOME BACK (reopening a run in progress) ----------
@@ -716,9 +894,13 @@ export function resumeModal(ctx, game) {
   ctx.fillStyle = 'rgba(6, 4, 2, 0.82)';
   ctx.fillRect(0, 0, 800, 600);
   UI.absorb();
-  panel(ctx, 220, 160, 360, 280, { alpha: 0.98 });
-  drawText(ctx, 'WELCOME BACK', 400, 204, { size: 24, weight: 'bold', color: '#ffd700', align: 'center' });
-  drawText(ctx, `Day ${s.day}  ·  $${Math.round(s.cash)}  ·  ${s.gigsCompleted} gigs done`, 400, 238, { size: 15, color: '#e0e0e0', align: 'center' });
+  panel(ctx, 200, 150, 400, 290, { alpha: 0.98 });
+  drawText(ctx, 'WELCOME BACK', 400, 190, { size: 24, weight: 'bold', color: '#ffd700', align: 'center' });
+  drawText(ctx, `Day ${s.day}  ·  $${Math.round(s.cash)}  ·  ${s.gigsCompleted} gigs done`, 400, 222, { size: 15, color: '#e0e0e0', align: 'center' });
+  // Where you left off, in one line: what is due next and what this month is about.
+  const twist = twistOf(s);
+  const due = s.daysUntilBills <= 0 ? 'Rent due today' : s.daysUntilBills === 1 ? 'Rent due tomorrow' : `Rent due in ${s.daysUntilBills} days`;
+  drawText(ctx, twist ? `${due}  ·  ${twist.name}` : due, 400, 250, { size: 13, color: s.daysUntilBills <= 2 ? '#ff8a7e' : '#c9a876', align: 'center', maxWidth: 370 });
   if (!game.confirmNewGame) {
     button(ctx, 250, 272, 300, 56, 'Continue', { color: '#2c6e49', onClick: () => { game.resumePrompt = false; } });
     button(ctx, 250, 344, 300, 56, 'New game', { color: '#5d4023', onClick: () => { game.confirmNewGame = true; } });
@@ -793,7 +975,9 @@ export function summaryScreen(ctx, game) {
   drawBackground(ctx, 'apartment', 0.78);
   panel(ctx, 110, 50, 580, 500, { alpha: 0.96 });
   drawText(ctx, '30 DAYS DONE', 400, 96, { size: 34, weight: 'bold', color: '#ffd700', align: 'center', outline: true });
-  drawWrapped(ctx, runVerdict(s), 400, 134, 500, 22, { size: 16, color: '#e0e0e0', align: 'center' });
+  const vy = drawWrapped(ctx, runVerdict(s), 400, 134, 500, 22, { size: 16, color: '#e0e0e0', align: 'center' });
+  const twist = twistOf(s), goal = goalOf(s);
+  if (twist) drawText(ctx, `This month: ${twist.name}`, 400, Math.min(vy + 2, 190), { size: 13, color: '#c9a876', align: 'center' });
 
   const rows = [
     ['Cash on hand', `$${Math.round(s.cash)}`],
@@ -804,17 +988,20 @@ export function summaryScreen(ctx, game) {
     ['Evenings rested', `${s.eveningsRested}`],
     ['Clients read well', `${s.eiWins}`],
   ];
+  if (goal) rows.push(['Side goal', (s.sideGoalDone || goal.check(s)) ? 'Done ✓' : 'Missed']);
   const gy = 224;
   panel(ctx, 190, gy - 26, 420, rows.length * 28 + 14, { alpha: 0.6 });
   rows.forEach(([k, v], i) => {
     drawText(ctx, k, 214, gy + i * 28, { size: 15, color: '#c9a876' });
     drawText(ctx, v, 586, gy + i * 28, { size: 15, weight: 'bold', color: '#f0f0f0', align: 'right', font: 'monospace' });
   });
-  drawStars(ctx, 366, 452, s.reputation, 20);
 
-  button(ctx, 100, 480, 190, 50, 'Free play (keep going)', { color: '#2c5a6e', fontSize: 13, onClick: () => game.startFreePlay() });
-  button(ctx, 305, 480, 190, 50, 'The math of the month', { color: '#6b4a2e', fontSize: 13, onClick: () => { game.mathOpen = true; } });
-  button(ctx, 510, 480, 190, 50, 'New run', { color: '#2c6e49', fontSize: 14, onClick: () => game.newGame() });
+  // Three equal buttons, evenly spaced INSIDE the panel (QA round 2 #27: the outer two hung past
+  // the panel's edges).
+  const BW = 172, GAP = 14, BX = 400 - (BW * 3 + GAP * 2) / 2;
+  button(ctx, BX, 484, BW, 50, 'Free play (keep going)', { color: '#2c5a6e', fontSize: 13, onClick: () => game.startFreePlay() });
+  button(ctx, BX + BW + GAP, 484, BW, 50, 'The math of the month', { color: '#6b4a2e', fontSize: 13, onClick: () => { game.mathOpen = true; } });
+  button(ctx, BX + (BW + GAP) * 2, 484, BW, 50, 'New run', { color: '#2c6e49', fontSize: 14, onClick: () => game.newGame() });
 }
 
 // ---------- GAME OVER ----------
