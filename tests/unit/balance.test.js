@@ -6,13 +6,14 @@ import { describe, it, expect } from 'vitest';
 import { makeGame, seededRandom } from './helpers.js';
 import { generateDailyGigs } from '../../src/game/gigs.js';
 import { RUN_LENGTH_DAYS } from '../../src/engine/state.js';
+import { MONTH_TWISTS } from '../../src/game/twists.js';
 
-function playRun(seed, strategy) {
+function playRun(seed, strategy, twist = null) {
   const rnd = seededRandom(seed);
   const orig = Math.random;
   Math.random = rnd;
   try {
-    const { game, state } = makeGame();
+    const { game, state } = makeGame(twist ? { twist } : {});
     state.todayGigs = generateDailyGigs(state);
     let guard = 0;
     while (game.phase !== 'SUMMARY' && game.phase !== 'GAMEOVER' && guard++ < 5000) {
@@ -88,4 +89,18 @@ describe('30-day balance bands (Monte Carlo)', () => {
     expect(Math.abs(dh)).toBeGreaterThan(1);
     expect(Math.abs(dh)).toBeLessThan(45);
   });
+});
+
+// Replayability: every month twist must stay a fair month, not a trap. Same balanced strategy,
+// each twist on its own; the band is a little wider than the base game's because a twist is
+// supposed to make some months harder.
+describe('every month twist is survivable (2026-10-02)', () => {
+  for (const t of MONTH_TWISTS) {
+    it(`${t.id}: the balanced strategy usually survives`, () => {
+      const N = 60;
+      const runs = Array.from({ length: N }, (_, i) => playRun(5000 + i, 'balanced', t.id));
+      for (const r of runs) expect(r.done || r.evicted).toBe(true);
+      expect(runs.filter((r) => r.evicted).length / N).toBeLessThan(0.45);
+    });
+  }
 });

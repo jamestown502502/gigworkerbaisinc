@@ -1,3 +1,5 @@
+import { extraListings, weirdGigStars, payMultiplier, repeatClientBonus } from './twists.js';
+
 export const GIG_TEMPLATES = [
   { title: 'Help Move Furniture', type: 'physical', payout: [60, 120], hours: [2, 4], risk: [10, 30], location: 'okay', skillReq: 'strength', hasQTE: true, choiceTree: 'movingHelp', outdoor: true },
   { title: 'Yard Work — Leaves & Mowing', type: 'physical', payout: [40, 80], hours: [2, 3], risk: [5, 15], location: 'safe', skillReq: 'none', hasQTE: true, choiceTree: 'yardWork', outdoor: true },
@@ -29,7 +31,7 @@ export function generateDailyGigs(state) {
   // Reputation gates gig types (PRD progression table)
   let pool = GIG_TEMPLATES.filter((t) => {
     if (t.type === 'creative') return state.reputation >= 2 || state.hasLaptop;
-    if (t.type === 'weird') return state.reputation >= 3;
+    if (t.type === 'weird') return state.reputation >= weirdGigStars(state.twist);
     return true;
   });
   // Rainy days: all outdoor work is off the board — the pool visibly reshapes
@@ -38,7 +40,7 @@ export function generateDailyGigs(state) {
     if (filtered.length > 0) pool = filtered;
   }
 
-  const count = weather?.id === 'perfect' ? 8 : 6;
+  const count = (weather?.id === 'perfect' ? 8 : 6) + extraListings(state.twist);
   const shuffled = [...pool].sort(() => Math.random() - 0.5);
   const gigs = [];
   for (let i = 0; i < count; i++) {
@@ -56,10 +58,11 @@ function instantiate(t, state) {
   if (location === 'sketchy') { payout = Math.round(payout * 1.2); risk += 10; }
   if (t.type === 'physical' && state.hasToolBelt) payout = Math.round(payout * 1.3);
   if (state.reputation >= 4) payout = Math.round(payout * 1.25);
+  payout = Math.round(payout * payMultiplier(state.twist, t));
 
   const client = pick(CLIENT_NAMES);
   const isRepeat = state.repeatClients.includes(client);
-  if (isRepeat) payout = Math.round(payout * 1.1);
+  if (isRepeat) payout = Math.round(payout * repeatClientBonus(state.twist));
 
   return {
     title: t.title,

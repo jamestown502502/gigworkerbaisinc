@@ -59,10 +59,18 @@ export function renderListings(ctx, game) {
   const maxScroll = Math.max(0, gigs.length - VISIBLE);
   const drag = InputManager.consumeDrag();
   const wheel = InputManager.consumeWheel();
-  game.listScrollPx = (game.listScrollPx || 0) - drag.y + wheel * 0.5;
+  game.listScrollPx = (game.listScrollPx || 0) - drag.y;
   while (game.listScrollPx >= CARD_PITCH * 0.6) { game.listScrollPx -= CARD_PITCH; game.listScroll += 1; }
   while (game.listScrollPx <= -CARD_PITCH * 0.6) { game.listScrollPx += CARD_PITCH; game.listScroll -= 1; }
   if (!InputManager.pointer.dragging) game.listScrollPx = 0;
+  // Mouse wheel / trackpad keep their own accumulator (QA round 2 #12). They used to share the
+  // drag one, which is zeroed every frame you are not dragging, so one wheel notch (deltaY 100,
+  // halved to 50) never reached the 50.4 px step and the list never moved. One notch = one card;
+  // a trackpad's many small deltas add up to the same.
+  game.listWheelPx = (game.listWheelPx || 0) + wheel;
+  while (game.listWheelPx >= 40) { game.listWheelPx -= 100; game.listScroll += 1; }
+  while (game.listWheelPx <= -40) { game.listWheelPx += 100; game.listScroll -= 1; }
+  if (wheel === 0) game.listWheelPx *= 0.9;
   game.listScroll = Math.max(0, Math.min(game.listScroll, maxScroll));
 
   const shown = gigs.slice(game.listScroll, game.listScroll + VISIBLE);

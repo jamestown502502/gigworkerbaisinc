@@ -3,20 +3,35 @@
 // resize/orientation change. Setting CSS width and height independently (the old approach,
 // with max-width/max-height clamping each axis on its own) let a phone squash the canvas to
 // 360x600 — a ~1.8x vertical stretch that read as "the landing page is distorted".
+//
+// The backing store follows the size the canvas is SHOWN at (times the device pixel ratio), not
+// the 800x600 logical size. It used to be a fixed 800x600 bitmap stretched by CSS, so a 1080p
+// desktop window blew every glyph up 1.8x with nearest-neighbour filtering: the "pixelated
+// modal text" in QA round 2 #9. Drawing code is unchanged; one base transform maps logical units
+// onto however many real pixels there are.
 export const LOGICAL_W = 800;
 export const LOGICAL_H = 600;
 
-export function setupGameCanvas(canvas, logicalWidth = LOGICAL_W, logicalHeight = LOGICAL_H, isPixelArt = true) {
+// Upper bound on backing pixels per logical pixel: 3 covers a 4K desktop and every phone at its
+// real density, while keeping fill cost bounded.
+const MAX_SCALE = 3;
+
+export function setupGameCanvas(canvas, logicalWidth = LOGICAL_W, logicalHeight = LOGICAL_H, isPixelArt = false) {
   const ctx = canvas.getContext('2d');
-  // Capped at 2x: an uncapped devicePixelRatio (3-4x on many phones) renders far more pixels
-  // than a mobile screen can distinguish, for a real fillrate cost every frame.
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.width = logicalWidth * dpr;
-  canvas.height = logicalHeight * dpr;
-  ctx.scale(dpr, dpr);
-  if (isPixelArt) { ctx.imageSmoothingEnabled = false; canvas.style.imageRendering = 'pixelated'; }
-  fitCanvas(canvas, logicalWidth, logicalHeight);
-  const refit = () => fitCanvas(canvas, logicalWidth, logicalHeight);
+  const refit = () => {
+    const { scale } = fitCanvas(canvas, logicalWidth, logicalHeight);
+    const dpr = window.devicePixelRatio || 1;
+    const k = Math.max(1, Math.min(MAX_SCALE, scale * dpr));
+    const bw = Math.round(logicalWidth * k), bh = Math.round(logicalHeight * k);
+    if (canvas.width !== bw || canvas.height !== bh) {
+      canvas.width = bw;   // resizing resets the context state, so the transform is set after
+      canvas.height = bh;
+    }
+    ctx.setTransform(bw / logicalWidth, 0, 0, bh / logicalHeight, 0, 0);
+    ctx.imageSmoothingEnabled = !isPixelArt;
+    if (!isPixelArt) ctx.imageSmoothingQuality = 'low';
+  };
+  refit();
   window.addEventListener('resize', refit);
   window.addEventListener('orientationchange', refit);
   if (window.visualViewport) window.visualViewport.addEventListener('resize', refit);

@@ -36,6 +36,13 @@ export class GameState {
     this.weather = null;         // rolled each morning
     this.tutorialSeen = false;
     this.tutorialStep = 0;
+    this.seenMicrogames = [];    // microgames whose how-to card has been read (kept across runs)
+    // Replayability (src/game/twists.js): the run's month twist and side goal. null on saves from
+    // before they existed, which simply play by the original rules.
+    this.twist = null;
+    this.sideGoal = null;
+    this.sideGoalDone = false;
+    this.lastTwist = null;       // the previous run's twist, so a new run never repeats it
     this.weekNumber = 1;
     this.weekStats = { startingCash: 200, gigsDone: 0, totalEarned: 0, daysWithEvents: 0, eveningsRested: 0 };
     this.doublePayDays = 0;
@@ -103,12 +110,16 @@ export class GameState {
     const settings = this.settings;
     const character = { ...this.character }; // a new run's creator starts from the last look
     const tutorialSeen = this.tutorialSeen;  // someone starting over has seen it (Settings replays it)
+    const seenMicrogames = this.seenMicrogames || [];
+    const lastTwist = this.twist || this.lastTwist;
     localStorage.removeItem('gigWorkerState');
     Object.assign(this, new GameState());
     this.settings = settings;
     this.character = character;
     this.characterCreated = false;
     this.tutorialSeen = tutorialSeen;
+    this.seenMicrogames = seenMicrogames;
+    this.lastTwist = lastTwist;
     this.save();
   }
   clamp() {

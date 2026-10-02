@@ -23,8 +23,8 @@ function ease(key, target) {
   return disp[key];
 }
 
-function showTooltip(game, key) {
-  game.hudTooltip = METER_TOOLTIPS[key];
+function showTooltip(game, key, prefix = '') {
+  game.hudTooltip = prefix + METER_TOOLTIPS[key];
   game.hudTooltipT = 0;
 }
 
@@ -80,48 +80,51 @@ export function renderHUD(ctx, game) {
   drawText(ctx, `${Math.round(stressD)}`, 218, mid, { size: 12, color: '#f0f0f0', font: 'monospace', baseline: 'middle' });
   UI.register(114, 4, 130, 48, () => showTooltip(game, 'stress'));
 
-  // Reputation — stars with half fills
+  // Reputation — stars with half fills. No decimal next to them (QA round 2 #19: "3.5" in a
+  // header reads as a glitch); the stars carry the value and the tooltip states it exactly.
   drawSprite(ctx, 'uiIcons', 252, iconY, iconS, iconS, 2);
-  const starsW = drawStars(ctx, 284, mid, state.reputation, 15);
-  drawText(ctx, state.reputation.toFixed(1), 284 + starsW + 6, mid, { size: 11, color: '#f0f0f0', font: 'monospace', baseline: 'middle' });
-  UI.register(248, 4, 136, 48, () => showTooltip(game, 'rep'));
+  drawStars(ctx, 284, mid, state.reputation, 15);
+  UI.register(248, 4, 116, 48, () => showTooltip(game, 'rep', `Reputation: ${Math.round(state.reputation * 2) / 2} of 5 stars. `));
 
   // Energy
   const energyD = ease('energy', state.energy);
-  drawSprite(ctx, 'uiIcons', 392, iconY, iconS, iconS, 3);
-  drawMeter(ctx, 424, 21, 64, 13, energyD / 100, state.energy < 25 ? '#e74c3c' : '#2ecc71');
-  drawText(ctx, `${Math.round(energyD)}`, 492, mid, { size: 12, color: '#f0f0f0', font: 'monospace', baseline: 'middle' });
-  UI.register(388, 4, 130, 48, () => showTooltip(game, 'energy'));
+  drawSprite(ctx, 'uiIcons', 368, iconY, iconS, iconS, 3);
+  drawMeter(ctx, 400, 21, 60, 13, energyD / 100, state.energy < 25 ? '#e74c3c' : '#2ecc71');
+  drawText(ctx, `${Math.round(energyD)}`, 464, mid, { size: 12, color: '#f0f0f0', font: 'monospace', baseline: 'middle' });
+  UI.register(364, 4, 124, 48, () => showTooltip(game, 'energy'));
 
   // Balance (the wellbeing meter that used to be hidden)
   const balD = ease('balance', state.health);
   ctx.fillStyle = state.health < 30 ? '#e74c3c' : '#8fb7c9';
-  ctx.beginPath(); ctx.arc(538, mid, 9, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(504, mid, 9, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#1d150d';
-  ctx.beginPath(); ctx.arc(538, mid, 9, Math.PI * 0.5, Math.PI * 1.5); ctx.fill();
-  drawMeter(ctx, 556, 21, 64, 13, balD / 100, state.health < 30 ? '#e74c3c' : '#8fb7c9');
-  drawText(ctx, `${Math.round(balD)}`, 624, mid, { size: 12, color: '#f0f0f0', font: 'monospace', baseline: 'middle' });
-  UI.register(524, 4, 124, 48, () => showTooltip(game, 'balance'));
+  ctx.beginPath(); ctx.arc(504, mid, 9, Math.PI * 0.5, Math.PI * 1.5); ctx.fill();
+  drawMeter(ctx, 520, 21, 60, 13, balD / 100, state.health < 30 ? '#e74c3c' : '#8fb7c9');
+  drawText(ctx, `${Math.round(balD)}`, 584, mid, { size: 12, color: '#f0f0f0', font: 'monospace', baseline: 'middle' });
+  UI.register(492, 4, 118, 48, () => showTooltip(game, 'balance'));
 
-  // Day counter + weather + rent (three-line right block)
+  // Day counter + weather + rent (three-line right block). Its own column from x=614 to 750 with
+  // every line capped to that width, so a long weather name (or a wider emoji font, as on iOS)
+  // shrinks to fit instead of running left over the Balance meter (QA round 2 #23).
+  const RX = 748, RW = 132;
   const dayLabel = state.freePlay && state.day > 30 ? `Day ${state.day} · free play` : `Day ${state.day}`;
-  drawText(ctx, dayLabel, 728, 13, { size: 14, weight: 'bold', color: '#f0f0f0', font: 'monospace', align: 'right', baseline: 'middle' });
+  drawText(ctx, dayLabel, RX, 13, { size: 14, weight: 'bold', color: '#f0f0f0', font: 'monospace', align: 'right', baseline: 'middle', maxWidth: RW });
   const w = state.weather;
   if (w) {
-    drawText(ctx, `${w.emoji} ${w.name}`, 728, 29, { size: 12, weight: 'bold', color: w.color, align: 'right', baseline: 'middle' });
+    drawText(ctx, `${w.emoji} ${w.name}`, RX, 29, { size: 12, weight: 'bold', color: w.color, align: 'right', baseline: 'middle', maxWidth: RW });
   }
-  drawText(ctx, rentDueLabel(Math.max(0, state.daysUntilBills)), 728, 45, {
-    size: 11, color: state.daysUntilBills <= 2 ? '#ff6b5e' : '#c9a876', font: 'monospace', align: 'right', baseline: 'middle',
+  drawText(ctx, rentDueLabel(Math.max(0, state.daysUntilBills)), RX, 45, {
+    size: 11, color: state.daysUntilBills <= 2 ? '#ff6b5e' : '#c9a876', font: 'monospace', align: 'right', baseline: 'middle', maxWidth: RW,
   });
 
   // Mute (one tap) and Settings, top-right corner
-  const gearX = 768, gearY = 6, gearS = 20;
+  const gearX = 770, gearY = 6, gearS = 20;
   ctx.fillStyle = 'rgba(255,255,255,0.08)';
   ctx.beginPath(); ctx.arc(gearX + gearS / 2, gearY + gearS / 2, gearS / 2 + 3, 0, Math.PI * 2); ctx.fill();
   drawText(ctx, '⚙', gearX + gearS / 2, gearY + gearS / 2, { size: 16, align: 'center', baseline: 'middle', shadow: false });
   UI.register(gearX - 6, gearY - 6, gearS + 12, gearS + 12, () => { game.settingsOpen = !game.settingsOpen; game.confirmReset = false; });
 
-  const muteX = 768, muteY = 30;
+  const muteX = 770, muteY = 30;
   ctx.fillStyle = 'rgba(255,255,255,0.08)';
   ctx.beginPath(); ctx.arc(muteX + gearS / 2, muteY + gearS / 2, gearS / 2 + 3, 0, Math.PI * 2); ctx.fill();
   drawText(ctx, state.settings.muted ? '🔇' : '🔊', muteX + gearS / 2, muteY + gearS / 2, { size: 14, align: 'center', baseline: 'middle', shadow: false });

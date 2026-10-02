@@ -48,3 +48,33 @@ export function drawSprite(ctx, key, x, y, w, h, frame = 0) {
     asset.procedural(ctx, x, y, w, h);
   }
 }
+
+// Full-screen paintings, pre-scaled once to the canvas's real pixel size. Resampling a 1200 px
+// painting to the screen every frame (twice, with a weather overlay) is the single most expensive
+// thing the game drew, and on a software-rendered canvas it showed up as multi-second stalls. A
+// cached copy at exactly the backing size makes each frame a 1:1 copy. The cache is rebuilt when
+// the canvas is resized (rotation, window resize).
+const fullscreenCache = new Map();
+export function drawFullscreen(ctx, key, logicalW = 800, logicalH = 600) {
+  const canvas = ctx.canvas;
+  const img = USE_FILE_ASSETS ? imageCache[key] : null;
+  if (!img || !canvas || !canvas.width || typeof document === 'undefined' || !document.createElement) {
+    drawSprite(ctx, key, 0, 0, logicalW, logicalH);
+    return;
+  }
+  const id = `${key}@${canvas.width}x${canvas.height}`;
+  let cached = fullscreenCache.get(id);
+  if (!cached) {
+    for (const k of fullscreenCache.keys()) if (k.startsWith(`${key}@`)) fullscreenCache.delete(k);
+    cached = document.createElement('canvas');
+    cached.width = canvas.width;
+    cached.height = canvas.height;
+    const c = cached.getContext('2d');
+    c.imageSmoothingEnabled = true;
+    c.imageSmoothingQuality = 'high';
+    c.scale(canvas.width / logicalW, canvas.height / logicalH);
+    drawSprite(c, key, 0, 0, logicalW, logicalH);
+    fullscreenCache.set(id, cached);
+  }
+  ctx.drawImage(cached, 0, 0, logicalW, logicalH);
+}

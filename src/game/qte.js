@@ -11,7 +11,8 @@ import { InputManager } from '../engine/input.js';
 // Brief "GET READY" beat before a skill QTE's own update()/handleTap() go live — shared with
 // loop.js (gates input) and screens.js (renders the countdown). Lives here, not in loop.js,
 // so both can import it without a loop.js <-> screens.js circular dependency.
-export const QTE_READY_DURATION = 0.8;
+// 1.6 s, was 0.8: long enough to read the one-line goal under GET READY (QA round 2 #20).
+export const QTE_READY_DURATION = 1.6;
 
 export function difficultyFactor(state) {
   const stressPenalty = state.stress / 150;                    // up to +0.66

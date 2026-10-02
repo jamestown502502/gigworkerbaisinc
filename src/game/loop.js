@@ -10,6 +10,8 @@ import { createEIGame, createEveningGame, QTE_READY_DURATION } from './qte.js';
 import { createQTE } from './microgames.js';
 import { rollDailyEvents, generateMorningFlavor } from './events.js';
 import { rollWeather } from './weather.js';
+import { neighborBeat } from './neighbor.js';
+import { rollMonth, rentExtra, supportMultiplier, scamMultiplier, windDownMultiplier, goalOf, twistOf } from './twists.js';
 import { UI } from '../ui/screens.js';
 import * as screens from '../ui/screens.js';
 import { renderHUD } from '../ui/hud.js';
@@ -78,6 +80,18 @@ const MIXED_REVIEWS = [
   '"Fine. I think {subj} {was} having a rough week."',
 ];
 
+/** The Day 1 "this month" card: the run's twist and side goal, shown like a morning note. */
+export function monthCard(state) {
+  const t = twistOf(state), g = goalOf(state);
+  if (!t && !g) return null;
+  return { tier: 1, label: 'THIS MONTH', text: t ? `${t.name}. ${t.text}` : '', subtext: g ? `Side goal: ${g.text}` : '' };
+}
+
+/** Seconds the result card stays up after a minigame ends (a tap after 0.4 s skips the rest). */
+export function resultHold(kind) {
+  return kind === 'skill' ? 2.4 : 1.6;
+}
+
 export class Game {
   constructor(state) {
     this.state = state;
@@ -118,7 +132,9 @@ export class Game {
     this.activeEvent = null;
     this.eventOutcome = '';
     this.eventT = 0;
-    if (!state.weather) state.weather = rollWeather();
+    // A run that has not started yet (character creator up, nothing played) draws its month now.
+    if (!state.twist && !state.characterCreated && state.day === 1 && state.gigsCompleted === 0) rollMonth(state);
+    if (!state.weather) state.weather = rollWeather(state.twist);
     if (!state.todayGigs || state.todayGigs.length === 0) {
       state.todayGigs = generateDailyGigs(state);
     }
@@ -131,12 +147,26 @@ export class Game {
     // hiding a fresh start behind Settings > Reset.
     this.resumePrompt = !!state.fromSave && this.phase === 'MORNING' && (state.day > 1 || state.gigsCompleted > 0);
     this.confirmNewGame = false;
+    this.skippedDay = false;     // "Sleep In (skip day)" was chosen: the evening has no Back
+    this.qteIntroHold = false;   // first time this microgame: its how-to card waits for a tap
+    // Every real button press clicks and (on Android) ticks the vibration motor, from one place.
+    UI.onPress = () => { audio.playClick(); audio.haptic(); };
   }
 
   /** Open the creator from the apartment to change the look mid-run. */
   openCreator() {
     this.creatorEditing = true;
+    this.creatorOriginal = JSON.stringify(this.state.character);
+    this.creatorHint = '';
     this.setPhase('CREATE', 'fade');
+  }
+
+  /** Back out of "Change your look" without keeping anything that was tried. */
+  cancelCreator() {
+    try { this.state.character = JSON.parse(this.creatorOriginal); } catch { /* keep the current look */ }
+    this.state.save();
+    this.creatorEditing = false;
+    this.setPhase('MORNING', 'fade');
   }
 
   /** Leave the creator: into Day 1 for a new run, or back to the apartment when editing. */
@@ -144,7 +174,13 @@ export class Game {
     this.state.characterCreated = true;
     this.state.save();
     if (this.creatorEditing) { this.creatorEditing = false; this.setPhase('MORNING', 'fade'); return; }
-    this.setPhase('MORNING', 'sunrise', { fromDay: 0, toDay: 1 });
+    // A new run opens on a "Day 1" title card. It used to roll an odometer up from "Day 0", a day
+    // that does not exist (QA round 2 #11).
+    this.setPhase('MORNING', 'sunrise', { firstDay: true, toDay: 1, twist: twistOf(this.state)?.name });
+    // ...then the month's twist and side goal, as the first morning card (after the tutorial's
+    // morning steps when it is running: events wait for those).
+    const card = monthCard(this.state);
+    if (card) { this.eventQueue = [card]; this.activeEvent = null; }
   }
 
   // ---------- phase changes ----------
@@ -156,6 +192,24 @@ export class Game {
     const reduceMotion = !!this.state.settings?.reduceMotion;
     if (this.transition) { this.transition.apply = apply; this.transition.applied = false; return; }
     this.transition = createTransition(kind, apply, { reduceMotion, meta });
+    this.transition.snapshot = this.snapshotFrame();
+  }
+
+  /** A still of the frame on screen when a transition starts. The outgoing half of a transition
+   *  draws this instead of re-rendering the outgoing screen live: the state behind that screen has
+   *  usually already moved on (a finished gig has no minigame or choice left to draw, a closed
+   *  creator flips its button label), and re-rendering it showed an empty gig panel after every
+   *  job (QA round 2 #4) and a flash of "Start Day 1" after Done (QA round 2 #14). */
+  snapshotFrame() {
+    const src = this.ctx && this.ctx.canvas;
+    if (!src || typeof document === 'undefined' || !src.width) return null;
+    if (!this._snap) this._snap = document.createElement('canvas');
+    const snap = this._snap;
+    if (snap.width !== src.width || snap.height !== src.height) { snap.width = src.width; snap.height = src.height; }
+    const sctx = snap.getContext('2d');
+    sctx.clearRect(0, 0, snap.width, snap.height);
+    sctx.drawImage(src, 0, 0);
+    return snap;
   }
 
   // ---------- morning intro (ticker + events) ----------
@@ -167,6 +221,7 @@ export class Game {
   beginMorning() {
     const s = this.state;
     this.shopOpen = false;
+    this.skippedDay = false;
     this.eveningOutcome = '';
     this.ping = null;
     // release funds frozen by yesterday's payment dispute
@@ -198,6 +253,9 @@ export class Game {
     this.activeEvent = null;
     this.eventOutcome = '';
     if (this.eventQueue.some((e) => e.effect || e.choices)) s.weekStats.daysWithEvents += 1;
+    // Dee across the hall opens each new week (src/game/neighbor.js).
+    const beat = inTutorial ? null : neighborBeat(s);
+    if (beat) this.eventQueue.unshift(beat);
     s.save();
   }
 
@@ -324,6 +382,9 @@ export class Game {
       this.qteFxFired = false;
       this.qteEndTimer = 0;
       this.qteReadyT = 0; // brief "GET READY" beat before input goes live — see update()
+      // The first time a player meets each microgame, its how-to card waits for a tap before the
+      // clock starts (QA round 2 #20: some games were over before they were understood).
+      this.qteIntroHold = !(this.state.seenMicrogames || []).includes(this.qte.name);
     } else {
       this.finishGig(null);
     }
@@ -390,7 +451,7 @@ export class Game {
 
     // scam roll — risk% chance the client stiffs you, worse with flaky clients
     let scamText = '';
-    const scamChance = gig.risk * (gig.clientReliability <= 2 ? 1.5 : 1) * (gig.isRepeat ? 0.5 : 1);
+    const scamChance = gig.risk * (gig.clientReliability <= 2 ? 1.5 : 1) * (gig.isRepeat ? 0.5 : 1) * scamMultiplier(s.twist);
     if (Math.random() * 100 < scamChance) {
       const kept = Math.random() * 0.5;
       const lost = payout - Math.round(payout * kept);
@@ -556,7 +617,7 @@ export class Game {
     const s = this.state;
     const fx = result.effects || {};
     if (this.qte && this.qte.name === 'WIND DOWN') {
-      const relief = 8 + Math.round((result.score / 100) * 12);
+      const relief = Math.round((8 + Math.round((result.score / 100) * 12)) * windDownMultiplier(s.twist));
       s.stress -= relief;
       s.health += 3;
       s.calmTonight = true;
@@ -565,7 +626,7 @@ export class Game {
       const how = result.score >= 85 ? 'Your breathing and the box moved as one.' : result.score >= 60 ? 'You found the rhythm.' : 'It took a while to settle, but you stayed with it.';
       this.eveningOutcome = `${how} -${relief} stress, +3 balance. Tomorrow's timed challenges will feel easier.`;
     } else {
-      s.support += fx.support || 0;
+      s.support += Math.round((fx.support || 0) * supportMultiplier(s.twist));
       s.stress += fx.stress || 0;
       s.health += 2;
       s.eveningsRested += 1;
@@ -583,7 +644,7 @@ export class Game {
 
   billAmount(kind) {
     const s = this.state;
-    if (kind === 'rent') return RENT + s.unpaidRent;
+    if (kind === 'rent') return RENT + rentExtra(s.twist) + s.unpaidRent;
     if (kind === 'phone') return PHONE + s.unpaidPhone;
     return FOOD;
   }
@@ -603,7 +664,7 @@ export class Game {
 
   closeBills() {
     const s = this.state;
-    if (!this.billsPaid.rent) s.unpaidRent += RENT;
+    if (!this.billsPaid.rent) s.unpaidRent += RENT + rentExtra(s.twist);
     if (!this.billsPaid.phone) { s.unpaidPhone += PHONE; s.phoneCut = true; }
     s.hungry = !this.billsPaid.food;
     s.daysUntilBills = 7;
@@ -683,7 +744,7 @@ export class Game {
     s.stress = Math.max(0, s.stress - 8);
     s.hoursLeft = 12;
     if (s.doublePayDays > 0) s.doublePayDays -= 1;
-    s.weather = rollWeather();
+    s.weather = rollWeather(s.twist);
     s.todayGigs = generateDailyGigs(s);
     if (s.lateGigTomorrow) { s.todayGigs.unshift(s.lateGigTomorrow); s.lateGigTomorrow = null; }
     this.message = '';
@@ -706,7 +767,8 @@ export class Game {
 
   newGame() {
     this.state.reset();
-    this.state.weather = rollWeather();
+    rollMonth(this.state);
+    this.state.weather = rollWeather(this.state.twist);
     this.state.todayGigs = generateDailyGigs(this.state);
     this.state.save();
     this.message = '';
@@ -765,9 +827,22 @@ export class Game {
     if (this.phase === 'TRAVEL') {
       this.travelT = Math.min(2, this.travelT + dt);
     }
+    // Side goal reached mid-month: say so the moment it happens (end-of-month goals are judged on
+    // the summary instead).
+    const goal = goalOf(this.state);
+    if (goal && !goal.atEnd && !this.state.sideGoalDone && goal.check(this.state)) {
+      this.state.sideGoalDone = true;
+      this.state.save();
+      this.message = `Side goal complete: ${goal.text}`;
+      audio.playSuccess();
+      spawnBurst(400, 300, { color: '#f1c40f', count: 24 });
+      spawnFloatingText(400, 280, 'SIDE GOAL!', { color: '#f1c40f', size: 24 });
+    }
     if ((this.phase === 'GIG' || this.phase === 'EVENING_GAME') && this.qte && !this.tutorialVisible()) {
       // A short "GET READY" beat before a skill QTE springs on the player. Conversational games skip it.
-      if (this.qteKind === 'skill' && this.qteReadyT < QTE_READY_DURATION) {
+      if (this.qteKind === 'skill' && this.qteIntroHold) {
+        // how-to card is up: nothing moves until the player taps
+      } else if (this.qteKind === 'skill' && this.qteReadyT < QTE_READY_DURATION) {
         this.qteReadyT += dt;
       } else {
         this.qte.update(dt);
@@ -779,7 +854,9 @@ export class Game {
         if (this.qte.done) {
           const result = this.qte.result;
           this.qteEndTimer += dt;
-          if (this.qteEndTimer > 0.8) {
+          // The result card (stars, score, what it earned or cost) holds long enough to read, and
+          // any tap after the first 0.4 s moves on.
+          if (this.qteEndTimer > resultHold(this.qteKind)) {
             this.qteEndTimer = 0;
             if (this.qteKind === 'skill') this.finishGig(result);
             else if (this.qteKind === 'ei') this.finishEIGame(result);
@@ -800,6 +877,17 @@ export class Game {
     ctx.save();
     ctx.translate(off.x, off.y);
     ctx.clearRect(-10, -10, 820, 620); // slightly oversized to cover the shake offset at the edges
+
+    const tr = this.transition;
+    if (tr && !tr.applied && tr.snapshot) {
+      // Outgoing half: the frozen frame (see snapshotFrame), with the cover drawn over it below.
+      ctx.drawImage(tr.snapshot, 0, 0, 800, 600);
+      ctx.restore();
+      renderTransition(ctx, tr);
+      UI.begin();
+      this.processInput();
+      return;
+    }
 
     switch (this.phase) {
       case 'CREATE': screens.creatorScreen(ctx, this); break;
@@ -835,7 +923,7 @@ export class Game {
       if (this.transition) continue;
       // The HUD's settings gear and mute button always work, tutorial or not: the tutorial used to
       // swallow every tap, so a player could not open settings (or start over) until it ended.
-      if (this.tutorialVisible() && click.y < 56 && click.x > 750 && UI.handleClick(click)) { audio.playClick(); continue; }
+      if (this.tutorialVisible() && click.y < 56 && click.x > 750 && UI.handleClick(click)) continue;
       // tutorial overlay consumes clicks and advances (or skips entirely)
       if (this.tutorialVisible()) {
         const r = this.tutorialSkipRect;
@@ -853,9 +941,22 @@ export class Game {
       // morning intro: real buttons first (debt quick-pay, customizer, gear), then a tap on
       // empty space skips a ticker line or dismisses a choice-less event (QA #10, #24)
       if (this.phase === 'MORNING' && !this.morningReady) {
-        if (UI.handleClick(click)) { audio.playClick(); continue; }
+        if (UI.handleClick(click)) continue;
         if (this.ticker.idx < this.ticker.lines.length) { this.ticker.idx += 1; this.ticker.t = 0; continue; }
         if (this.activeEvent && !this.activeEvent.choices) { this.startNextEvent(); continue; }
+        continue;
+      }
+      if ((this.phase === 'GIG' || this.phase === 'EVENING_GAME') && this.qte && this.qteKind === 'skill' && this.qteIntroHold && !this.settingsOpen) {
+        if (click.y < 56 && click.x > 700 && UI.handleClick(click)) continue; // the HUD gear still works
+        this.qteIntroHold = false;
+        this.state.seenMicrogames = [...(this.state.seenMicrogames || []), this.qte.name];
+        this.qteReadyT = Math.max(0, QTE_READY_DURATION - 0.9); // read it already: a short count-in
+        this.state.save();
+        audio.playClick();
+        continue;
+      }
+      if ((this.phase === 'GIG' || this.phase === 'EVENING_GAME') && this.qte && this.qte.done && !this.settingsOpen) {
+        if (this.qteEndTimer > 0.4) this.qteEndTimer = Math.max(this.qteEndTimer, resultHold(this.qteKind));
         continue;
       }
       if ((this.phase === 'GIG' || this.phase === 'EVENING_GAME') && this.qte && !this.qte.done && !this.settingsOpen) {
@@ -864,7 +965,7 @@ export class Game {
         if (click.y < 56 && click.x > 700) UI.handleClick(click);
         continue; // still swallow the tap during the ready beat — it shouldn't fall through to UI
       }
-      if (UI.handleClick(click)) audio.playClick();
+      UI.handleClick(click);
     }
   }
 

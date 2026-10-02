@@ -3,7 +3,7 @@ import { setupGameCanvas } from './engine/canvas.js';
 import { InputManager } from './engine/input.js';
 import { GameState } from './engine/state.js';
 import { Game } from './game/loop.js';
-import { initAudio, unlock as unlockAudio, contextState } from './engine/audio.js';
+import { initAudio, unlock as unlockAudio, contextState, setBackgrounded } from './engine/audio.js';
 import { loadAssets } from './engine/sprites.js';
 import * as qte from './game/qte.js';
 import * as micro from './game/microgames.js';
@@ -26,7 +26,7 @@ async function boot() {
   const container = document.getElementById('game');
   const canvas = document.createElement('canvas');
   container.appendChild(canvas);
-  const ctx = setupGameCanvas(canvas, 800, 600, true);
+  const ctx = setupGameCanvas(canvas, 800, 600, false); // painted 1024-1200px art: smooth filtering
   drawLoading(ctx, 0);
 
   InputManager.init(canvas);
@@ -67,6 +67,7 @@ async function boot() {
   // on browser rAF throttling alone. `last` is re-stamped on resume so the first frame back
   // doesn't see a multi-second dt.
   document.addEventListener('visibilitychange', () => {
+    setBackgrounded(document.hidden); // the music and SFX stop with the app, not just the frames
     if (document.hidden) {
       if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
     } else if (rafId === null) {
