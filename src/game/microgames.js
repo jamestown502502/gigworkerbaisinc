@@ -28,6 +28,7 @@ import { difficultyFactor, AREA } from './qte.js';
 import { drawText, drawWrapped, roundRectPath } from '../ui/text.js';
 import { playTick, playSuccess, playFail, playError, playGood } from '../engine/audio.js';
 import { InputManager } from '../engine/input.js';
+import { RushShift, MarketDay } from './longform.js';
 
 function shuffle(arr, rand = Math.random) {
   const a = [...arr];
@@ -854,6 +855,8 @@ export const MICROGAME_BY_TREE = {
   furnitureAssembly: AssembleSteps,
   tutoring: PercentTutor,
   photoGig: FrameShot,
+  rushShift: RushShift,
+  marketDay: MarketDay,
 };
 
 export function createQTE(gig, state) {

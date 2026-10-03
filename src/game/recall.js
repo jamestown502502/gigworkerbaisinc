@@ -6,6 +6,7 @@
 import { LESSONS } from './microgames.js';
 import { FEELING_LESSON, THREAD_LESSON, BREATH_LESSON } from './qte.js';
 import { CHOICE_TREES } from './choices.js';
+import { LONGFORM_LESSONS } from './longform.js';
 
 const choiceLesson = (tree, text) => CHOICE_TREES[tree].flatMap((n) => n.choices || []).find((c) => c.text === text).lesson;
 
@@ -20,6 +21,8 @@ export const RECALL_BANK = [
   { lesson: LESSONS.assemble, q: 'Flat-pack furniture. What comes before the first screw?', options: ['Read every step, sort hardware', 'Hang the doors', 'Tighten the frame'] },
   { lesson: LESSONS.percent, q: 'Tip math, fast: what is 20% of $35?', options: ['$7', '$3.50', '$20'] },
   { lesson: LESSONS.frame, q: 'Photographing a mug that faces right. Where does it go?', options: ['On the left third', 'Dead center', 'On the right third'] },
+  { lesson: LONGFORM_LESSONS.rush, q: 'A delivery pays $6 for 9 miles. Worth it, by the usual rule?', options: ['No: under $1 a mile', 'Yes: $6 is $6', 'Only if it is close to home'] },
+  { lesson: LONGFORM_LESSONS.market, q: 'A buyer is already holding your jacket up to the light. Your move?', options: ['Hold at your list price', 'Take their first offer', 'Drop the price first'] },
   { lesson: FEELING_LESSON.suspicious, q: 'A wary client asks for your ID. Best response?', options: ['Show it, and offer to be paid after', 'Say you are not like the last one', 'Ask to skip it this time'] },
   { lesson: FEELING_LESSON.angry, q: 'A client is venting about three bad quotes. What first?', options: ['Name the frustration', 'Correct their numbers', 'Say nothing'] },
   { lesson: FEELING_LESSON.rushed, q: 'A rushed client has twenty minutes. What do you ask?', options: ['What matters most today', 'For more time', 'To stop rushing you'] },

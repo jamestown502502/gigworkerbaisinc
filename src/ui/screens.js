@@ -538,7 +538,8 @@ function resultCard(ctx, game) {
   if (game.qteKind === 'skill') {
     title = !r.success ? 'FUMBLED' : score >= 85 ? 'GREAT WORK!' : score >= 60 ? 'GOOD JOB' : 'GOT IT DONE';
     const base = game.currentGig ? game.currentGig.payout : 0;
-    lines.push(r.success ? `Pay bonus +$${Math.round(base * (score / 500))}  ·  Reputation +0.1` : `Pay cut -$${Math.round(base * 0.3)}  ·  Reputation -0.2  ·  Stress +3`);
+    if (r.items) lines.push(r.items.map((it) => `${it.label.replace(/ \(.*\)$/, '')} ${it.amount >= 0 ? '+' : '-'}$${Math.abs(it.amount)}`).join('  ·  ') + (r.hourly !== undefined ? `  ·  $${r.hourly.toFixed(2)}/hr` : ''));
+    else lines.push(r.success ? `Pay bonus +$${Math.round(base * (score / 500))}  ·  Reputation +0.1` : `Pay cut -$${Math.round(base * 0.3)}  ·  Reputation -0.2  ·  Stress +3`);
   } else if (game.qteKind === 'ei') {
     title = r.success ? 'YOU READ THE ROOM' : 'MISREAD';
     const fx = r.effects || {};

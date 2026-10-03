@@ -9,6 +9,7 @@ import { FEELING_LESSON, THREAD_LESSON, BREATH_LESSON, ReadClient, ThreadGame, R
 import { GIG_TEMPLATES } from '../../src/game/gigs.js';
 import { makeGame, withRandom } from './helpers.js';
 import { RECALL_BANK, RECALL_DAYS, recallCard, recallCandidates } from '../../src/game/recall.js';
+import { LONGFORM_LESSONS } from '../../src/game/longform.js';
 
 const CALM = { stress: 0, energy: 100, health: 100, settings: {} };
 const DT = 1 / 60;
@@ -205,7 +206,7 @@ describe('FRAME!', () => {
 
 describe('spaced recall: an earlier takeaway comes back as a question', () => {
   it('every question is about a real lesson, with three distinct options that fit their buttons', () => {
-    const lessons = new Set([...Object.values(LESSONS), ...Object.values(FEELING_LESSON), ...Object.values(THREAD_LESSON), BREATH_LESSON, ...allChoices().map(({ c }) => c.lesson)]);
+    const lessons = new Set([...Object.values(LESSONS), ...Object.values(LONGFORM_LESSONS), ...Object.values(FEELING_LESSON), ...Object.values(THREAD_LESSON), BREATH_LESSON, ...allChoices().map(({ c }) => c.lesson)]);
     for (const r of RECALL_BANK) {
       expect(lessons.has(r.lesson), r.q).toBe(true);
       expect(new Set(r.options).size, r.q).toBe(3);
