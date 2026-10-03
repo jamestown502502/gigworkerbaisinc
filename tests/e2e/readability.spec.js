@@ -279,3 +279,39 @@ test('the new mechanics and every recall card are readable', async ({ page }) =>
 
   expect(problems, problems.join('\n')).toEqual([]);
 });
+
+// Long-form jobs (2026-10-03): every screen of RUSH! and MARKET!, including the longest feedback
+// lines and the result card's money lines.
+test('RUSH! and MARKET! are readable in every state', async ({ page }) => {
+  test.setTimeout(240000);
+  await boot(page, { save: { tutorialSeen: true, energy: 100, cash: 300, day: 5 } });
+  await settleMorning(page);
+  await page.evaluate(() => { window.__loopPaused = true; });
+  const problems = [];
+  const shot = async (fn, label) => { await page.evaluate(fn); problems.push(...await audit(page, label)); };
+  const setup = 'const g = window.__game, M = window.__micro, L = window.__longform; g.phase = "GIG"; g.qteKind = "skill"; g.qteReadyT = 99; g.qteIntroHold = false; g.qteEndTimer = 0; g.pendingOutcome = null; g.node = null; g.currentGig = g.state.todayGigs[0];';
+  const order = '{ pay: 14.75, miles: 8.9, minutes: 29 }';
+  await shot(new Function(`${setup} g.qte = new L.RushShift(g.state); g.qte.order = ${order}; g.qte.decideLeft = 3;`), 'rush order');
+  await shot(new Function(`${setup} g.qte = new L.RushShift(g.state); g.qte.order = ${order}; g.qte.decideLeft = 3; g.qte.accepted = 1; g.qte.declined = 4; g.qte.pay = 123; g.qte.miles = 88; g.qte.clock = 100;`), 'rush low priority');
+  await shot(new Function(`${setup} g.qte = new L.RushShift(g.state); g.qte.order = { pay: 4.5, miles: 8.8, minutes: 29 }; g.qte.accept();`), 'rush bad accept');
+  await shot(new Function(`${setup} g.qte = new L.RushShift(g.state); g.qte.order = ${order}; g.qte.decline();`), 'rush good declined');
+  await shot(new Function(`${setup} g.qte = new L.RushShift(g.state); g.qte.order = ${order}; g.qte.decline(true);`), 'rush missed');
+  await shot(new Function(`${setup} g.qte = new L.RushShift(g.state); g.qte.nextPing = 9;`), 'rush waiting');
+  await shot(new Function(`${setup} g.qte = new L.RushShift(g.state); g.qte.order = ${order}; g.qte.accept(); g.qte.verdict = null;`), 'rush driving');
+  await shot(new Function(`${setup} g.qte = new L.MarketDay(g.state);`), 'market buy');
+  await shot(new Function(`${setup} g.qte = new L.MarketDay(g.state); [0, 1, 2, 3].forEach((i) => g.qte.toggle(i)); g.qte.toggle(4);`), 'market over budget');
+  for (const kind of ['eager', 'bargain', 'browser']) {
+    for (const item of [1, 5]) {
+      await shot(new Function(`${setup} const q = new L.MarketDay(g.state); q.toggle(${item}); q.openStall(); q.customers[0].kind = "${kind}"; g.qte = q;`), `market ${kind} item ${item}`);
+      for (const choice of ['take', 'half', 'hold', 'none']) {
+        await shot(new Function(`${setup} const q = new L.MarketDay(g.state); q.toggle(${item}); q.openStall(); q.customers[0].kind = "${kind}"; q.respond("${choice}"); g.qte = q;`), `market ${kind} ${item} ${choice}`);
+      }
+    }
+  }
+  for (const [tree, items, hourly] of [['rushShift', [{ label: 'Order pay (12 orders)', amount: 118 }, { label: 'Gas and wear (96 mi)', amount: -34 }], 14.25], ['marketDay', [{ label: 'Sales (4 items)', amount: 96 }, { label: 'Thrift stock', amount: -29 }], undefined]]) {
+    for (const success of [true, false]) {
+      await shot(new Function(`${setup} g.qte = new M.MICROGAME_BY_TREE["${tree}"](g.state); g.qte.done = true; g.qte.result = { success: ${success}, score: ${success ? 74 : 31}, items: ${JSON.stringify(items)}, hourly: ${hourly === undefined ? 'undefined' : hourly}, lesson: L.LONGFORM_LESSONS.${tree === 'rushShift' ? 'rush' : 'market'} }; g.qteEndTimer = 1; g.qteFxFired = true;`), `result ${tree} ${success}`);
+    }
+  }
+  expect(problems, problems.join('\n')).toEqual([]);
+});

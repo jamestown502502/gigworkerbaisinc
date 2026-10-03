@@ -10,6 +10,7 @@ import * as micro from './game/microgames.js';
 import * as choices from './game/choices.js';
 import * as clients from './game/clients.js';
 import * as recall from './game/recall.js';
+import * as longform from './game/longform.js';
 import { drawText, roundRectPath } from './ui/text.js';
 
 export { drawSprite, imageCache } from './engine/sprites.js';
@@ -53,6 +54,7 @@ async function boot() {
   window.__choices = choices; // e2e hook: ...and every choice's reaction card
   window.__clients = clients; // e2e hook: ...and every client greeting
   window.__recall = recall;   // e2e hook: ...and every recall question
+  window.__longform = longform; // e2e hook: ...and the long-form jobs
 
   let last = performance.now();
   let rafId = null;

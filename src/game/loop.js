@@ -465,7 +465,12 @@ export class Game {
     const base = gig.payout;
     items.push({ label: gig.title, amount: base });
     let payout = base;
-    if (qteResult) {
+    if (qteResult && qteResult.items) {
+      // Long-form jobs (game/longform.js): what the shift earned IS the result, line by line,
+      // instead of a bonus or pay cut on the payout.
+      for (const it of qteResult.items) { if (it.amount) items.push(it); payout += it.amount; }
+      if (qteResult.success) s.reputation += 0.1; else s.stress += 3;
+    } else if (qteResult) {
       if (qteResult.success) {
         const bonus = Math.round(base * (qteResult.score / 500));
         if (bonus > 0) items.push({ label: `Challenge bonus (score ${qteResult.score})`, amount: bonus });

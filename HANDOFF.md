@@ -378,3 +378,22 @@ dialogue). Full critique, rankings and before/after:
   `recallDone`; unshifted onto the morning queue in `beginMorning`. Options carry `after`, which
   `chooseEventOption` puts in the card's `subtext`. Right = -4 stress.
 - e2e hook `window.__recall`; readability test "the new mechanics and every recall card".
+
+## 11. Long-form jobs: RUSH! and MARKET! (2026-10-03)
+
+`src/game/longform.js`. Before/after:
+`C:\Users\Jbthi\Claude Cowork\BAIS_LongForm_Minigames_BeforeAfter_2026-10-03.md`.
+
+- **RUSH!** (Delivery Driver — Rush Shift): a 180-minute shift compressed to about a minute.
+  Orders (`makeOrder`, ~55% good) ping while waiting (waiting costs 4 shift-minutes a second);
+  decide window 7/d s; accepting plays the drive out in 1.3 s. Under 60% acceptance (after 4
+  offers) the app pays 15% less (`lowPriority`). Score from real $/hr after gas and wear at
+  35 cents a mile; success at $13/hr. Unit test: the $1-a-mile rule beats accept-all beats
+  decline-all over 200 shifts.
+- **MARKET!** (Flea Market Stall — Weekend): buy within $30 from 6 thrift items, then one buyer per
+  item: eager (pays list), bargain (meets halfway), browser (only their offer), read from
+  `drawFace` + a cue line. Score 70% sell skill vs the best read, 30% buy margin vs `bestBuyMargin`.
+- Both return `result.items`; `finishGig` puts those lines on the receipt instead of a bonus or pay
+  cut (rep +0.1 on success, stress +3 otherwise). `resultCard` shows the lines and $/hr.
+- e2e hook `window.__longform`; readability test "RUSH! and MARKET! are readable in every state".
+- Tests: `tests/unit/longform.test.js` (11).

@@ -13,6 +13,10 @@ export const GIG_TEMPLATES = [
   { title: 'Mattress Tester — Hotel Review', type: 'weird', payout: [50, 100], hours: [6, 8], risk: [5, 10], location: 'safe', skillReq: 'none', hasQTE: false, choiceTree: 'mattressTest', outdoor: false },
   { title: 'Clean Out Garage', type: 'physical', payout: [50, 90], hours: [3, 4], risk: [10, 20], location: 'okay', skillReq: 'strength', hasQTE: true, choiceTree: 'garageClean', outdoor: true },
   { title: 'Tutoring — High School Math', type: 'service', payout: [30, 60], hours: [1, 2], risk: [5, 10], location: 'safe', skillReq: 'social', hasQTE: true, choiceTree: 'tutoring', outdoor: false },
+  // Long-form jobs (2026-10-03): the payout is the guaranteed part; what you earn in the shift
+  // itself (RUSH! / MARKET! in game/longform.js) lands on the receipt as extra lines.
+  { title: 'Delivery Driver — Rush Shift', type: 'service', payout: [20, 30], hours: [3, 3], risk: [5, 10], location: 'okay', skillReq: 'none', hasQTE: true, choiceTree: 'rushShift', outdoor: true },
+  { title: 'Flea Market Stall — Weekend', type: 'service', payout: [15, 25], hours: [4, 5], risk: [5, 10], location: 'safe', skillReq: 'social', hasQTE: true, choiceTree: 'marketDay', outdoor: true },
   { title: 'Mystery Shopping — Review Store', type: 'weird', payout: [40, 70], hours: [1, 2], risk: [5, 15], location: 'okay', skillReq: 'none', hasQTE: true, choiceTree: 'mysteryShop', outdoor: false },
 ];
 

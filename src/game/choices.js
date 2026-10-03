@@ -182,6 +182,32 @@ export const CHOICE_TREES = {
         lesson: 'A concrete example beats repeating the rule louder.' },
     ]},
   ],
+  rushShift: [
+    { text: 'The app pings: "Busy night! Finish 10 orders in 3 hours for a $15 bonus."', choices: [
+      { text: 'Chase the bonus', result: { cash: 0, energy: -5, stress: 6, rep: 0 }, next: null,
+        say: 'You do the math in the parking lot: 10 orders in 3 hours means taking every ping, good or bad.',
+        lesson: 'Quest bonuses are built to keep you online taking low orders. Count what the bad ones cost first.' },
+      { text: 'Set a minimum: about $1 a mile', result: { cash: 0, energy: 0, stress: -3, rep: 0 }, next: null,
+        say: 'You write "$1/mi" on a sticky note and put it on the dash.',
+        lesson: 'A minimum per mile covers gas and wear with something left. Decide it before the first ping.' },
+      { text: 'Fill the tank before the rush', result: { cash: -5, energy: 0, stress: -4, rep: 0.1 }, next: null,
+        say: 'A full tank and a cold coffee. You are the calmest driver in the lot.',
+        lesson: 'Gas is a business cost. Track it per mile, or you will think you earned more than you did.' },
+    ]},
+  ],
+  marketDay: [
+    { text: 'The organizer points you to the last open table, right by the entrance.', choices: [
+      { text: 'Price everything before doors open', result: { cash: 0, energy: -3, stress: -3, rep: 0.1 }, next: null,
+        say: 'Every tag written, every price a little above what you would take.',
+        lesson: 'A clear price tag anchors the haggle. Start a little above the price you actually want.' },
+      { text: 'Figure out prices as you go', result: { cash: 0, energy: 0, stress: 4, rep: 0 }, next: null,
+        say: 'The first buyer asks "how much?" and you hear yourself say a number far too low.',
+        lesson: 'Naming a price on the spot usually means naming it low. Decide your numbers in advance.' },
+      { text: 'Make a "3 for $20" sign for small stuff', result: { cash: 0, energy: -2, stress: 0, rep: 0.2 }, next: null,
+        say: 'The sign pulls people over. Two of them buy things they did not come for.',
+        lesson: 'Bundles move low-value items and raise what each buyer spends.' },
+    ]},
+  ],
   garageClean: [
     { text: 'The garage is a hoarder\'s dream and the client is watching.', choices: [
       { text: 'Ask what stays and what goes first', result: { cash: 0, energy: -5, stress: 0, rep: 0.2 }, next: null,
