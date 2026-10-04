@@ -1,13 +1,20 @@
 // Tiny transient FX system for game feel: particle bursts, floating text, screen shake,
 // and a full-screen tint pulse. All pooled/filtered arrays, zero overhead when empty.
 import { drawText } from './text.js';
+import { METER_POS, easeOutCubic } from './juice.js';
 
 let parts = [];
 let floaters = [];
 let shake = { t: 0, dur: 0, mag: 0 };
 let tint = { t: 0, dur: 0, color: null };
+// Tokens that arc from where a change happened to the HUD meter it changes, and the meter's
+// answering bulge (2026-10-04): you see where the money went.
+let tokens = [];
+const bulge = { cash: 0, stress: 0, rep: 0, energy: 0, balance: 0 };
+export const MAX_PARTICLES = 90;
 
 export function spawnBurst(x, y, { color = '#ffd700', count = 14, speed = 140 } = {}) {
+  count = Math.min(count, Math.max(0, MAX_PARTICLES - parts.length));   // a hard cap keeps phones smooth
   for (let i = 0; i < count; i++) {
     const a = Math.random() * Math.PI * 2;
     const v = speed * (0.4 + Math.random() * 0.6);
@@ -27,6 +34,17 @@ export function spawnBurst(x, y, { color = '#ffd700', count = 14, speed = 140 } 
 export function spawnFloatingText(x, y, text, { color = '#ffffff', size = 18 } = {}) {
   floaters.push({ x, y, text, color, size, t: 0, life: 1.1 });
 }
+
+/** A labelled token that flies in an arc to a HUD meter, which bulges when it lands. With Reduce
+ *  Motion the meter just bulges. */
+export function spawnFlyToken(x, y, key, text, color = '#ffffff', { delay = 0, calm = false } = {}) {
+  if (!METER_POS[key]) return;
+  if (calm) { bulge[key] = 0.3; return; }
+  tokens.push({ x0: x, y0: y, key, text, color, t: -delay, life: 0.7 });
+}
+export function meterBulge(key) { return bulge[key] || 0; }
+export function particleCount() { return parts.length; }
+export function tokenCount() { return tokens.length; }
 
 /** Brief camera shake — risky outcomes, QTE success/fail. Kept subtle: present, not nauseating. */
 export function triggerShake(mag = 6, dur = 0.25) {
@@ -63,6 +81,15 @@ export function updateFX(dt) {
     }
     floaters = floaters.filter((f) => f.t < f.life);
   }
+  if (tokens.length > 0) {
+    for (const k of tokens) {
+      const before = k.t;
+      k.t += dt;
+      if (before < k.life && k.t >= k.life) bulge[k.key] = 0.3;
+    }
+    tokens = tokens.filter((k) => k.t < k.life);
+  }
+  for (const key of Object.keys(bulge)) if (bulge[key] > 0) bulge[key] = Math.max(0, bulge[key] - dt);
   if (shake.t < shake.dur) shake.t += dt;
   if (tint.t < tint.dur) tint.t += dt;
 }
@@ -83,6 +110,20 @@ export function renderFX(ctx) {
     }
     ctx.globalAlpha = 1;
   }
+}
+
+/** Tokens in flight: a quadratic arc that rises before it falls into the meter. */
+export function renderTokens(ctx) {
+  for (const k of tokens) {
+    if (k.t < 0) continue;
+    const p = easeOutCubic(k.t / k.life), to = METER_POS[k.key];
+    const cx = (k.x0 + to.x) / 2, cy = Math.min(k.y0, to.y) - 80;
+    const x = (1 - p) * (1 - p) * k.x0 + 2 * (1 - p) * p * cx + p * p * to.x;
+    const y = (1 - p) * (1 - p) * k.y0 + 2 * (1 - p) * p * cy + p * p * to.y;
+    ctx.globalAlpha = p > 0.85 ? Math.max(0, (1 - p) / 0.15) : 1;
+    drawText(ctx, k.text, x, y, { size: 15, weight: 'bold', color: k.color, align: 'center', outline: true });
+  }
+  ctx.globalAlpha = 1;
 }
 
 /** Drawn last, screen-space, unaffected by the shake translate — a wash over everything. */

@@ -19,7 +19,8 @@ import * as screens from '../ui/screens.js';
 import { renderHUD } from '../ui/hud.js';
 import { renderListings } from '../ui/listings.js';
 import { TUTORIAL_STEPS, renderTutorial } from '../ui/tutorial.js';
-import { spawnBurst, spawnFloatingText, triggerShake, triggerTint, getShakeOffset, updateFX, renderFX, renderTint } from '../ui/fx.js';
+import { spawnBurst, spawnFloatingText, triggerShake, triggerTint, getShakeOffset, updateFX, renderFX, renderTint, renderTokens, spawnFlyToken } from '../ui/fx.js';
+import { effectTokens, isFiveStars, receiptState, HAPTIC } from '../ui/juice.js';
 import { createTransition, stepTransition, renderTransition } from '../ui/transition.js';
 
 export const UPGRADES = [
@@ -388,6 +389,8 @@ export class Game {
     this.noteLesson(lesson);
     this.node = null;
     this.pendingOutcome = { choice: choice.text, text, lesson, effects, landed, next: choice.next || null };
+    // lift off the card's own effect line (not the sentence being read) and arc up to the meters
+    effectTokens(effects).forEach((tk, i) => spawnFlyToken(120 + i * 90, 222, tk.key, tk.text, tk.color, { delay: 0.25 + i * 0.08, calm: this.state.settings.reduceMotion }));
     (landed ? audio.playTick : audio.playError)();
   }
 
@@ -554,6 +557,8 @@ export class Game {
       },
     };
     this.resultsT = 0;
+    this.receiptShown = 0;
+    this.receiptStamped = false;
     this.qte = null;
     this.qteKind = null;
     this.setPhase('RESULTS', 'receipt');
@@ -898,11 +903,20 @@ export class Game {
         if (this.qte.done && this.qteKind === 'skill' && !this.qteFxFired) {
           this.qteFxFired = true;
           if (this.qte.result.success) triggerTint('#2ecc71', 0.22);
-          else { triggerShake(8, 0.3); triggerTint('#e74c3c', 0.28); }
+          else { triggerShake(8, 0.3); triggerTint('#e74c3c', 0.28); audio.haptic(HAPTIC.soft); }
+          this.fiveStarsT = isFiveStars(this.qteKind, this.qte.result) ? 0 : null;
+          if (this.fiveStarsT === 0) {
+            audio.haptic(HAPTIC.double);
+            if (!this.state.settings.reduceMotion) {
+              spawnBurst(400, 210, { color: '#f1c40f', count: 30, speed: 220 });
+              for (let i = 0; i < 5; i++) spawnFlyToken(300 + i * 50, 240, 'cash', '$', '#2ecc71', { delay: 0.5 + i * 0.09 });
+            }
+          }
         }
         if (this.qte.done) {
           const result = this.qte.result;
           this.qteEndTimer += dt;
+          if (this.fiveStarsT !== null && this.fiveStarsT !== undefined) this.fiveStarsT += dt;
           // The result card (stars, score, what it earned or cost) holds long enough to read, and
           // any tap after the first 0.4 s moves on.
           if (this.qteEndTimer > resultHold(this.qteKind, result)) {
@@ -916,6 +930,20 @@ export class Game {
     }
     if (this.phase === 'RESULTS') {
       this.resultsT += dt;
+      // The receipt printer (2026-10-04): a tick per printed line, then the stamp, then the deltas
+      // fly up to their meters.
+      const r = this.results;
+      if (r) {
+        const rs = receiptState(this.resultsT, r.items.length);
+        if (rs.shown > (this.receiptShown || 0)) { this.receiptShown = rs.shown; audio.playTick(); }
+        if (rs.stamp && !this.receiptStamped) {
+          this.receiptStamped = true;
+          audio.haptic(HAPTIC.thud);
+          const d = r.deltas;
+          effectTokens({ cash: d.cash, stress: d.stress, rep: d.rep, energy: d.energy })
+            .forEach((tk, i) => spawnFlyToken(220 + ['cash', 'stress', 'rep', 'energy'].indexOf(tk.key) * 120, 400, tk.key, tk.text, tk.color, { delay: 0.1 + i * 0.08, calm: this.state.settings.reduceMotion }));
+        }
+      }
     }
   }
 
@@ -956,6 +984,7 @@ export class Game {
     else if (this.resumePrompt) screens.resumeModal(ctx, this);
     else if (this.mathOpen && (this.phase === 'SUMMARY' || this.phase === 'GAMEOVER')) screens.monthMathModal(ctx, this);
     renderFX(ctx);
+    renderTokens(ctx);
     if (this.tutorialVisible()) renderTutorial(ctx, this);
     ctx.restore();
     renderTint(ctx); // screen-space wash, drawn outside the shake translate on purpose
