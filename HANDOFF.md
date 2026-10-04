@@ -417,3 +417,14 @@ Before/after: `C:\Users\Jbthi\Claude Cowork\BAIS_Minigame_Polish_BeforeAfter_202
 - Large motion (verb punch, tokens, Five Stars, heartbeat) honors Reduce Motion; small in-game
   object motion stays.
 - Tests: `tests/unit/juice.test.js` (9); readability "polish states" + a frame-budget e2e.
+
+## 13. "Stuck" audit: real-time playthrough (2026-10-05)
+
+Before/after: `C:\Users\Jbthi\Claude Cowork\BAIS_Minigame_Stuck_Audit_BeforeAfter_2026-10-05.md`.
+
+- `tests/e2e/playthrough.spec.js` (android-chrome only): plays all 11 job challenges, both
+  people-skills games and both evening games on the real requestAnimationFrame loop with real taps
+  (choices, reaction cards, the challenge, the receipt's Continue). Fails if a challenge never
+  ends, a result card never moves on, the receipt never stamps, or the player is not handed back.
+  15/15 passed on the first real run; no game code changed. The freeze players reported was Tour
+  Life's (hit-stop clock); this game has no clock scaling.
