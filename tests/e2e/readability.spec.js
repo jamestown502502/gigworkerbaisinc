@@ -315,3 +315,74 @@ test('RUSH! and MARKET! are readable in every state', async ({ page }) => {
   }
   expect(problems, problems.join('\n')).toEqual([]);
 });
+
+// Polish (2026-10-04): the receipt mid-print and stamped, the verb punch, Five Stars, the heartbeat
+// glow at high stress, the SOLD stamp, the car on its route, the recall sticker.
+test('polish states are readable', async ({ page }) => {
+  test.setTimeout(180000);
+  await boot(page, { save: { tutorialSeen: true, energy: 100, cash: 300, day: 5 } });
+  await settleMorning(page);
+  await page.evaluate(() => { window.__loopPaused = true; });
+  const problems = [];
+  const shot = async (fn, label) => { await page.evaluate(fn); problems.push(...await audit(page, label)); };
+  const gigSetup = 'const g = window.__game, M = window.__micro, L = window.__longform; g.phase = "GIG"; g.qteKind = "skill"; g.qteIntroHold = false; g.qteEndTimer = 0; g.pendingOutcome = null; g.node = null; g.currentGig = g.state.todayGigs[0]; g.fiveStarsT = null;';
+  for (const t of [0.05, 0.15, 0.6, 1.2]) {
+    await shot(new Function(`${gigSetup} g.qte = new M.LiftOnThree(g.state); g.qteReadyT = ${t};`), `verb punch t=${t}`);
+  }
+  await shot(new Function(`${gigSetup} g.state.stress = 92; g.qte = new M.PackTheCar(g.state); g.qteReadyT = 99;`), 'heartbeat glow');
+  for (const t of [0.1, 0.5, 1.5]) {
+    await shot(new Function(`${gigSetup} g.state.stress = 20; g.qte = new M.LiftOnThree(g.state); g.qteReadyT = 99; g.qte.done = true; g.qte.result = { success: true, score: 100, lesson: M.LESSONS.lift }; g.qteEndTimer = 1; g.qteFxFired = true; g.fiveStarsT = ${t};`), `five stars t=${t}`);
+  }
+  await shot(new Function(`${gigSetup} const q = new L.MarketDay(g.state); q.toggle(0); q.openStall(); q.customers[0].kind = 'eager'; q.respond('hold'); g.qte = q; g.qteReadyT = 99;`), 'market sold stamp');
+  await shot(new Function(`${gigSetup} const q = new L.RushShift(g.state); q.order = { pay: 9, miles: 5, minutes: 19 }; q.accept(); q.verdict = null; q.driving.left = 0.6; g.qte = q; g.qteReadyT = 99;`), 'rush driving');
+  await shot(new Function(`${gigSetup} const q = new L.RushShift(g.state); q.order = { pay: 9, miles: 5, minutes: 19 }; q.orderAt = q.t - 0.1; q.decideLeft = 4; g.qte = q; g.qteReadyT = 99;`), 'rush order dropping in');
+  // the results receipt, at several points of its print
+  await page.evaluate(() => {
+    const g = window.__game;
+    g.qte = null; g.qteKind = null; g.phase = 'GIG';
+    const gig = { title: 'Help Move Furniture', type: 'physical', payout: 80, hours: 2, risk: 0, location: 'safe', hasQTE: false, choiceTree: 'movingHelp', client: 'Walt', clientReliability: 5, isRepeat: false, remote: true };
+    g.currentGig = gig; g.snapshot = { cash: g.state.cash, stress: g.state.stress, rep: g.state.reputation, energy: g.state.energy };
+    g.outcomeTexts = ['Walt thinks it over and nods. Two trips, nothing dropped, nobody hurt.'];
+    g.finishGig(null); g.phase = 'RESULTS';
+  });
+  for (const t of [0.05, 0.3, 0.7, 2]) {
+    await shot(new Function(`window.__game.resultsT = ${t};`), `receipt t=${t}`);
+  }
+  // recall: answered right, with its sticker
+  await page.evaluate(() => {
+    const g = window.__game, R = window.__recall;
+    g.phase = 'MORNING';
+    const r = R.RECALL_BANK[0]; const s = g.state; s.day = R.RECALL_DAYS[0]; s.lessonsSeen = [r.lesson]; s.recallDone = [];
+    const card = R.recallCard(s, () => 0);
+    g.eventQueue = []; g.activeEvent = { ...card }; g.eventOutcome = '';
+    g.chooseEventOption(card.choices.find((o) => o.text === r.options[0])); g.eventT = 1;
+  });
+  problems.push(...await audit(page, 'recall right sticker'));
+  expect(problems, problems.join('\n')).toEqual([]);
+});
+
+// Frame budget (2026-10-04): what the busiest polish moment COSTS. Five Stars (a 30-particle burst,
+// coins in flight, the card popping) is timed against the identical result card without it, so the
+// test measures the polish rather than the machine: headless Firefox on Windows takes ~18 ms for a
+// plain screen with no polish at all, while Chromium takes under 1 ms.
+test('the busiest polish moment adds almost nothing to a frame', async ({ page }) => {
+  await boot(page, { save: { tutorialSeen: true, energy: 100, cash: 300, day: 5 } });
+  await settleMorning(page);
+  const ms = await page.evaluate(() => {
+    window.__loopPaused = true;
+    const g = window.__game, M = window.__micro;
+    const median = () => { const ts = []; for (let i = 0; i < 60; i++) { const t0 = performance.now(); g.step(1 / 60); ts.push(performance.now() - t0); } ts.sort((a, b) => a - b); return ts[30]; };
+    const card = (score) => {
+      g.phase = 'GIG'; g.qteKind = 'skill'; g.qteIntroHold = false; g.qteReadyT = 99; g.qteEndTimer = 0; g.qteFxFired = false; g.node = null; g.pendingOutcome = null;
+      g.currentGig = g.state.todayGigs[0];
+      g.qte = new M.LiftOnThree(g.state); g.qte.done = true; g.qte.result = { success: true, score, lesson: M.LESSONS.lift };
+      g.step(1 / 60);   // fires the burst and the coins when the score earns Five Stars
+      return median();
+    };
+    const plain = card(70);
+    const five = card(100);
+    return { plain, five };
+  });
+  console.log(`result card frame: plain ${ms.plain.toFixed(2)} ms, five stars ${ms.five.toFixed(2)} ms`);
+  expect(ms.five).toBeLessThan(ms.plain * 1.5 + 2);
+});

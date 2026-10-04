@@ -8,6 +8,7 @@ import { drawText, drawWrapped, roundRectPath, wrapLines } from './text.js';
 import { twistOf, goalOf, windDownMultiplier } from '../game/twists.js';
 import { playError, applyAudioSettings } from '../engine/audio.js';
 import { QTE_READY_DURATION } from '../game/qte.js';
+import { easeOutBack, receiptState, heartbeat } from './juice.js';
 import { RUN_LENGTH_DAYS } from '../engine/state.js';
 
 // ---------- immediate-mode UI ----------
@@ -349,9 +350,21 @@ function eventModal(ctx, game) {
     if (game.eventOutcome) {
       drawText(ctx, game.eventOutcome, 400, ty + 10, { size: 15, weight: 'bold', color: accent, align: 'center' });
     }
+    if (e.resolved && e.label === 'REMEMBER THIS?' && /^Right/.test(game.eventOutcome || '')) goldSticker(ctx, 612, y + 30, game.eventT || 0, game.state.settings.reduceMotion);
     button(ctx, 300, y + h - 62, 200, 44, 'Continue', { color: '#2c6e49', fontSize: 15, onClick: () => game.startNextEvent() });
   }
   ctx.globalAlpha = 1;
+}
+
+/** A gold-star sticker that slaps onto the corner of a card. */
+function goldSticker(ctx, x, y, t, calm) {
+  const k = calm ? 1 : easeOutBack(Math.min(1, t / 0.25));
+  ctx.save(); ctx.translate(x, y); ctx.rotate(0.25); ctx.scale(0.3 + 0.7 * k, 0.3 + 0.7 * k);
+  ctx.fillStyle = '#f1c40f'; ctx.strokeStyle = '#8a6d0b'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) { const r = i % 2 ? 9 : 20, a = -Math.PI / 2 + (i * Math.PI) / 5; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.restore();
 }
 
 // ---------- TRAVEL ----------
@@ -455,6 +468,11 @@ function outcomeCard(ctx, game) {
 
 /** Shared frame for every minigame (skill QTE, EI game, evening game). */
 function minigamePanel(ctx, game) {
+  if (game.qteKind === 'skill' && game.qte && !game.qte.done && game.state.stress > 70) {
+    const a = game.state.settings.reduceMotion ? 0.12 : 0.1 + 0.3 * heartbeat(performance.now() / 1000);
+    ctx.fillStyle = `rgba(200, 30, 30, ${a.toFixed(3)})`;
+    ctx.fillRect(0, 60, 86, 540); ctx.fillRect(714, 60, 86, 540); ctx.fillRect(86, 534, 628, 66);
+  }
   panel(ctx, 90, 100, 620, 430, { alpha: 0.82 });
   drawText(ctx, game.qte.name, 400, 130, { size: 22, weight: 'bold', color: '#f1c40f', align: 'center' });
   drawText(ctx, game.qte.hint, 400, 154, { size: 14, color: '#e0e0e0', align: 'center', maxWidth: 580 });
@@ -495,11 +513,20 @@ function getReady(ctx, game) {
   ctx.fillStyle = 'rgba(8, 6, 4, 0.72)';
   roundRectPath(ctx, 92, 162, 616, 364, 12); ctx.fill();
   const left = Math.max(0, QTE_READY_DURATION - game.qteReadyT);
+  // the job's one word punches in first, WarioWare-style (2026-10-04)
+  const calm = game.state.settings.reduceMotion;
+  const k = calm ? 1 : easeOutBack(Math.min(1, game.qteReadyT / 0.25));
+  ctx.save();
+  ctx.translate(400, 214); ctx.scale(0.4 + 0.6 * k, 0.4 + 0.6 * k); ctx.translate(-400, -214);
+  drawText(ctx, game.qte.name, 400, 214, { size: 50, weight: 'bold', color: '#ffd700', align: 'center', baseline: 'middle', outline: true });
+  ctx.restore();
   const pulse = 1 + 0.08 * Math.sin(game.qteReadyT * 14);
   ctx.save();
+  // scaled about its own centre, drawn at its real position (so the text probe measures where it is)
   ctx.translate(400, 270);
   ctx.scale(pulse, pulse);
-  drawText(ctx, left > 0.6 ? 'GET READY' : 'GO!', 0, 0, { size: 34, weight: 'bold', color: left > 0.6 ? '#ffffff' : '#2ecc71', align: 'center', outline: true });
+  ctx.translate(-400, -270);
+  drawText(ctx, left > 0.6 ? 'GET READY' : 'GO!', 400, 270, { size: 34, weight: 'bold', color: left > 0.6 ? '#ffffff' : '#2ecc71', align: 'center', outline: true });
   ctx.restore();
   drawWrapped(ctx, game.qte.hint, 400, 330, 520, 24, { size: 18, color: '#f5deb3', align: 'center' });
 }
@@ -518,6 +545,18 @@ function starRow(ctx, cx, y, n, k) {
     ctx.scale(scale, scale);
     ctx.translate(-sx, -y);
     drawText(ctx, '★', sx, y, { size: 38, color: on && appear > 0 ? '#f1c40f' : '#7d6b4f', align: 'center', baseline: 'middle', shadow: false });
+    ctx.restore();
+  }
+}
+
+/** Five stars that pop in one after another, for a near-perfect challenge. */
+function fiveStarRow(ctx, cx, y, t, calm) {
+  for (let i = 0; i < 5; i++) {
+    const appear = calm ? 1 : Math.max(0, Math.min(1, (t - 0.2 - i * 0.12) / 0.18));
+    const sc = calm ? 1 : 0.4 + 0.6 * easeOutBack(appear);
+    const sx = cx + (i - 2) * 44;
+    ctx.save(); ctx.translate(sx, y); ctx.scale(sc, sc); ctx.translate(-sx, -y);
+    drawText(ctx, '★', sx, y, { size: 36, color: appear > 0 ? '#f1c40f' : '#7d6b4f', align: 'center', baseline: 'middle', shadow: false });
     ctx.restore();
   }
 }
@@ -564,7 +603,8 @@ function resultCard(ctx, game) {
   const accent = r.success ? '#2ecc71' : '#e74c3c';
   ctx.fillStyle = accent; ctx.fillRect(x + 2, y + 2, w - 4, 4);
   drawText(ctx, title, 400, y + 46, { size: 28, weight: 'bold', color: r.success ? '#2ecc71' : '#ff6b5e', align: 'center', outline: true });
-  starRow(ctx, 400, y + 96, stars, k);
+  if (game.fiveStarsT !== null && game.fiveStarsT !== undefined) fiveStarRow(ctx, 400, y + 96, game.fiveStarsT, game.state.settings.reduceMotion);
+  else starRow(ctx, 400, y + 96, stars, k);
   // score bar fills to the score; the notch marks the "good job" line
   const bx = x + 50, bw = w - 100, by = y + 136;
   ctx.fillStyle = '#3a2d1f'; roundRectPath(ctx, bx, by, bw, 14, 7); ctx.fill();
@@ -591,16 +631,29 @@ export function resultsScreen(ctx, game) {
   const shown = Math.round(Math.min(1, game.resultsT / 1.2) * r.total);
   drawText(ctx, `${r.total >= 0 ? '+' : '-'}$${Math.abs(shown)}`, 400, 164, { size: 40, weight: 'bold', color: r.total >= 0 ? '#2ecc71' : '#e74c3c', align: 'center', outline: true });
 
-  // itemized ledger
+  // itemized ledger, printed one line at a time (2026-10-04)
+  const rs = receiptState(game.resultsT || 0, r.items.length);
   let y = 192;
-  for (const item of r.items) {
+  for (const item of r.items.slice(0, rs.shown)) {
     drawText(ctx, item.label, 180, y, { size: 13, color: '#c9a876', maxWidth: 330 });
     drawText(ctx, `${item.amount >= 0 ? '+' : '-'}$${Math.abs(item.amount)}`, 620, y, { size: 13, weight: 'bold', color: item.amount >= 0 ? '#2ecc71' : '#ff6b5e', align: 'right', font: 'monospace' });
     y += 18;
   }
+  y = 192 + r.items.length * 18;
   ctx.strokeStyle = '#8b5a2b'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(180, y - 8); ctx.lineTo(620, y - 8); ctx.stroke();
   y += 4;
+  // PAID (or SHORT) stamps on once the total lands
+  if (rs.stamp) {
+    const k = game.state.settings.reduceMotion ? 1 : easeOutBack(Math.min(1, rs.stampT / 0.22));
+    const sc = 1.8 - 0.8 * k, word = r.total > 0 ? 'PAID' : 'SHORT', col = r.total > 0 ? '#2ecc71' : '#ff6b5e';
+    ctx.save();
+    ctx.translate(590, 158); ctx.rotate(-0.16); ctx.scale(sc, sc); ctx.translate(-590, -158);
+    ctx.globalAlpha = Math.min(1, k * 1.4);
+    ctx.strokeStyle = col; ctx.lineWidth = 3; roundRectPath(ctx, 548, 140, 84, 36, 6); ctx.stroke();
+    drawText(ctx, word, 590, 158, { size: 20, weight: 'bold', color: col, align: 'center', baseline: 'middle', shadow: false });
+    ctx.restore();
+  }
   if (r.qteResult) {
     drawText(ctx, `Challenge ${r.qteResult.success ? 'cleared' : 'fumbled'} — score ${r.qteResult.score}`, 400, y, {
       size: 13, color: r.qteResult.success ? '#2ecc71' : '#ff6b5e', align: 'center',

@@ -29,6 +29,9 @@ import { drawText, drawWrapped, roundRectPath } from '../ui/text.js';
 import { playTick, playSuccess, playFail, playError, playGood } from '../engine/audio.js';
 import { InputManager } from '../engine/input.js';
 import { RushShift, MarketDay } from './longform.js';
+import { spawnBurst } from '../ui/fx.js';
+import { easeOutBack, easeOutBounce } from '../ui/juice.js';
+import { haptic } from '../engine/audio.js';
 
 function shuffle(arr, rand = Math.random) {
   const a = [...arr];
@@ -97,7 +100,7 @@ export class LiftOnThree {
       if (this.rest <= 0) {
         this.idx += 1;
         if (this.idx >= this.items.length) return this.finish();
-        this.t = 0; this.tapped = false; this.feedback = null; this.lastCount = -1; this.squat = 0;
+        this.t = 0; this.tapped = false; this.feedback = null; this.lastCount = -1; this.squat = 0; this.backLift = false;
       }
       return;
     }
@@ -117,6 +120,7 @@ export class LiftOnThree {
   }
   endLift(score, text, clean = false) {
     this.tapped = true;
+    this.backLift = score > 0 && !clean;
     this.clean.push(clean);
     this.scores.push(score);
     this.feedback = { ok: score > 0, text };
@@ -136,9 +140,13 @@ export class LiftOnThree {
     ctx.beginPath(); ctx.moveTo(AREA.x + 30, floor); ctx.lineTo(AREA.x + AREA.w - 30, floor); ctx.stroke();
     const ok = this.feedback?.ok, lifted = this.tapped && ok ? Math.min(1, (0.85 - this.rest) / 0.4) : 0;
     const tilt = this.tapped && !ok ? 0.12 : 0;
+    // squash while you bend (anticipation), stretch as it leaves the floor, settle at the top
+    const bending = !this.tapped && this.squat > 0;
+    const stretch = lifted > 0 && lifted < 1 ? Math.sin(lifted * Math.PI) * 0.12 : 0;
+    const sqX = bending ? 1.05 : 1 - stretch * 0.5, sqY = bending ? 0.93 : 1 + stretch;
     // the item
     const w = 180, h = 90, ix = cx - w / 2 + sh.x, iy = floor - h - lifted * 60 + sh.y;
-    ctx.save(); ctx.translate(ix + w / 2, iy + h / 2); ctx.rotate(tilt);
+    ctx.save(); ctx.translate(ix + w / 2, iy + h / 2); ctx.rotate(tilt); ctx.scale(sqX, sqY);
     ctx.fillStyle = '#6b4a2e'; roundRectPath(ctx, -w / 2, -h / 2, w, h, 8); ctx.fill();
     ctx.strokeStyle = '#2a1a0e'; ctx.lineWidth = 3; roundRectPath(ctx, -w / 2, -h / 2, w, h, 8); ctx.stroke();
     ctx.restore();
@@ -152,6 +160,13 @@ export class LiftOnThree {
       ctx.beginPath(); ctx.arc(px, top, 16, 0, Math.PI * 2); ctx.fill();
       ctx.fillRect(px - 12, top + 18, 24, 50);
       ctx.fillRect(px - 12, top + 68, 9, floor - top - 68); ctx.fillRect(px + 3, top + 68, 9, floor - top - 68);
+    }
+    if (this.backLift) {
+      // strain: a jagged red line down your back
+      const bx = cx - (w / 2 + 34) - 18, by = floor - 100;
+      ctx.strokeStyle = '#ff4d3d'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(bx, by);
+      for (let k = 1; k <= 5; k++) ctx.lineTo(bx + (k % 2 ? -7 : 7), by + k * 12);
+      ctx.stroke();
     }
     drawText(ctx, 'You', cx - (w / 2 + 34), floor + 26, { size: 14, color: '#c9a876', align: 'center' });
     drawText(ctx, 'Partner', cx + (w / 2 + 34), floor + 26, { size: 14, color: '#c9a876', align: 'center' });
@@ -187,7 +202,12 @@ export class UntangleLeash {
     this.flash = 0; this.done = false; this.result = null;
   }
   top() { return this.stack[this.stack.length - 1]; }
-  dogPos(dog) { const s = shakeOffset(this.d, this.t, dog.i); return { x: dog.x + s.x, y: dog.y + s.y }; }
+  dogPos(dog) {
+    const s = shakeOffset(this.d, this.t, dog.i);
+    // a freed dog wags for a moment (side to side), then settles
+    const wag = dog.free && this.t - dog.freedAt < 0.7 ? Math.sin((this.t - dog.freedAt) * 30) * 5 : 0;
+    return { x: dog.x + s.x + wag, y: dog.y + s.y };
+  }
   update(dt) {
     if (this.done) return;
     this.t += dt; this.flash = Math.max(0, this.flash - dt * 2);
@@ -199,7 +219,7 @@ export class UntangleLeash {
     const hit = this.dogs.find((d) => !d.free && Math.hypot(pt.x - this.dogPos(d).x, pt.y - this.dogPos(d).y) <= 34);
     if (!hit) return;
     if (hit.i === this.top()) {
-      hit.free = true; this.stack.pop(); playTick();
+      hit.free = true; hit.freedAt = this.t; this.stack.pop(); playTick(); haptic(8);
       if (this.stack.length === 0) this.finish(true);
     } else {
       this.timeLeft = Math.max(0.1, this.timeLeft - 1.2); this.flash = 1; playError();
@@ -255,6 +275,7 @@ export class PackTheCar {
     this.queue = shuffle(PIECES.map((p, i) => ({ w: p[0], h: p[1], label: p[2], color: PIECE_COLORS[i] })));
     this.grid = Array.from({ length: GRID.rows }, () => Array(GRID.cols).fill(null));
     this.packed = 0; this.skipped = 0; this.heavyHigh = 0; this.warn = null;
+    this.dropAt = Array.from({ length: GRID.rows }, () => Array(GRID.cols).fill(-9));
     this.timeMax = 24 / this.d; this.timeLeft = this.timeMax; this.t = 0;
     this.flash = 0; this.done = false; this.result = null;
     this.preview = { x: AREA.x + 400, y: AREA.y + 100, w: 170, h: 170 };
@@ -269,7 +290,11 @@ export class PackTheCar {
   place(col, row) {
     const p = this.current();
     if (!p || !this.fits(p, col, row)) { this.flash = 1; playError(); return false; }
-    for (let r = row; r < row + p.h; r++) for (let c = col; c < col + p.w; c++) this.grid[r][c] = p.color;
+    for (let r = row; r < row + p.h; r++) for (let c = col; c < col + p.w; c++) { this.grid[r][c] = p.color; this.dropAt[r][c] = this.t; }
+    if (HEAVY.has(p.label)) {
+      spawnBurst(GRID.x + (col + p.w / 2) * GRID.cell, GRID.y + (row + p.h) * GRID.cell, { color: '#bfa98a', count: 10, speed: 70 });
+      haptic(18);
+    } else haptic(8);
     // heavy and not touching the floor: it still fits, but it will slide
     if (HEAVY.has(p.label) && row + p.h < GRID.rows) { this.heavyHigh += 1; this.warn = { text: `${p.label} up high will slide when you brake.`, t: 1.6 }; playError(); }
     this.queue.shift(); this.packed += 1; playTick();
@@ -309,7 +334,9 @@ export class PackTheCar {
     ctx.fillStyle = 'rgba(255, 210, 122, 0.18)';
     ctx.fillRect(GRID.x + s.x, GRID.y + (GRID.rows - 1) * GRID.cell + s.y, GRID.cols * GRID.cell, GRID.cell);
     for (let r = 0; r < GRID.rows; r++) for (let c = 0; c < GRID.cols; c++) {
-      const x = GRID.x + c * GRID.cell + s.x, y = GRID.y + r * GRID.cell + s.y;
+      const drop = this.t - this.dropAt[r][c];
+      const fall = drop >= 0 && drop < 0.3 ? (1 - easeOutBounce(drop / 0.3)) * 36 : 0;
+      const x = GRID.x + c * GRID.cell + s.x, y = GRID.y + r * GRID.cell + s.y - fall;
       ctx.fillStyle = this.grid[r][c] ?? 'rgba(20,14,8,0.8)';
       ctx.fillRect(x + 2, y + 2, GRID.cell - 4, GRID.cell - 4);
       ctx.strokeStyle = '#8b5a2b'; ctx.lineWidth = 1; ctx.strokeRect(x + 2, y + 2, GRID.cell - 4, GRID.cell - 4);
@@ -438,15 +465,28 @@ export class RakeThePile {
       drawText(ctx, 'Tap where the pile goes', AREA.x + AREA.w / 2, AREA.y + AREA.h - 46, { size: 16, weight: 'bold', color: '#ffd27a', align: 'center', outline: true });
     } else {
       ctx.fillStyle = 'rgba(120, 70, 30, 0.45)';
-      ctx.beginPath(); ctx.ellipse(this.pile.x, this.pile.y, this.pile.r, this.pile.r * 0.65, 0, 0, Math.PI * 2); ctx.fill();
+      const grown = 0.65 + 0.25 * (this.inPileCount() / this.leaves.length);   // the pile rises as it fills
+      ctx.beginPath(); ctx.ellipse(this.pile.x, this.pile.y, this.pile.r, this.pile.r * grown, 0, 0, Math.PI * 2); ctx.fill();
       drawText(ctx, this.downwind ? 'The pile (downwind)' : 'The pile (upwind)', this.pile.x, this.pile.y + this.pile.r * 0.65 + 18, { size: 14, weight: 'bold', color: this.downwind ? '#9fe0b5' : '#ffb3a8', align: 'center', outline: true });
     }
     const s = shakeOffset(this.d, this.t);
-    for (const l of this.leaves) {
-      ctx.save(); ctx.translate(l.x + (l.inPile ? 0 : s.x * 0.5), l.y + (l.inPile ? 0 : s.y * 0.5)); ctx.rotate(l.a);
+    if (this.gust > 0) {
+      // wind streaks blowing the way the wind goes
+      ctx.strokeStyle = 'rgba(214, 234, 248, 0.45)'; ctx.lineWidth = 2;
+      for (let k = 0; k < 5; k++) {
+        const yy = AREA.y + 130 + k * 55, run = ((this.t * 420 + k * 97) % (AREA.w + 120)) - 60;
+        const xx = this.wind > 0 ? AREA.x + run : AREA.x + AREA.w - run;
+        ctx.beginPath(); ctx.moveTo(xx, yy); ctx.lineTo(xx + this.wind * 46, yy); ctx.stroke();
+      }
+    }
+    this.leaves.forEach((l, idx) => {
+      // loose leaves flutter: a sway and a slow spin; leaves in the pile lie still
+      const sway = l.inPile ? 0 : Math.sin(this.t * 2.3 + idx) * 2.5;
+      const spin = l.inPile ? 0 : Math.sin(this.t * 4 + idx * 1.7) * 0.35;
+      ctx.save(); ctx.translate(l.x + sway + (l.inPile ? 0 : s.x * 0.5), l.y + (l.inPile ? 0 : s.y * 0.5)); ctx.rotate(l.a + spin);
       ctx.fillStyle = l.color; ctx.beginPath(); ctx.ellipse(0, 0, 10, 5, 0, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
-    }
+    });
     if (this.gust > 0) drawText(ctx, this.downwind ? 'A gust! It blows leaves into your pile.' : 'A gust! It blows leaves away from your pile.', AREA.x + AREA.w / 2, AREA.y + 110, { size: 15, weight: 'bold', color: '#d6eaf8', align: 'center', outline: true });
     drawText(ctx, `${this.inPileCount()} of ${this.leaves.length} in the pile`, AREA.x + AREA.w / 2, AREA.y + AREA.h - 18, { size: 15, color: '#f0f0f0', align: 'center', outline: true });
   }
@@ -484,7 +524,7 @@ export class ProofreadFlyer {
     const w = this.words.find((x) => x.box && inRect(pt, x.box));
     if (!w) return;
     if (w.typo && !w.found) {
-      w.found = true; playTick();
+      w.found = true; w.foundAt = this.t; playTick(); haptic(8);
       if (this.words.every((x) => !x.typo || x.found)) this.finish(true);
     } else if (!w.typo) { this.timeLeft = Math.max(0.1, this.timeLeft - 1.5); this.flash = 1; playError(); }
   }
@@ -507,7 +547,14 @@ export class ProofreadFlyer {
       const ww = ctx.measureText(w.shown).width;
       if (x + ww > card.x + card.w - 26) { x = card.x + 26; y += lineH; }
       w.box = { x: x - 4 + s.x, y: y - size - 4 + s.y, w: ww + 8, h: size + 12 };
-      if (w.found) { ctx.fillStyle = 'rgba(46,204,113,0.35)'; ctx.fillRect(w.box.x, w.box.y, w.box.w, w.box.h); }
+      if (w.found) {
+        ctx.fillStyle = 'rgba(46,204,113,0.35)'; ctx.fillRect(w.box.x, w.box.y, w.box.w, w.box.h);
+        // the red pen draws its circle around the typo
+        const k = Math.min(1, (this.t - (w.foundAt ?? -1)) / 0.25);
+        ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 2.5; ctx.beginPath();
+        ctx.ellipse(w.box.x + w.box.w / 2, w.box.y + w.box.h / 2, w.box.w / 2 + 6, w.box.h / 2 + 3, -0.05, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k);
+        ctx.stroke();
+      }
       drawText(ctx, w.shown, x + s.x, y + s.y, { size, color: w.found ? '#145a32' : '#1d150d', shadow: false });
       x += ww + space;
     }
@@ -539,7 +586,8 @@ export class SortReturns {
   judge(binId) {
     const item = this.items[this.idx];
     const right = binFor(item) === binId;
-    if (right) { this.correct += 1; playTick(); } else playError();
+    if (right) { this.correct += 1; playTick(); haptic(8); } else { playError(); haptic(30); }
+    this.hop = { id: binId, t: this.t, right };
     this.feedback = { right, text: right ? 'Correct.' : `That one is ${SORT_BINS.find((b) => b.id === binFor(item)).label.toLowerCase()}.` };
     this.pause = 0.7;
   }
@@ -581,9 +629,11 @@ export class SortReturns {
     if (this.feedback) drawText(ctx, this.feedback.text, AREA.x + AREA.w / 2, card.y + card.h + 26, { size: 17, weight: 'bold', color: this.feedback.right ? '#2ecc71' : '#ff8a7e', align: 'center', outline: true });
     const s = shakeOffset(this.d, this.t);
     for (const b of this.bins) {
-      ctx.fillStyle = '#2b3d4f'; roundRectPath(ctx, b.x + s.x, b.y + s.y, b.w, b.h, 10); ctx.fill();
-      ctx.strokeStyle = '#c9a876'; ctx.lineWidth = 2; roundRectPath(ctx, b.x + s.x, b.y + s.y, b.w, b.h, 10); ctx.stroke();
-      drawText(ctx, b.label, b.x + b.w / 2 + s.x, b.y + b.h / 2 + s.y, { size: 16, weight: 'bold', color: '#ffffff', align: 'center', baseline: 'middle' });
+      const hopK = this.hop && this.hop.id === b.id ? (this.t - this.hop.t) / 0.28 : 2;
+      const hy = hopK >= 0 && hopK < 1 ? -Math.sin(hopK * Math.PI) * 9 : 0;
+      ctx.fillStyle = '#2b3d4f'; roundRectPath(ctx, b.x + s.x, b.y + s.y + hy, b.w, b.h, 10); ctx.fill();
+      ctx.strokeStyle = hopK < 1 ? (this.hop.right ? '#2ecc71' : '#ff6b5e') : '#c9a876'; ctx.lineWidth = hopK < 1 ? 3 : 2; roundRectPath(ctx, b.x + s.x, b.y + s.y + hy, b.w, b.h, 10); ctx.stroke();
+      drawText(ctx, b.label, b.x + b.w / 2 + s.x, b.y + b.h / 2 + s.y + hy, { size: 16, weight: 'bold', color: '#ffffff', align: 'center', baseline: 'middle' });
     }
     drawText(ctx, `Item ${Math.min(this.idx + 1, this.items.length)} of ${this.items.length}`, AREA.x + AREA.w / 2, AREA.y + AREA.h - 18, { size: 14, color: '#f0f0f0', align: 'center' });
   }
@@ -626,7 +676,7 @@ export class AssembleSteps {
     const c = this.cards.find((x) => !x.done && inRect({ x: pt.x - s.x, y: pt.y - s.y }, x.box));
     if (!c) return;
     if (c.i === this.next) {
-      c.done = true; this.next += 1; playTick();
+      c.done = true; c.doneAt = this.t; this.next += 1; playTick(); haptic(8);
       if (this.next >= this.cards.length) this.finish(true);
     } else {
       this.mistakes += 1; this.timeLeft = Math.max(0.1, this.timeLeft - 1.5); playError();
@@ -645,7 +695,8 @@ export class AssembleSteps {
     drawText(ctx, `Building: ${this.recipe.piece}`, AREA.x + AREA.w / 2, AREA.y + 80, { size: 16, weight: 'bold', color: '#c9a876', align: 'center' });
     const s = shakeOffset(this.d, this.t);
     for (const c of this.cards) {
-      const b = { x: c.box.x + s.x, y: c.box.y + s.y, w: c.box.w, h: c.box.h };
+      const pop = c.done && this.t - c.doneAt < 0.2 ? 1 + 0.08 * (1 - (this.t - c.doneAt) / 0.2) : 1;
+      const b = { x: c.box.x + s.x - (c.box.w * (pop - 1)) / 2, y: c.box.y + s.y - (c.box.h * (pop - 1)) / 2, w: c.box.w * pop, h: c.box.h * pop };
       ctx.fillStyle = c.done ? '#2c6e49' : '#2b3d4f'; roundRectPath(ctx, b.x, b.y, b.w, b.h, 10); ctx.fill();
       ctx.strokeStyle = '#c9a876'; ctx.lineWidth = 2; roundRectPath(ctx, b.x, b.y, b.w, b.h, 10); ctx.stroke();
       if (c.done) drawText(ctx, `${c.i + 1}`, b.x + 16, b.y + 24, { size: 16, weight: 'bold', color: '#ffd27a', align: 'center' });
@@ -835,6 +886,11 @@ export class FrameShot {
       const chosen = this.reveal && this.reveal.spotId === sp.id;
       ctx.fillStyle = chosen ? (this.reveal.verdict === 'good' ? '#2ecc71' : '#e67e22') : 'rgba(255, 210, 122, 0.55)';
       ctx.beginPath(); ctx.arc(p.x + s.x, p.y + s.y, chosen ? 18 : 11, 0, Math.PI * 2); ctx.fill();
+    }
+    if (this.reveal && this.reveal.t > 2.0 && this.reveal.verdict !== 'time') {
+      // the shutter: a quick white flash over the viewfinder as the shot is taken
+      ctx.fillStyle = `rgba(255, 255, 255, ${((this.reveal.t - 2.0) / 0.2 * 0.55).toFixed(3)})`;
+      ctx.fillRect(VF.x + s.x, VF.y + s.y, VF.w, VF.h);
     }
     if (this.reveal) {
       const text = this.reveal.verdict === 'time' ? 'The light changed. Shot missed.' : FRAME_WHY[this.reveal.verdict];

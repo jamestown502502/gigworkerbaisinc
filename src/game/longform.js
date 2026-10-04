@@ -9,7 +9,8 @@
 //   Flea Market     -> MARKET!  buy thrift stock on a budget, then haggle with buyers you must read
 import { difficultyFactor, AREA, drawFace } from './qte.js';
 import { drawText, drawWrapped, roundRectPath } from '../ui/text.js';
-import { playTick, playSuccess, playFail, playError, playGood, playBuzz } from '../engine/audio.js';
+import { playTick, playSuccess, playFail, playError, playGood, playBuzz, playCashIn, haptic } from '../engine/audio.js';
+import { easeOutBack, easeOutCubic } from '../ui/juice.js';
 
 function shuffle(arr, rand = Math.random) {
   const a = [...arr];
@@ -102,7 +103,7 @@ export class RushShift {
     } else {
       this.clock += IDLE_MIN_PER_SEC * dt;
       this.nextPing -= dt;
-      if (this.nextPing <= 0 && this.clock < SHIFT_MIN) { this.order = makeOrder(this.rand, this.lowPriority()); this.decideLeft = this.decideMax; playBuzz(); }
+      if (this.nextPing <= 0 && this.clock < SHIFT_MIN) { this.order = makeOrder(this.rand, this.lowPriority()); this.orderAt = this.t; this.decideLeft = this.decideMax; playBuzz(); haptic([12, 40, 12]); }
     }
     if (this.clock >= SHIFT_MIN && !this.driving) this.finish();
   }
@@ -132,7 +133,9 @@ export class RushShift {
     const low = this.lowPriority();
     drawText(ctx, `Shift: ${Math.floor(left / 60)}h ${String(Math.floor(left % 60)).padStart(2, '0')}m left   ·   Acceptance ${Math.round(this.acceptance() * 100)}%`, cx, AREA.y + 72, { size: 15, weight: 'bold', color: low ? '#ff8a7e' : '#f5deb3', align: 'center' });
     // the phone
-    const card = { x: AREA.x + 150, y: AREA.y + 86, w: 300, h: 142 };
+    // a new order drops in from the top like a phone notification (2026-10-04)
+    const drop = this.order ? easeOutBack(Math.min(1, (this.t - (this.orderAt ?? -1)) / 0.3)) : 1;
+    const card = { x: AREA.x + 150, y: AREA.y + 86 - (1 - drop) * 50, w: 300, h: 142 };
     ctx.fillStyle = 'rgba(15, 20, 28, 0.94)'; roundRectPath(ctx, card.x, card.y, card.w, card.h, 14); ctx.fill();
     ctx.strokeStyle = '#5dade2'; ctx.lineWidth = 2; roundRectPath(ctx, card.x, card.y, card.w, card.h, 14); ctx.stroke();
     if (this.order) {
@@ -149,6 +152,11 @@ export class RushShift {
     } else if (this.driving) {
       drawText(ctx, 'On a delivery', cx, card.y + 52, { size: 20, weight: 'bold', color: '#ffffff', align: 'center' });
       drawText(ctx, `${this.driving.minutes} minutes on the road`, cx, card.y + 86, { size: 15, color: '#e0e0e0', align: 'center' });
+      // the car, driving its route across the card
+      const prog = 1 - Math.max(0, this.driving.left) / DRIVE_SECS;
+      ctx.strokeStyle = 'rgba(93, 173, 226, 0.5)'; ctx.lineWidth = 3; ctx.setLineDash([8, 6]);
+      ctx.beginPath(); ctx.moveTo(card.x + 30, card.y + 116); ctx.lineTo(card.x + card.w - 30, card.y + 116); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = '#5dade2'; roundRectPath(ctx, card.x + 22 + (card.w - 60) * easeOutCubic(prog), card.y + 108, 16, 16, 4); ctx.fill();
     } else {
       drawText(ctx, 'Waiting for orders...', cx, card.y + 66, { size: 18, color: '#c9a876', align: 'center' });
       drawText(ctx, 'Waiting is unpaid shift time', cx, card.y + 96, { size: 14, color: '#b5a488', align: 'center' });
@@ -224,7 +232,7 @@ export class MarketDay {
     if (!items.length) return this.finish();
     const kinds = shuffle(['eager', 'bargain', 'browser', 'bargain', 'eager', 'browser'], this.rand);
     this.customers = items.map((item, k) => ({ item, kind: kinds[k % kinds.length], seed: 3 + k * 7 }));
-    this.stage = 'sell'; this.custLeft = this.perCustomer;
+    this.stage = 'sell'; this.custLeft = this.perCustomer; this.custAt = 0; this.sellT = 0;
     playGood();
   }
   respond(choice) {
@@ -236,12 +244,13 @@ export class MarketDay {
     c.sold = price; this.sales += price;
     const why = { eager: 'Eager buyers pay list.', bargain: 'Bargain hunters meet halfway, never list.', browser: 'Browsers only buy at their own price.' }[c.kind];
     const text = sold ? `Sold for $${price} (you paid $${c.item.cost}). ${price === bestSale(c.item, c.kind) ? 'Best you could get.' : why}` : choice === 'none' ? `They wander off. ${why}` : `They put it down and walk. ${why}`;
-    this.feedback = { sold, text, t: 2.4 };
-    sold ? playGood() : playError();
+    this.feedback = { sold, text, t: 2.4, price };
+    if (sold) { playCashIn(); haptic(18); } else { playError(); haptic(30); }
   }
   update(dt) {
     if (this.done) return;
     this.flash = Math.max(0, this.flash - dt);
+    this.sellT = (this.sellT || 0) + dt;
     if (this.stage === 'buy') {
       this.buyLeft -= dt;
       if (this.buyLeft <= 0) this.openStall();
@@ -250,7 +259,7 @@ export class MarketDay {
     if (this.feedback) {
       this.feedback.t -= dt;
       if (this.feedback.t <= 0) {
-        this.feedback = null; this.idx += 1; this.custLeft = this.perCustomer;
+        this.feedback = null; this.idx += 1; this.custLeft = this.perCustomer; this.custAt = this.sellT;
         if (this.idx >= this.customers.length) this.finish();
       }
       return;
@@ -307,12 +316,22 @@ export class MarketDay {
     const p = marketPrices(c.item, c.kind);
     ctx.fillStyle = '#3a2d1f'; ctx.fillRect(AREA.x + 20, AREA.y + 52, AREA.w - 40, 6);
     ctx.fillStyle = '#5dade2'; ctx.fillRect(AREA.x + 20, AREA.y + 52, (AREA.w - 40) * Math.max(0, this.feedback ? 0 : this.custLeft / this.perCustomer), 6);
-    drawFace(ctx, AREA.x + 30, AREA.y + 70, 96, c.seed, BUYERS[c.kind].feeling);
+    // each buyer walks in from the left
+    const walk = easeOutCubic(Math.min(1, ((this.sellT || 0) - (this.custAt || 0)) / 0.35));
+    drawFace(ctx, AREA.x + 30 - (1 - walk) * 120, AREA.y + 70, 96, c.seed, BUYERS[c.kind].feeling);
     drawWrapped(ctx, `"Would you take $${p.take} for the ${c.item.name.toLowerCase()}?"`, AREA.x + 150, AREA.y + 92, AREA.w - 180, 21, { size: 17, color: '#ffffff', shadow: false });
     drawText(ctx, BUYERS[c.kind].cue, AREA.x + 150, AREA.y + 142, { size: 14, color: '#e8c98a', shadow: false, maxWidth: AREA.w - 180 });
     drawText(ctx, `Listed at $${p.hold}   ·   You paid $${c.item.cost}`, AREA.x + 150, AREA.y + 166, { size: 14, color: '#c9a876', shadow: false });
     if (this.feedback) {
       drawWrapped(ctx, this.feedback.text, cx, AREA.y + 232, AREA.w - 60, 22, { size: 16, weight: 'bold', color: this.feedback.sold ? '#9fe0b5' : '#ffb3a8', align: 'center' });
+      if (this.feedback.sold) {
+        // SOLD stamps on below the line
+        const k = easeOutBack(Math.min(1, (2.4 - this.feedback.t) / 0.22)), sc = 1.8 - 0.8 * k, sy = AREA.y + 316;
+        ctx.save(); ctx.translate(cx, sy); ctx.rotate(-0.12); ctx.scale(sc, sc); ctx.translate(-cx, -sy);
+        ctx.strokeStyle = '#2ecc71'; ctx.lineWidth = 3; roundRectPath(ctx, cx - 70, sy - 20, 140, 40, 6); ctx.stroke();
+        drawText(ctx, `SOLD $${this.feedback.price}`, cx, sy, { size: 20, weight: 'bold', color: '#2ecc71', align: 'center', baseline: 'middle', shadow: false });
+        ctx.restore();
+      }
     } else {
       [['take', `Take $${p.take}`], ['half', `Meet halfway: $${p.half}`], ['hold', `Hold at $${p.hold}`]].forEach(([k, label], i) => {
         const b = { x: AREA.x + 40, y: AREA.y + 190 + i * 56, w: AREA.w - 80, h: 48, onTap: () => this.respond(k) };

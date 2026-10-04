@@ -397,3 +397,23 @@ dialogue). Full critique, rankings and before/after:
   cut (rep +0.1 on success, stress +3 otherwise). `resultCard` shows the lines and $/hr.
 - e2e hook `window.__longform`; readability test "RUSH! and MARKET! are readable in every state".
 - Tests: `tests/unit/longform.test.js` (11).
+
+## 12. Polish pass: the Hustle kit (2026-10-04)
+
+Before/after: `C:\Users\Jbthi\Claude Cowork\BAIS_Minigame_Polish_BeforeAfter_2026-10-04.md`.
+
+- `src/ui/juice.js` (pure): easings, `METER_POS`, `receiptState` (one line per 0.14 s, then total,
+  then stamp), `isFiveStars` (skill, success, score >= 95), `HAPTIC`, `heartbeat`, `effectTokens`.
+- `src/ui/fx.js`: `spawnFlyToken` (arc to a HUD meter; `calm` skips the flight and just bulges),
+  `meterBulge` (read by hud.js to swell the number), `renderTokens`, particle cap `MAX_PARTICLES`.
+- Loop: tokens from every choice's effect line and from the receipt's stat row after the stamp;
+  receipt ticks; Five Stars (`fiveStarsT`, coin tokens, double haptic); soft haptic on a fumble.
+- Screens: verb punch in `getReady`, PAID/SHORT stamp, `fiveStarRow`, heartbeat edge glow above
+  70 stress during challenges (outside the panel, so no text contrast changes), recall sticker.
+  GET READY now draws at its real position (the probe used to see it at 0,0).
+- Microgames: LIFT squash/stretch + back-strain mark; UNTANGLE wag; PACK bounce + dust; RAKE
+  flutter, wind streaks, growing pile; PROOFREAD pen circle; SORT bin hop; ASSEMBLE pop; FRAME
+  shutter; RUSH notification drop + car; MARKET walk-in + SOLD stamp + register.
+- Large motion (verb punch, tokens, Five Stars, heartbeat) honors Reduce Motion; small in-game
+  object motion stays.
+- Tests: `tests/unit/juice.test.js` (9); readability "polish states" + a frame-budget e2e.
