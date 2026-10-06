@@ -386,3 +386,35 @@ test('the busiest polish moment adds almost nothing to a frame', async ({ page }
   console.log(`result card frame: plain ${ms.plain.toFixed(2)} ms, five stars ${ms.five.toFixed(2)} ms`);
   expect(ms.five).toBeLessThan(ms.plain * 1.5 + 2);
 });
+
+// QA round 3 (2026-10-06): every screen that changed or appeared.
+test('QA round 3 screens are readable', async ({ page }) => {
+  test.setTimeout(180000);
+  await boot(page, { save: { tutorialSeen: true, characterCreated: true, energy: 100, cash: 900, day: 13, daysUntilBills: 2, gigsCompleted: 31, runNumber: 2, lastRun: { day: 30, cash: 2210, complete: true, evicted: false }, lastPlayed: Date.now() - 86400000 }, keepResumePrompt: true });
+  await page.evaluate(() => { window.__loopPaused = true; window.__game.step(1 / 60); });
+  const problems = [];
+  // Screens are set up by hand, so a transition started by a setup call (goBrowse, goEvening) is
+  // dropped: it would otherwise swap the phase under a later shot.
+  const shot = async (fn, label) => { await page.evaluate(fn); await page.evaluate(() => { window.__game.transition = null; }); problems.push(...await audit(page, label)); };
+  await shot(() => {}, 'welcome back');
+  await shot(() => { const s = window.__state; s.unpaidRent = 600; s.rentOverdueDays = 5; window.__game.confirmNewGame = true; }, 'welcome back, overdue, confirm');
+  await page.evaluate(() => { const g = window.__game, s = g.state; g.resumePrompt = false; g.confirmNewGame = false; s.unpaidRent = 0; s.rentOverdueDays = 0; g.ticker = { lines: [], idx: 0, t: 0 }; g.eventQueue = []; g.activeEvent = null; });
+  await shot(() => {}, 'apartment, pay rent early');
+  await shot(() => { window.__game.payRentEarly(); window.__game.step(2); }, 'apartment, rent paid early'); // the -$ float has risen away
+  await shot(() => { const g = window.__game; g.message = ''; g.goBrowse(); g.phase = 'BROWSE'; g.message = 'Pick a gig first: tap a card above to choose it.'; g.listHintAt = Date.now() - 450; }, 'listings, pick a gig first');
+  await shot(() => { const g = window.__game, s = g.state; g.message = ''; s.cash = 120; s.rentPrepaid = false; s.daysUntilBills = 0; g.phase = 'EVENING'; g.ping = null; g.goEvening(); g.payBill('rent'); }, 'bills, rent short');
+  await shot(() => { window.__game.payBill('food'); window.__game.payBill('phone'); }, 'bills, after paying what fits');
+  await page.evaluate(() => { const g = window.__game; g.closeBills(); g.finishWrapUp(); });
+  await shot(() => { const g = window.__game; g.ping = { gig: { title: 'Early call: Help Move Furniture', payout: 96 }, resolved: false, text: '' }; }, 'late ping, decide later');
+  await shot(() => { window.__game.resolvePing('later'); }, 'evening, ping waiting');
+  await shot(() => { const g = window.__game, s = g.state; s.eveningDoneDay = s.day; g.eveningOutcome = "You found the rhythm. -14 stress, +3 balance. Tomorrow's timed challenges will feel easier."; }, 'evening done, where you stand');
+  await shot(() => { const g = window.__game, s = g.state; g.eveningOutcome = 'Your sister picks up on the second ring. You talk until the kettle boils twice. Support +6.'; s.cash = 2000; }, 'evening done, long outcome, pay rent early');
+  // every morning event that applies an effect, with its outcome line
+  const ids = await page.evaluate(() => window.__events.EVENTS.filter((e) => e.effect).map((e) => e.id));
+  for (const id of ids) {
+    await shot(new Function(`const g = window.__game, E = window.__events; g.phase = 'MORNING'; g.ping = null; const e = E.EVENTS.find((x) => x.id === '${id}'); g.eventQueue = [e]; g.activeEvent = null; g.ticker = { lines: [], idx: 0, t: 0 }; g.startNextEvent(); g.eventT = 1;`), `event ${id}`);
+  }
+  await page.evaluate(() => { const g = window.__game; g.activeEvent = null; g.eventQueue = []; });
+  await shot(() => { window.__game.staleTab = true; }, 'open in another tab');
+  expect(problems, problems.join('\n')).toEqual([]);
+});

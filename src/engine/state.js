@@ -3,6 +3,10 @@ import { DEFAULT_CHARACTER } from '../ui/character.js';
 export const SAVE_VERSION = 3; // v3: character gains body, pronouns, hairStyle, facialHair
 export const RUN_LENGTH_DAYS = 30;
 
+/** Set when another tab or window of the game saves: this copy is out of date and must not write
+ *  over the newer save (QA round 3 #3, #11). main.js raises it; "Play here" reloads. */
+export const saveLock = { stale: false };
+
 export class GameState {
   constructor() {
     this.version = SAVE_VERSION;
@@ -23,6 +27,7 @@ export class GameState {
     this.energyPerTravel = 3;
     this.unpaidRent = 0;
     this.rentOverdueDays = 0;
+    this.rentPrepaid = false;    // this week's rent paid ahead of the bills screen (QA round 3 #8)
     this.phoneCut = false;
     this.unpaidPhone = 0;
     this.hungry = false;
@@ -65,6 +70,9 @@ export class GameState {
     this.recallDone = [];        // takeaways already asked back on a recall morning (game/recall.js)
     // The month's real numbers, for the day-30 / eviction "math of the month" page (2026-09-29).
     this.monthMath = { paidHours: 0, gigs: 0, lostToNonPayment: 0, rentPaid: 0, phonePaid: 0, travelEnergy: 0, sickDays: 0 };
+    this.runNumber = 1;          // which run this is; kept across reset()
+    this.lastRun = null;         // how the previous run ended ({ day, cash, complete }), for Welcome back
+    this.lastPlayed = 0;         // ms timestamp of the last save, for Welcome back
     this.runComplete = false;    // day 30 finished
     this.freePlay = false;       // chose to keep going past day 30
     // Preferences, not run state — survive `reset()` (see reset() below), same pattern as the
@@ -79,7 +87,11 @@ export class GameState {
     };
     this.load();
   }
-  save() { localStorage.setItem('gigWorkerState', JSON.stringify(this)); }
+  save() {
+    if (saveLock.stale) return;
+    this.lastPlayed = Date.now();
+    localStorage.setItem('gigWorkerState', JSON.stringify(this));
+  }
   load() {
     const saved = localStorage.getItem('gigWorkerState');
     if (!saved) return;
@@ -92,6 +104,8 @@ export class GameState {
       if (parsed.characterCreated === undefined) this.characterCreated = true;
       // Not saved (non-enumerable): lets the game offer Continue / New game on reopening a run.
       Object.defineProperty(this, 'fromSave', { value: true, configurable: true });
+      // ...and when that save was last written, before this session's first save moves it on.
+      Object.defineProperty(this, 'savedAt', { value: parsed.lastPlayed || 0, configurable: true });
       this.character = { ...defaults.character, ...(parsed.character || {}) };
       // Backfill anything a pre-v2 save (or a partially written one) lacks, against the
       // constructor defaults — no field is ever left undefined.
@@ -115,6 +129,12 @@ export class GameState {
     const tutorialSeen = this.tutorialSeen;  // someone starting over has seen it (Settings replays it)
     const seenMicrogames = this.seenMicrogames || [];
     const lastTwist = this.twist || this.lastTwist;
+    // Welcome back says which run this is and how the last one ended, so a fresh Day 1 after a
+    // finished month never reads as lost progress (QA round 3 #11).
+    const runNumber = (this.runNumber || 1) + 1;
+    const lastRun = this.characterCreated && (this.day > 1 || this.gigsCompleted > 0)
+      ? { day: Math.min(this.day, RUN_LENGTH_DAYS), cash: Math.round(this.cash), complete: !!this.runComplete || this.day > RUN_LENGTH_DAYS, evicted: this.rentOverdueDays >= 14 }
+      : this.lastRun;
     localStorage.removeItem('gigWorkerState');
     Object.assign(this, new GameState());
     this.settings = settings;
@@ -123,6 +143,8 @@ export class GameState {
     this.tutorialSeen = tutorialSeen;
     this.seenMicrogames = seenMicrogames;
     this.lastTwist = lastTwist;
+    this.runNumber = runNumber;
+    this.lastRun = lastRun;
     this.save();
   }
   clamp() {

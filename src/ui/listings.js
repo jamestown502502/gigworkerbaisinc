@@ -96,14 +96,25 @@ export function renderListings(ctx, game) {
     color: '#2c6e49',
     disabled: !sel || !check.ok,
     onClick: () => sel && game.acceptGig(sel),
-    onDisabled: () => { playError(); if (check && !check.ok) game.message = check.reason; },
+    onDisabled: () => {
+      playError();
+      if (check && !check.ok) game.message = check.reason;
+      // Nothing picked yet (QA round 3 #1): say so, and light up the cards that can be taken.
+      else if (!sel) { game.message = gigs.length ? 'Pick a gig first: tap a card above to choose it.' : 'No gigs left today. Call it a day.'; game.listHintAt = Date.now(); }
+    },
   });
   if (sel && check && check.ok) {
     drawText(ctx, `Energy after: ${Math.round(s.energy - check.need)}  ·  Hours after: ${s.hoursLeft - sel.hours}`, 310, 596, { size: 12, color: '#c9a876', align: 'center', font: 'monospace' });
   }
   button(ctx, 450, 526, 200, 52, 'Call It a Day', { color: '#5d4023', onClick: () => game.goEvening() });
   if (game.message) {
-    drawText(ctx, game.message, 400, 512, { size: 13, color: '#f1c40f', align: 'center' });
+    // On a backing pill: bare text here sat on top of the last card and was hard to read.
+    const mw = Math.min(700, textWidth(ctx, game.message, 13) + 32);
+    ctx.fillStyle = 'rgba(20, 14, 8, 0.94)';
+    roundRectPath(ctx, 400 - mw / 2, 498, mw, 26, 13); ctx.fill();
+    ctx.strokeStyle = '#8b5a2b'; ctx.lineWidth = 1;
+    roundRectPath(ctx, 400 - mw / 2, 498, mw, 26, 13); ctx.stroke();
+    drawText(ctx, game.message, 400, 511, { size: 13, color: '#f1c40f', align: 'center', baseline: 'middle', maxWidth: 680, shadow: false });
   }
 }
 
@@ -153,6 +164,14 @@ function drawGigCard(ctx, x, y, w, h, gig, game, s) {
   drawText(ctx, rlabel, pillX + pillW / 2, pillY + 11, { size: 12, weight: 'bold', color: '#0d0906', align: 'center', baseline: 'middle', shadow: false });
 
   ctx.globalAlpha = 1;
+
+  // "Pick a gig first": every card that can be taken pulses once in the selection blue.
+  const hintAge = game.listHintAt ? Date.now() - game.listHintAt : Infinity;
+  if (!blocked && !selected && hintAge < 900) {
+    ctx.strokeStyle = `rgba(93, 173, 226, ${0.9 * Math.sin(Math.PI * hintAge / 900)})`;
+    ctx.lineWidth = 3;
+    roundRectPath(ctx, x, y, w, h, 8); ctx.stroke();
+  }
 
   if (game.cardFlash && game.cardFlash.gig === gig && Date.now() - game.cardFlash.at < 400) {
     ctx.strokeStyle = 'rgba(231, 76, 60, 0.9)';

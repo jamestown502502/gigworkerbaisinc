@@ -721,13 +721,37 @@ export const PERCENT_PROBLEMS = [
   { q: 'Sales tax is 8%. What is the tax on $25?', answer: '$2', wrong: ['$8', '$0.80'], why: '1% of $25 is $0.25. Eight of those is $2.' },
   { q: 'You got 30 of 40 questions right. What is your score?', answer: '75%', wrong: ['70%', '30%'], why: '30 out of 40 is 3/4, which is 75 out of 100.' },
   { q: 'A $200 phone drops 50%, then 10% more off that price. Final?', answer: '$90', wrong: ['$80', '$100'], why: 'Half of $200 is $100. 10% off $100 is $10. So $90, not 60% off.' },
+  { q: 'A $30 shirt is 10% off. What is the sale price?', answer: '$27', wrong: ['$20', '$3'], why: '10% of $30 is $3 (move the decimal). $30 - $3 = $27.' },
+  { q: 'Lunch is $60. What is a 15% tip?', answer: '$9', wrong: ['$6', '$15'], why: '10% of $60 is $6 and 5% is half that, $3. $6 + $3 = $9.' },
+  { q: 'Your $400 rent goes up 5%. What is the new rent?', answer: '$420', wrong: ['$405', '$450'], why: '1% of $400 is $4, so 5% is $20. $400 + $20 = $420.' },
+  { q: 'You save $45 of your $300 pay. What percent is that?', answer: '15%', wrong: ['45%', '10%'], why: '45 out of 300 is the same as 15 out of 100: 15%.' },
+  { q: 'A $90 coat is 20% off. How much do you save?', answer: '$18', wrong: ['$20', '$72'], why: '10% of $90 is $9. 20% is double that: $18 off.' },
+  { q: 'Gas goes from $3.00 to $3.30 a gallon. What percent rise?', answer: '10%', wrong: ['30%', '3%'], why: 'It rose 30 cents. 30 cents of $3.00 is 0.30 / 3.00 = 10%.' },
+  { q: 'You got 18 of 20 questions right. What is your score?', answer: '90%', wrong: ['18%', '80%'], why: '18 out of 20 is 9 out of 10, which is 90 out of 100.' },
+  { q: 'A $150 bike is 40% off. What does it cost now?', answer: '$90', wrong: ['$60', '$110'], why: '10% of $150 is $15, so 40% is $60 off. $150 - $60 = $90.' },
 ];
+
+/** `k` different problems for one visit, drawn from a deck kept in the save, so a problem does not
+ *  come back until the whole bank has been worked through (QA round 3 #5: three random picks from
+ *  eight repeated a question most visits). */
+export function drawPercentProblems(state, k = 3) {
+  if (!state) return shuffle(PERCENT_PROBLEMS).slice(0, k);
+  const decks = state.eiDecks || (state.eiDecks = {});
+  const picks = [];
+  while (picks.length < k) {
+    // a refilled deck leaves out what this visit already has, so one visit never repeats
+    if (!Array.isArray(decks.percent) || decks.percent.length === 0) decks.percent = shuffle([...PERCENT_PROBLEMS.keys()]).filter((i) => !picks.includes(i));
+    const i = decks.percent.pop();
+    if (i < PERCENT_PROBLEMS.length) picks.push(i);
+  }
+  return picks.map((i) => PERCENT_PROBLEMS[i]);
+}
 export class PercentTutor {
   constructor(state, problems) {
     this.name = 'PERCENT!';
     this.hint = 'Work through the student\'s homework with them. Pick the right answer.';
     this.d = difficultyFactor(state);
-    this.problems = (problems ?? shuffle(PERCENT_PROBLEMS).slice(0, 3)).map((p) => ({ ...p, options: shuffle([p.answer, ...p.wrong]) }));
+    this.problems = (problems ?? drawPercentProblems(state, 3)).map((p) => ({ ...p, options: shuffle([p.answer, ...p.wrong]) }));
     this.idx = 0; this.correct = 0;
     this.perQ = 11 / this.d; this.qLeft = this.perQ; this.t = 0;
     this.timeMax = this.perQ * this.problems.length;
