@@ -78,3 +78,18 @@ describe('mute that works on iPhone and Android', () => {
     expect(FakeAudio.last.paused).toBe(true);
   });
 });
+
+describe('QA round 3 #7: sound comes back after the app was backgrounded', () => {
+  it('an iOS "interrupted" context is resumed on return, and the next tap restarts the music', () => {
+    audio.unlock();
+    const el = FakeAudio.last;
+    audio.setBackgrounded(true);
+    ctxs[0].state = 'interrupted';   // what Safari reports after a call or app switch
+    el.play = () => Promise.reject(new Error('NotAllowedError')); // no gesture: the browser refuses
+    audio.setBackgrounded(false);
+    expect(ctxs[0].state).toBe('running');
+    el.play = FakeAudio.prototype.play;
+    audio.unlock();                  // the next tap
+    expect(el.paused).toBe(false);
+  });
+});

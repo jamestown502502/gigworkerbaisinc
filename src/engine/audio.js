@@ -44,8 +44,15 @@ function ac() {
     musicBus.connect(master);
     applyGains();
   }
-  if (audioCtx.state === 'suspended' && !backgrounded) audioCtx.resume();
+  if (!backgrounded) wake(audioCtx);
   return audioCtx;
+}
+
+/** iOS Safari parks a context in 'interrupted' (not 'suspended') after the app is backgrounded or a
+ *  call comes in, and the old check only resumed 'suspended', so the game came back silent until a
+ *  reload (QA round 3 #7). Anything that is not running (or closed) is asked to resume. */
+function wake(ctx) {
+  if (ctx.state !== 'running' && ctx.state !== 'closed') ctx.resume().catch(() => { /* retried on the next tap */ });
 }
 
 function applyGains() {
@@ -59,8 +66,7 @@ function applyGains() {
  *  Resumes the context and starts the BGM loop. Safe to call repeatedly. */
 export function unlock() {
   try {
-    const ctx = ac();
-    if (ctx && ctx.state === 'suspended') ctx.resume();
+    const ctx = ac();   // wakes a suspended or interrupted context (see wake)
     startBGM();
     unlocked = (ctx && ctx.state === 'running') || unlocked;
   } catch { /* no Web Audio — the game is silent but playable */ }
@@ -165,8 +171,10 @@ export function setBackgrounded(hidden) {
     bgmAudio?.pause();
     if (audioCtx && audioCtx.state === 'running') audioCtx.suspend().catch(() => {});
   } else {
-    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
-    if (bgmAudio && !settings.muted && musicVolume() > 0) bgmAudio.play().catch(() => {});
+    if (audioCtx) wake(audioCtx);
+    // Outside a tap the browser may refuse to start the music again; the next tap does it (main.js
+    // calls unlock() on every pointerup), so the player never has to reload for sound.
+    if (bgmAudio && !settings.muted && musicVolume() > 0 && bgmAudio.paused) bgmAudio.play().catch(() => {});
   }
 }
 

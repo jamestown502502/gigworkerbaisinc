@@ -428,3 +428,38 @@ Before/after: `C:\Users\Jbthi\Claude Cowork\BAIS_Minigame_Stuck_Audit_BeforeAfte
   ends, a result card never moves on, the receipt never stamps, or the player is not handed back.
   15/15 passed on the first real run; no game code changed. The freeze players reported was Tour
   Life's (hit-stop clock); this game has no clock scaling.
+
+## 14. QA round 3 (2026-10-06)
+
+Tester report: 12 rows (`GigWorkerBaisinic - Issue Report Round 3.xlsx`). Before/after:
+`C:\Users\Jbthi\Claude Cowork\BAIS_QA_Round3_BeforeAfter_2026-10-06.md`.
+
+- **Never a silent no:** Accept with no gig picked says "Pick a gig first" and pulses the cards that
+  can be taken (listing messages now sit on a backing pill); Pay on a bill you cannot afford prints
+  the shortfall and what happens next under that bill (`game.billsHint`, `payBill` handles both).
+- **Tutorial lets real buttons through** (`processInput`, `advanceTutorial`, `UI.buttonAt`): a tap
+  on a real button presses it and counts as reading the step; moving to another screen jumps to that
+  screen's steps if any are still ahead, otherwise the rest waits for this screen. Taps on the bubble
+  (`tutorialBubbleRect`) only turn the page. Back on the evening no longer just turned the tutorial page.
+- **Late ping: "Decide later"** (`resolvePing('later')` sets `ping.snoozed`); the evening shows a
+  "Late ping waiting: reply" button; sleeping on it lets it lapse with a morning note.
+- **Pay rent early** (`canPayRentEarly`/`payRentEarly`, `state.rentPrepaid`): apartment (under the
+  stats panel) and evening (the debt slot). Bills open with rent ticked "PAID EARLY"; HUD says "Rent paid ✓".
+- **Welcome back** shows Run N · Day X of 30, cash, gigs, stars, the rent amount line
+  (`rentStatusLine`), twist, "Last played" (`state.savedAt`, non-enumerable, read at load) and how the
+  last run ended (`state.lastRun`, `state.runNumber`, both kept by `reset()`).
+- **Second tab guard** (`saveLock` in state.js, `storage` listener in main.js): when another tab saves,
+  this one stops saving and shows "Open in another tab · Play here instead" (reload).
+- **Audio after backgrounding:** iOS leaves the context `interrupted`, not `suspended`; `wake()` resumes
+  anything not running, `setBackgrounded(false)` only restarts a paused element, and `pageshow`/`focus`
+  also count as coming back. The next tap always retries.
+- **PERCENT!** bank 8 -> 16, drawn through a saved no-repeat deck (`drawPercentProblems`).
+- **Morning events:** text is story, the outcome line is the rule (no number appears in both); events
+  carry `weather` (no heatwave on a cold/rainy day, no rainstorm when it already rains); the heat
+  advisory headline only on hot/sunny mornings.
+- **Evening panel:** "Where you stand" (Support/Balance bars) sits right under the evening outcome.
+- Tests: `tests/unit/qaRound3.test.js` (16) + audio "interrupted" test; readability e2e
+  "QA round 3 screens are readable" (welcome back, rent early, listings hint, bills hint, ping, evening,
+  every effect event, other-tab notice). Resume-modal e2e taps moved with the new layout.
+- e2e note: running this suite while another game's suite runs on this PC fails timer tests and can
+  hang WebKit; run alone (all 30 affected tests passed alone on 3 profiles, 8 on WebKit).

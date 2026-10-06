@@ -27,6 +27,14 @@ export const UI = {
   lastHit: null,
   /** Set by loop.js: sound + haptic on every real button press, in one place. */
   onPress: null,
+  /** The topmost hotspot under a point when it is a real button (not a modal backdrop), else null. */
+  buttonAt(pt) {
+    for (let i = this.hotspots.length - 1; i >= 0; i--) {
+      const b = this.hotspots[i];
+      if (pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h) return b.onClick ? b : null;
+    }
+    return null;
+  },
   handleClick(pt) {
     for (let i = this.hotspots.length - 1; i >= 0; i--) {
       const b = this.hotspots[i];
@@ -264,6 +272,12 @@ export function apartmentScreen(ctx, game) {
   }
   if (s.phoneCut && s.cash >= s.unpaidPhone) {
     button(ctx, 360, by, 250, 40, `Pay Phone Bill $${s.unpaidPhone}`, { color: '#7a3020', onClick: () => game.payDebt('phone') });
+    by += 48;
+  }
+  // Rent can be paid ahead of the bills screen whenever the cash is there (QA round 3 #8).
+  if (game.morningReady && !game.shopOpen && !game.restDay && by + 40 <= 516) {
+    if (game.canPayRentEarly()) button(ctx, 360, by, 250, 40, `Pay rent early $${game.rentEarlyAmount()}`, { color: '#2c5a6e', fontSize: 15, onClick: () => game.payRentEarly() });
+    else if (s.rentPrepaid) drawText(ctx, "✓ This week's rent is paid", 485, by + 20, { size: 14, weight: 'bold', color: '#2ecc71', align: 'center', baseline: 'middle' });
   }
 
   if (game.restDay) {
@@ -721,12 +735,18 @@ export function eveningScreen(ctx, game) {
   if (canBack && !game.shopOpen) button(ctx, 270, 526, 110, 52, '← Back', { color: '#5d4023', onClick: () => game.backFromEvening() });
   if (!game.shopOpen && s.unpaidRent > 0 && s.cash >= s.unpaidRent) {
     button(ctx, 390, 526, 240, 52, `Pay Rent Debt $${s.unpaidRent}`, { color: '#7a3020', onClick: () => game.payDebt('rent') });
+  } else if (!game.shopOpen && !game.billsOpen && !game.wrapUpOpen && game.canPayRentEarly()) {
+    button(ctx, 390, 526, 240, 52, `Pay rent early $${game.rentEarlyAmount()}`, { color: '#2c5a6e', fontSize: 15, onClick: () => game.payRentEarly() });
+  }
+  // A late ping put off with "Decide later" waits here as a message to open again.
+  if (!game.shopOpen && game.ping && !game.ping.resolved && game.ping.snoozed) {
+    button(ctx, 50, 412, 340, 40, '📱 Late ping waiting: reply', { color: '#2c5a6e', fontSize: 14, onClick: () => { game.ping.snoozed = false; } });
   }
 
   if (game.shopOpen) shopOverlay(ctx, game);
   if (game.billsOpen) billsModal(ctx, game);
   else if (game.wrapUpOpen) wrapUpModal(ctx, game);
-  else if (game.ping && !game.ping.resolved) pingModal(ctx, game);
+  else if (game.ping && !game.ping.resolved && !game.ping.snoozed) pingModal(ctx, game);
 }
 
 function eveningChoicePanel(ctx, game, x, y, w, h) {
@@ -735,8 +755,21 @@ function eveningChoicePanel(ctx, game, x, y, w, h) {
   drawText(ctx, 'TONIGHT', x + 18, y + 30, { size: 16, weight: 'bold', color: '#ffd700' });
   const done = s.eveningDoneDay === s.day;
   if (done) {
-    drawWrapped(ctx, game.eveningOutcome || 'Evening spent. Time for bed.', x + 18, y + 62, w - 36, 20, { size: 14, color: '#e0e0e0' });
-    drawText(ctx, `Support ${Math.round(s.support)}  ·  Balance ${Math.round(s.health)}`, x + 18, y + 176, { size: 12, color: '#c9a876', font: 'monospace' });
+    const ty = drawWrapped(ctx, game.eveningOutcome || 'Evening spent. Time for bed.', x + 18, y + 62, w - 36, 20, { size: 14, color: '#e0e0e0' });
+    // Where tonight left you, directly under what happened (QA round 3 #9: the two numbers used to
+    // float on their own halfway down the panel).
+    const sy = ty + 10;
+    ctx.strokeStyle = 'rgba(139,90,43,0.55)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x + 18, sy); ctx.lineTo(x + w - 18, sy); ctx.stroke();
+    drawText(ctx, 'WHERE YOU STAND', x + 18, sy + 18, { size: 11, weight: 'bold', color: '#c9a876' });
+    [['Support', s.support, '#5dade2'], ['Balance', s.health, '#2ecc71']].forEach(([label, v, col], i) => {
+      const ry = sy + 40 + i * 26;
+      drawText(ctx, label, x + 18, ry, { size: 13, color: '#e0e0e0', baseline: 'middle' });
+      const bx = x + 96, bw = w - 170;
+      ctx.fillStyle = '#3a2d1f'; roundRectPath(ctx, bx, ry - 5, bw, 10, 5); ctx.fill();
+      ctx.fillStyle = col; roundRectPath(ctx, bx, ry - 5, Math.max(6, bw * Math.max(0, Math.min(100, v)) / 100), 10, 5); ctx.fill();
+      drawText(ctx, `${Math.round(v)}`, x + w - 18, ry, { size: 13, weight: 'bold', color: '#f0f0f0', align: 'right', baseline: 'middle', font: 'monospace' });
+    });
   } else {
     drawText(ctx, 'One thing before bed:', x + 18, y + 54, { size: 13, color: '#c9a876' });
     EVENING_OPTIONS.forEach((opt, i) => {
@@ -763,7 +796,7 @@ function pingModal(ctx, game) {
   ctx.fillStyle = 'rgba(6, 4, 2, 0.82)';
   ctx.fillRect(0, 0, 800, 600);
   UI.absorb();
-  panel(ctx, 150, 110, 500, 380, { alpha: 0.98 });
+  panel(ctx, 150, 110, 500, 404, { alpha: 0.98 });
   ctx.fillStyle = '#5dade2'; ctx.fillRect(152, 112, 496, 4);
   drawText(ctx, 'LATE PING · 11:40 PM', 400, 146, { size: 13, weight: 'bold', color: '#5dade2', align: 'center' });
   drawWrapped(ctx, `"${p.gig.title.replace('Early call: ', '')} tomorrow, 6 a.m. sharp. $${p.gig.payout}. You in?"`, 185, 178, 430, 21, { size: 15, color: '#e0e0e0', shadow: false });
@@ -777,7 +810,9 @@ function pingModal(ctx, game) {
   opts.forEach(([label, id, color], i) => {
     button(ctx, 200, 272 + i * 58, 400, 48, label, { color, fontSize: 15, onClick: () => game.resolvePing(id) });
   });
-  drawText(ctx, 'Saying no costs nothing here. Saying yes costs tomorrow.', 400, 462, { size: 12, color: '#b5a488', align: 'center', shadow: false });
+  drawText(ctx, 'Saying no costs nothing here. Saying yes costs tomorrow.', 400, 452, { size: 12, color: '#b5a488', align: 'center', shadow: false });
+  // A way out without answering (QA round 3 #6): the ping waits on the evening screen.
+  button(ctx, 300, 464, 200, 40, 'Decide later', { ghost: true, fontSize: 14, onClick: () => game.resolvePing('later') });
 }
 
 // Weekly wrap-up — shows after bills every 7 days.
@@ -887,15 +922,17 @@ function billsModal(ctx, game) {
     const by = 210 + i * 66;
     const amt = game.billAmount(b.kind);
     const paid = game.billsPaid[b.kind];
-    drawText(ctx, `${b.label}: $${amt}${paid ? '  ✓ PAID' : ''}`, 210, by + 16, { size: 15, weight: 'bold', color: paid ? '#2ecc71' : '#f0f0f0' });
-    drawText(ctx, b.warn, 210, by + 34, { size: 11, color: '#a89878', maxWidth: 280 });
+    drawText(ctx, `${b.label}: $${amt}${paid ? (b.kind === 'rent' && game.billsPaidEarly ? '  ✓ PAID EARLY' : '  ✓ PAID') : ''}`, 210, by + 16, { size: 15, weight: 'bold', color: paid ? '#2ecc71' : '#f0f0f0' });
+    const hint = game.billsHint && game.billsHint.kind === b.kind && performance.now() - game.billsHint.at < 4500 ? game.billsHint.text : null;
+    if (hint) drawWrapped(ctx, hint, 210, by + 33, 280, 13, { size: 11, weight: 'bold', color: '#ff8a7e', shadow: false });
+    else drawText(ctx, b.warn, 210, by + 34, { size: 11, color: '#a89878', maxWidth: 280 });
     if (!paid) {
       button(ctx, 500, by, 96, 40, 'Pay', {
         color: '#2c6e49',
         disabled: s.cash < amt,
         fontSize: 14,
         onClick: () => game.payBill(b.kind),
-        onDisabled: () => playError(),
+        onDisabled: () => game.payBill(b.kind),   // says how much is missing (QA round 3 #2)
       });
     }
   });
@@ -983,26 +1020,67 @@ export function settingsModal(ctx, game) {
 }
 
 // ---------- WELCOME BACK (reopening a run in progress) ----------
+/** One line for what rent needs next, with the amount (QA round 3 #10). */
+export function rentStatusLine(game) {
+  const s = game.state;
+  if (s.unpaidRent > 0) return { text: `Overdue rent $${s.unpaidRent}  ·  eviction in ${Math.max(0, 14 - s.rentOverdueDays)} days`, warn: true };
+  if (s.rentPrepaid) return { text: `This week's rent is paid  ·  next due in ${Math.max(0, s.daysUntilBills)} days`, warn: false };
+  const amt = game.rentEarlyAmount();
+  const d = s.daysUntilBills;
+  return { text: d <= 0 ? `Rent $${amt} due today` : d === 1 ? `Rent $${amt} due tomorrow` : `Rent $${amt} due in ${d} days`, warn: d <= 2 };
+}
+
+/** "Oct 6, 2:13 PM" in the player's own locale, or '' for a save from before it was recorded. */
+function playedAt(ms) {
+  if (!ms) return '';
+  try { return new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch { return ''; }
+}
+
 export function resumeModal(ctx, game) {
   const s = game.state;
   ctx.fillStyle = 'rgba(6, 4, 2, 0.82)';
   ctx.fillRect(0, 0, 800, 600);
   UI.absorb();
-  panel(ctx, 200, 150, 400, 290, { alpha: 0.98 });
-  drawText(ctx, 'WELCOME BACK', 400, 190, { size: 24, weight: 'bold', color: '#ffd700', align: 'center' });
-  drawText(ctx, `Day ${s.day}  ·  $${Math.round(s.cash)}  ·  ${s.gigsCompleted} gigs done`, 400, 222, { size: 15, color: '#e0e0e0', align: 'center' });
-  // Where you left off, in one line: what is due next and what this month is about.
+  panel(ctx, 190, 112, 420, 372, { alpha: 0.98 });
+  drawText(ctx, 'WELCOME BACK', 400, 150, { size: 24, weight: 'bold', color: '#ffd700', align: 'center' });
+  // Which run, which day of how many: a fresh run after a finished month must never read as
+  // progress lost (QA round 3 #11: a tester saw "Day 6" and took it for their 30-day run).
+  const dayText = s.freePlay && s.day > RUN_LENGTH_DAYS ? `Day ${s.day} (free play)` : `Day ${s.day} of ${RUN_LENGTH_DAYS}`;
+  drawText(ctx, `Run ${s.runNumber || 1}  ·  ${dayText}`, 400, 182, { size: 16, weight: 'bold', color: '#f0f0f0', align: 'center' });
+  drawText(ctx, `$${Math.round(s.cash)}  ·  ${s.gigsCompleted} gigs done  ·  ${(Math.round(s.reputation * 2) / 2).toFixed(1)} ★`, 400, 206, { size: 14, color: '#e0e0e0', align: 'center' });
+  const rent = rentStatusLine(game);
+  drawText(ctx, rent.text, 400, 232, { size: 14, weight: 'bold', color: rent.warn ? '#ff8a7e' : '#c9a876', align: 'center', maxWidth: 390 });
   const twist = twistOf(s);
-  const due = s.daysUntilBills <= 0 ? 'Rent due today' : s.daysUntilBills === 1 ? 'Rent due tomorrow' : `Rent due in ${s.daysUntilBills} days`;
-  drawText(ctx, twist ? `${due}  ·  ${twist.name}` : due, 400, 250, { size: 13, color: s.daysUntilBills <= 2 ? '#ff8a7e' : '#c9a876', align: 'center', maxWidth: 370 });
-  if (!game.confirmNewGame) {
-    button(ctx, 250, 272, 300, 56, 'Continue', { color: '#2c6e49', onClick: () => { game.resumePrompt = false; } });
-    button(ctx, 250, 344, 300, 56, 'New game', { color: '#5d4023', onClick: () => { game.confirmNewGame = true; } });
-  } else {
-    drawWrapped(ctx, 'Start over from Day 1? This run will be deleted. Your settings are kept.', 400, 282, 300, 20, { size: 15, color: '#ffb3a8', align: 'center' });
-    button(ctx, 250, 344, 145, 56, 'Keep playing', { color: '#2c6e49', fontSize: 14, onClick: () => { game.confirmNewGame = false; game.resumePrompt = false; } });
-    button(ctx, 405, 344, 145, 56, 'Start over', { color: '#7a3020', fontSize: 14, onClick: () => game.newGame() });
+  const when = playedAt(s.savedAt);
+  const meta = [twist && twist.name, when && `Last played ${when}`].filter(Boolean).join('  ·  ');
+  if (meta) drawText(ctx, meta, 400, 254, { size: 12, color: '#b5a488', align: 'center', maxWidth: 390 });
+  const lr = s.lastRun;
+  if (lr) {
+    const how = lr.evicted ? `evicted on day ${lr.day}` : lr.complete ? `finished all ${RUN_LENGTH_DAYS} days with $${lr.cash}` : `stopped on day ${lr.day} with $${lr.cash}`;
+    drawText(ctx, `Your last run: ${how}`, 400, 274, { size: 12, color: '#b5a488', align: 'center', maxWidth: 390 });
   }
+  if (!game.confirmNewGame) {
+    button(ctx, 250, 300, 300, 56, 'Continue', { color: '#2c6e49', onClick: () => { game.resumePrompt = false; } });
+    button(ctx, 250, 372, 300, 56, 'New game', { color: '#5d4023', onClick: () => { game.confirmNewGame = true; } });
+  } else {
+    drawWrapped(ctx, 'Start over from Day 1? This run will be deleted. Your settings are kept.', 400, 312, 300, 20, { size: 15, color: '#ffb3a8', align: 'center' });
+    button(ctx, 250, 372, 145, 56, 'Keep playing', { color: '#2c6e49', fontSize: 14, onClick: () => { game.confirmNewGame = false; game.resumePrompt = false; } });
+    button(ctx, 405, 372, 145, 56, 'Start over', { color: '#7a3020', fontSize: 14, onClick: () => game.newGame() });
+  }
+}
+
+// ---------- OPEN IN ANOTHER TAB ----------
+/** Another tab or window of the game saved: this one is out of date. It stops saving (saveLock)
+ *  and offers to pick up the newer save, so two copies can never overwrite each other's progress
+ *  (QA round 3 #3, #11). */
+export function staleTabModal(ctx) {
+  ctx.fillStyle = 'rgba(6, 4, 2, 0.9)';
+  ctx.fillRect(0, 0, 800, 600);
+  UI.absorb();
+  panel(ctx, 190, 170, 420, 250, { alpha: 0.98 });
+  drawText(ctx, 'OPEN IN ANOTHER TAB', 400, 210, { size: 22, weight: 'bold', color: '#ffd700', align: 'center' });
+  drawWrapped(ctx, 'This game is running in another tab or window, and that copy has newer progress. This tab is paused so it cannot save over it.', 400, 244, 360, 20, { size: 14, color: '#e0e0e0', align: 'center' });
+  button(ctx, 250, 340, 300, 56, 'Play here instead', { color: '#2c6e49', onClick: () => { try { location.reload(); } catch { /* test runner */ } } });
 }
 
 // ---------- THE MATH OF THE MONTH ----------

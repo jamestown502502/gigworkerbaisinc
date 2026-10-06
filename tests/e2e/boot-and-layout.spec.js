@@ -151,10 +151,10 @@ test('during the tutorial, settings open, and New game / Close inside them work'
 test('reopening a run offers Continue or New game, and New game reaches a playable Day 1', async ({ page }) => {
   await boot(page, { save: { tutorialSeen: true, characterCreated: true, day: 6, cash: 480, gigsCompleted: 9 }, keepResumePrompt: true });
   expect(await page.evaluate(() => window.__game.resumePrompt)).toBe(true);
-  await tapLogical(page, 400, 372); // New game
+  await tapLogical(page, 400, 400); // New game
   expect(await page.evaluate(() => window.__game.confirmNewGame)).toBe(true);
   expect(await page.evaluate(() => window.__game.state.day)).toBe(6); // nothing deleted yet
-  await tapLogical(page, 477, 372); // Start over
+  await tapLogical(page, 477, 400); // Start over
   await step(page, 1);
   expect(await phase(page)).toBe('CREATE');
   expect(await page.evaluate(() => window.__game.state.day)).toBe(1);
@@ -170,7 +170,7 @@ test('reopening a run offers Continue or New game, and New game reaches a playab
 
 test('Continue closes the prompt and keeps the run', async ({ page }) => {
   await boot(page, { save: { tutorialSeen: true, characterCreated: true, day: 6, cash: 480, gigsCompleted: 9 }, keepResumePrompt: true });
-  await tapLogical(page, 400, 300); // Continue
+  await tapLogical(page, 400, 328); // Continue
   expect(await page.evaluate(() => window.__game.resumePrompt)).toBe(false);
   expect(await page.evaluate(() => window.__game.state.day)).toBe(6);
   expect(await phase(page)).toBe('MORNING');

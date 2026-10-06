@@ -4,7 +4,9 @@ import { makeReferralGig } from './gigs.js';
 import { withPronouns } from '../ui/character.js';
 
 // Tier 1 = flavor (texture only), tier 2 = gameplay (effects/choices), tier 3 = crisis (rare, high impact).
-// effect(state) applies immediately and returns a short outcome line.
+// effect(state) applies immediately and returns a short outcome line. The text is the story and the
+// outcome line is the rule: the text never repeats what the outcome says (QA round 3 #12, where
+// "Outdoor gigs cost +5 energy today" was printed twice). `weather` lists the days it can happen on.
 // choices[].apply(state) does the same; choices[].disabled(state) greys the option out.
 export const EVENTS = [
   // ---- TIER 1: flavor ----
@@ -15,23 +17,23 @@ export const EVENTS = [
   { id: 'sunrise', tier: 1, weight: 2, text: 'The sunrise hits the brick just right this morning.' },
 
   // ---- TIER 2: gameplay ----
-  { id: 'found-cash', tier: 2, weight: 3, text: 'You find $5 in an old jacket pocket.',
+  { id: 'found-cash', tier: 2, weight: 3, text: 'You find a crumpled bill in an old jacket pocket.',
     effect: (s) => { s.cash += 5; return '+$5'; } },
   { id: 'free-coffee', tier: 2, weight: 3, text: 'Free coffee day at the corner cafe. You needed that.',
     effect: (s) => { s.stress -= 5; return '-5 stress'; } },
-  { id: 'heatwave', tier: 2, weight: 2, text: 'Heatwave rolls in. Outdoor gigs cost +5 energy today.',
+  { id: 'heatwave', tier: 2, weight: 2, weather: ['sunny', 'perfect'], text: 'A heatwave rolls in. The pavement is already shimmering.',
     effect: (s) => { s.eventOutdoorEnergyMod += 5; return 'Outdoor gigs +5 energy today'; } },
-  { id: 'rainstorm', tier: 2, weight: 2, text: 'Sudden rainstorm! Travel is slower, but indoor clients pay a little extra.',
+  { id: 'rainstorm', tier: 2, weight: 2, weather: ['sunny', 'cold', 'hot'], text: 'A sudden rainstorm floods the side streets. Everyone wants their jobs done indoors.',
     effect: (s) => {
       s.eventTravelMod += 2;
       s.todayGigs.forEach((g) => { if (!g.outdoor) g.payout = Math.round(g.payout * 1.1); });
       return 'Travel +2 energy, indoor gigs +10% pay';
     } },
-  { id: 'referral', tier: 2, weight: 2, text: 'A regular client refers you. A high-paying gig hits the board!',
+  { id: 'referral', tier: 2, weight: 2, text: 'A regular client passes your number to a friend who pays well.',
     effect: (s) => { s.todayGigs.unshift(makeReferralGig(s)); return 'Referral gig added to listings'; } },
   { id: 'flat-tire', tier: 2, weight: 2, text: "Flat tire on the way out. The patch kit isn't free.",
     effect: (s) => { s.cash = Math.max(0, s.cash - 40); return '-$40'; } },
-  { id: 'phone-dies', tier: 2, weight: 1, text: 'Your phone gives up completely. No listings until you get it working tonight.',
+  { id: 'phone-dies', tier: 2, weight: 1, text: 'Your phone gives up completely. It will need the whole day on the charger.',
     effect: (s) => { s.listingsLockedToday = true; return 'Listings unavailable today'; } },
   { id: 'car-trouble', tier: 2, weight: 2, text: "Your car won't start. The mechanic quotes $150.",
     choices: [
@@ -42,9 +44,9 @@ export const EVENTS = [
     ] },
 
   // ---- TIER 3: crisis ----
-  { id: 'caught-cold', tier: 3, weight: 1, text: "That chill you ignored? It's a full-blown cold. You'll feel it for days.",
+  { id: 'caught-cold', tier: 3, weight: 1, text: "That chill you ignored? It's a full-blown cold.",
     effect: (s) => { s.coldDays = 3; s.health -= 10; return 'Sick: recovering for 3 days'; } },
-  { id: 'dispute', tier: 3, weight: 1, text: 'A client disputes a payment. Part of your balance is frozen for 24 hours.',
+  { id: 'dispute', tier: 3, weight: 1, text: 'A client disputes a payment, and the app freezes part of your balance while it checks.',
     effect: (s) => {
       const hold = Math.min(100, Math.floor(s.cash));
       s.cash -= hold;
@@ -69,7 +71,8 @@ export const EVENTS = [
 
 export function rollDailyEvents(state) {
   // Days 1-2 are a safe onboarding window: crisis events can't fire yet.
-  const pool = state.day < 3 ? EVENTS.filter((e) => e.tier < 3) : EVENTS;
+  const wid = state.weather && state.weather.id;
+  const pool = EVENTS.filter((e) => (state.day >= 3 || e.tier < 3) && (!e.weather || !wid || e.weather.includes(wid)));
   const events = [];
   const roll = Math.random();
   if (roll < 0.30) return events;                      // 30%: no events
@@ -99,7 +102,6 @@ const HEADLINES = [
   "New app promises better pay. You've heard that before.",
   'Neighborhood watch reports uptick in package thefts.',
   'Gas prices tick up again.',
-  'A heat advisory is in effect for the afternoon.',
   'The city is testing a new bike lane on 5th Street.',
   'Your favorite food truck is on Main Street today.',
   'A local nonprofit offers free breakfast to workers.',
@@ -118,7 +120,8 @@ const TIPS = [
 ];
 
 export function generateMorningFlavor(state, weather) {
-  const lines = [pick(HEADLINES)];
+  // A heat advisory on a cold or rainy morning read as a contradiction; it only runs on warm days.
+  const lines = [pick(weather && (weather.id === 'hot' || weather.id === 'sunny') ? [...HEADLINES, 'A heat advisory is in effect for the afternoon.'] : HEADLINES)];
   if (weather?.flavor) lines.push(weather.flavor);
   if (state.health < 30) lines.push('You feel run down. Rest recommended.');
   lines.push(TIPS[(state.day - 1) % TIPS.length]);

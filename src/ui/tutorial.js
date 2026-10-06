@@ -57,6 +57,7 @@ export function renderTutorial(ctx, game) {
   const bx = 150, bw = 500, bh = 160;
   ctx.fillStyle = 'rgba(15, 20, 28, 0.95)';
   roundRectPath(ctx, bx, by, bw, bh, 14); ctx.fill();
+  game.tutorialBubbleRect = [bx, by, bw, bh];   // a tap on the bubble only turns the page
   ctx.strokeStyle = '#5dade2';
   ctx.lineWidth = 2;
   roundRectPath(ctx, bx, by, bw, bh, 14); ctx.stroke();

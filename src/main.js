@@ -1,7 +1,7 @@
 // Bootstrap: canvas init → InputManager → asset load (with a visible bar) → state.load() → loop
 import { setupGameCanvas } from './engine/canvas.js';
 import { InputManager } from './engine/input.js';
-import { GameState } from './engine/state.js';
+import { GameState, saveLock } from './engine/state.js';
 import { Game } from './game/loop.js';
 import { initAudio, unlock as unlockAudio, contextState, setBackgrounded } from './engine/audio.js';
 import { loadAssets } from './engine/sprites.js';
@@ -11,6 +11,7 @@ import * as choices from './game/choices.js';
 import * as clients from './game/clients.js';
 import * as recall from './game/recall.js';
 import * as longform from './game/longform.js';
+import * as events from './game/events.js';
 import { drawText, roundRectPath } from './ui/text.js';
 
 export { drawSprite, imageCache } from './engine/sprites.js';
@@ -55,6 +56,16 @@ async function boot() {
   window.__clients = clients; // e2e hook: ...and every client greeting
   window.__recall = recall;   // e2e hook: ...and every recall question
   window.__longform = longform; // e2e hook: ...and the long-form jobs
+  window.__events = events;     // e2e hook: ...and every morning event (QA round 3 #12)
+
+  // Another tab or window of the game saved (the storage event only fires in the OTHER tabs): this
+  // copy is now out of date. It stops saving and offers to reload onto the newer save.
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'gigWorkerState' && e.newValue && !game.staleTab) {
+      saveLock.stale = true;
+      game.staleTab = true;
+    }
+  });
 
   let last = performance.now();
   let rafId = null;
@@ -74,6 +85,9 @@ async function boot() {
   // Battery/hygiene: actually stop the loop while the tab is backgrounded, rather than relying
   // on browser rAF throttling alone. `last` is re-stamped on resume so the first frame back
   // doesn't see a multi-second dt.
+  // Back from another page (bfcache) or app: the same as becoming visible again (QA round 3 #7).
+  window.addEventListener('pageshow', (e) => { if (e.persisted && !document.hidden) setBackgrounded(false); });
+  window.addEventListener('focus', () => { if (!document.hidden) setBackgrounded(false); });
   document.addEventListener('visibilitychange', () => {
     setBackgrounded(document.hidden); // the music and SFX stop with the app, not just the frames
     if (document.hidden) {

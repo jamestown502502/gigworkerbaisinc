@@ -192,6 +192,7 @@ export class Game {
 
   /** Every phase change goes through here so it can carry a transition. `kind` null = instant. */
   setPhase(next, kind = null, meta = {}) {
+    this.lastPhaseRequest = next;   // read by the tutorial when a tap goes through it (processInput)
     const apply = () => { this.phase = next; };
     if (!kind) { apply(); return; }
     const reduceMotion = !!this.state.settings?.reduceMotion;
@@ -295,10 +296,24 @@ export class Game {
     // Settings sit above the tutorial: while it is open, the tutorial neither draws nor takes taps,
     // so Close, the volume bars and New game always work (they were unreachable at the start of a
     // fresh run, when the tutorial is always showing).
-    if (this.settingsOpen || this.resumePrompt) return false;
+    if (this.settingsOpen || this.resumePrompt || this.staleTab) return false;
     if (this.state.tutorialSeen) return false;
     const step = TUTORIAL_STEPS[this.state.tutorialStep];
     return !!step && step.phase === this.phase;
+  }
+
+  /** The current tutorial step has been read. A tap that also pressed a real button can move the
+   *  player to another screen: the tutorial then jumps ahead to that screen's steps, if it has any
+   *  still to come, and otherwise waits for this screen to come round again (QA round 3 #4). */
+  advanceTutorial(toPhase = null, fromPhase = this.phase) {
+    const s = this.state;
+    let i = s.tutorialStep + 1;
+    if (toPhase && toPhase !== fromPhase) {
+      const j = TUTORIAL_STEPS.findIndex((st, k) => k >= i && st.phase === toPhase);
+      if (j > i) i = j;
+    }
+    s.tutorialStep = i;
+    if (i >= TUTORIAL_STEPS.length) s.tutorialSeen = true;
   }
 
   replayTutorial() {
@@ -591,7 +606,10 @@ export class Game {
     this.shopOpen = false;
     if (s.daysUntilBills <= 0) {
       this.billsOpen = true;
-      this.billsPaid = { rent: false, phone: false, food: false };
+      this.billsHint = null;
+      this.billsPaid = { rent: !!s.rentPrepaid, phone: false, food: false };
+      this.billsPaidEarly = !!s.rentPrepaid;
+      s.rentPrepaid = false;   // used up: next week's rent is due as normal
     }
     // A late-night ping: someone wants you at 6 a.m. tomorrow. Whether you take it is the
     // work-life-balance beat — the modal shows tomorrow's energy either way.
@@ -614,6 +632,9 @@ export class Game {
     const s = this.state;
     const p = this.ping;
     if (!p || p.resolved) return;
+    // "Decide later" (QA round 3 #6): the ping is a message, not a wall. It waits as a button on
+    // the evening screen, so Back, the Shop and the evening choices are all reachable.
+    if (choice === 'later') { p.snoozed = true; return; }
     if (choice === 'accept') {
       s.lateGigTomorrow = p.gig;
       s.tiredTomorrow = true;
@@ -701,13 +722,42 @@ export class Game {
   payBill(kind) {
     const s = this.state;
     const amt = this.billAmount(kind);
-    if (s.cash < amt || this.billsPaid[kind]) return;
+    if (this.billsPaid[kind]) return;
+    if (s.cash < amt) {
+      // Never a silent no (QA round 3 #2): say how much is missing and what happens next.
+      const short = Math.ceil(amt - s.cash);
+      const later = kind === 'food' ? 'Groceries are in the Shop once you can afford them.' : 'Skip it for now and pay it any morning once you have it.';
+      this.billsHint = { kind, text: `Not enough cash: $${short} short. ${later}`, at: performance.now() };
+      audio.playError();
+      return;
+    }
+    this.billsHint = null;
     s.cash -= amt;
     this.billsPaid[kind] = true;
     if (kind === 'rent') s.monthMath.rentPaid += amt; else s.monthMath.phonePaid += amt;
     if (kind === 'rent') { s.unpaidRent = 0; s.rentOverdueDays = 0; }
     if (kind === 'phone') { s.unpaidPhone = 0; s.phoneCut = false; }
     audio.playCashOut();
+    s.save();
+  }
+
+  /** This week's rent, paid early from the apartment or the evening (QA round 3 #8). The bills
+   *  screen then shows it already paid. Overdue rent is paid with payDebt('rent') instead. */
+  rentEarlyAmount() { return RENT + rentExtra(this.state.twist); }
+  canPayRentEarly() {
+    const s = this.state;
+    return !s.rentPrepaid && s.unpaidRent === 0 && s.daysUntilBills > 0 && s.cash >= this.rentEarlyAmount();
+  }
+  payRentEarly() {
+    const s = this.state;
+    if (!this.canPayRentEarly()) return;
+    const amt = this.rentEarlyAmount();
+    s.cash -= amt;
+    s.monthMath.rentPaid += amt;
+    s.rentPrepaid = true;
+    audio.playCashOut();
+    this.message = `Rent paid early: -$${amt}. It is ticked off when the bills come due.`;
+    spawnFloatingText(485, 360, `-$${amt}`, { color: '#ff6b5e', size: 18 });
     s.save();
   }
 
@@ -773,6 +823,7 @@ export class Game {
   sleep() {
     const s = this.state;
     if (this.billsOpen || this.wrapUpOpen) return;
+    const unanswered = this.ping && !this.ping.resolved;
     // Day 30 is the run. The summary comes first; Free Play is an explicit choice (QA #4).
     if (!s.freePlay && s.day >= RUN_LENGTH_DAYS) {
       s.runComplete = true;
@@ -803,6 +854,7 @@ export class Game {
       return;
     }
     this.beginMorning();
+    if (unanswered && !this.message) this.message = "You never answered last night's ping. They found someone else.";
     this.setPhase('MORNING', 'sunrise', { fromDay, toDay: s.day });
     s.save();
   }
@@ -867,7 +919,7 @@ export class Game {
     // (round 3: opening Settings mid-challenge let the timer run out behind the panel, so the
     // player came back to FUMBLED). Everything below is game time; everything above — FX,
     // transitions, tooltips — is presentation and keeps animating.
-    if (this.settingsOpen || this.resumePrompt) return;
+    if (this.settingsOpen || this.resumePrompt || this.staleTab) return;
     if (this.phase === 'MORNING' && !this.tutorialVisible()) {
       if (this.ticker.idx < this.ticker.lines.length) {
         this.ticker.t += dt;
@@ -980,7 +1032,8 @@ export class Game {
     }
 
     if (this.phase !== 'GAMEOVER' && this.phase !== 'SUMMARY' && this.phase !== 'CREATE') renderHUD(ctx, this);
-    if (this.settingsOpen) screens.settingsModal(ctx, this);
+    if (this.staleTab) screens.staleTabModal(ctx);
+    else if (this.settingsOpen) screens.settingsModal(ctx, this);
     else if (this.resumePrompt) screens.resumeModal(ctx, this);
     else if (this.mathOpen && (this.phase === 'SUMMARY' || this.phase === 'GAMEOVER')) screens.monthMathModal(ctx, this);
     renderFX(ctx);
@@ -999,21 +1052,30 @@ export class Game {
     let click;
     while ((click = InputManager.consumeClick())) {
       if (this.transition) continue;
+      if (this.staleTab) { UI.handleClick(click); continue; }
       // The HUD's settings gear and mute button always work, tutorial or not: the tutorial used to
       // swallow every tap, so a player could not open settings (or start over) until it ended.
       if (this.tutorialVisible() && click.y < 56 && click.x > 750 && UI.handleClick(click)) continue;
       // tutorial overlay consumes clicks and advances (or skips entirely)
       if (this.tutorialVisible()) {
         const r = this.tutorialSkipRect;
-        if (r && click.x >= r[0] && click.x <= r[0] + r[2] && click.y >= r[1] && click.y <= r[1] + r[3]) {
+        const inRect = (q) => q && click.x >= q[0] && click.x <= q[0] + q[2] && click.y >= q[1] && click.y <= q[1] + q[3];
+        if (inRect(r)) {
           s.tutorialSeen = true;
           this.beginMorning();   // skipping hands them a real morning (ticker + events)
+          audio.playClick();
+        } else if (!inRect(this.tutorialBubbleRect) && UI.buttonAt(click)) {
+          // A tap on a real button works through the tutorial (QA round 3 #4: Back on the evening
+          // screen only turned the tutorial's page, so it looked like Back opened the tutorial).
+          const from = this.phase;
+          this.lastPhaseRequest = null;
+          UI.handleClick(click);
+          this.advanceTutorial(this.lastPhaseRequest || this.phase, from);
         } else {
-          s.tutorialStep += 1;
-          if (s.tutorialStep >= TUTORIAL_STEPS.length) s.tutorialSeen = true;
+          this.advanceTutorial();
+          audio.playClick();
         }
         s.save();
-        audio.playClick();
         continue;
       }
       // morning intro: real buttons first (debt quick-pay, customizer, gear), then a tap on
