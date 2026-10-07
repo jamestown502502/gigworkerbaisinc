@@ -463,3 +463,32 @@ Tester report: 12 rows (`GigWorkerBaisinic - Issue Report Round 3.xlsx`). Before
   every effect event, other-tab notice). Resume-modal e2e taps moved with the new layout.
 - e2e note: running this suite while another game's suite runs on this PC fails timer tests and can
   hang WebKit; run alone (all 30 affected tests passed alone on 3 profiles, 8 on WebKit).
+
+## 15. Depth pass from an outside critique (2026-10-07)
+
+Before/after: `C:\Users\Jbthi\Claude Cowork\BAIS_Critique_Depth_Pass_BeforeAfter_2026-10-07.md`.
+
+- **`src/game/depth.js`** (pure, tested in `tests/unit/depthPass.test.js`): backgrounds (one opens per
+  run, all trade-offs; `applyBackgroundStart` on a new run's Start Day 1), client standing
+  (`new/known/regular/wary/done` from `clientLog.good/bad`), `clientMorningOffer` (contract at 3 good
+  jobs, referral from a regular every 5+ days), `contractTerms`, `rentForecast`, `monthInsights`,
+  `daysToEviction` (counts `rentGraceDays`).
+- **Loop:** `clientOfferCard` / `choresCard` join the morning queue; contracts appear in
+  `generateDailyGigs` on `nextDay`; tips, toolBeltExtra, byType, travelSaved, lateHustles tracked in
+  `monthMath`; `payRentPartial` (>= half of what is owed = 7-day grace); Dee covers once (Tight-Knit /
+  Neighborhood Kid) in `closeBills`; crash-safe `state.activeGig` (restored in the Game constructor).
+- **Events:** crisis cooldown 4 days and none while rent is overdue (`lastCrisisDay`).
+  `tests/unit/worstcase.test.js` plays worst-luck months: 0% evictions under old and new rules.
+- **Twists:** each has a strategy rule (`twistDayMultiplier`, `isWeekend`, app streak via `APP_GIGS`).
+- **Variants:** `variantFor(state, name)` after 2 plays (`microgamePlays`, kept across runs); PACK!
+  fragile, RAKE! wind shift, SORT! final sale; `introKey` gives each variant its own how-to card.
+- **Pacing:** `lessonsKnown` (kept across runs) makes seen reaction cards compact and drops the extra
+  result hold.
+- **Music states:** `engine/audio.js` `setMusicState` crossfades morning/work/evening/summary (Lyria
+  tracks in `public/audio`, precached by `sw.js` v2). `Game.musicStateFor()` picks per phase.
+- **Props:** `public/media/props/*.png` (Gemini, alpha-verified, trimmed to 128 px), drawn by
+  `apartmentProps` / `drawApartmentProps` in the YOU panel, tappable with a line each.
+- **Android Back:** `Game.handleBack()` + `popstate` guard in `main.js`; second Back within 2 s leaves.
+- **A11y:** `src/ui/a11y.js` mirrors labelled hotspots (`UI.register(..., label)`, `button()` passes its
+  label) as invisible buttons + a live region. Timing challenges remain canvas-only.
+- Renamed in-game to Side Hustle City (loading screen, `<title>`).
