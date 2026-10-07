@@ -7,12 +7,12 @@
 // Pure data + small hook functions, so balance tests can run every twist through the Monte Carlo.
 
 export const MONTH_TWISTS = [
-  { id: 'heatwave', name: 'Heat Wave Month', text: 'Hot days come twice as often. Indoor gigs pay 10% more.' },
-  { id: 'appBoom', name: 'New App in Town', text: 'A new gig app launched: two extra listings every day, but pay is 10% lower.' },
-  { id: 'touristSeason', name: 'Tourist Season', text: 'Weird gigs open at 2 stars instead of 3, and they pay 15% more.' },
-  { id: 'rentHike', name: 'Rent Hike', text: 'Rent went up $60 a week. Repeat clients pay 20% more, not 10%.' },
-  { id: 'rainySeason', name: 'Rainy Season', text: 'Rain is twice as likely, so outdoor work dries up. Cozy nights in: winding down clears 50% more stress.' },
-  { id: 'tightKnit', name: 'Tight-Knit Block', text: 'Neighbors look out for each other: calls build 50% more support, and fewer clients skip out on paying.' },
+  { id: 'heatwave', name: 'Heat Wave Month', text: 'Hot days come twice as often. Indoor gigs pay 10% more, and your first gig each day pays 15% more, before the heat peaks.' },
+  { id: 'appBoom', name: 'New App in Town', text: 'A new gig app launched: two extra listings every day, but pay is 10% lower. Every third app gig in a week (delivery, dog walking, mystery shopping) pays a $40 streak bonus.' },
+  { id: 'touristSeason', name: 'Tourist Season', text: 'Weird gigs open at 2 stars instead of 3 and pay 15% more. Weekends bring two extra listings, and odd jobs pay 30% more on them.' },
+  { id: 'rentHike', name: 'Rent Hike', text: 'Rent went up $60 a week. Repeat clients pay 20% more, not 10%. Each week the super offers $40 off rent for an evening of building chores.' },
+  { id: 'rainySeason', name: 'Rainy Season', text: 'Rain is twice as likely, so outdoor work dries up, but on rainy days indoor gigs pay 20% more. Winding down clears 50% more stress.' },
+  { id: 'tightKnit', name: 'Tight-Knit Block', text: "Neighbors look out for each other: calls build 50% more support, fewer clients skip out on paying, and once this month Dee covers up to $100 of rent you can't make." },
 ];
 
 export const SIDE_GOALS = [
@@ -54,8 +54,24 @@ export function weatherWeights(twistId) {
   return w;
 }
 
-export function extraListings(twistId) {
-  return twistId === 'appBoom' ? 2 : 0;
+/** Weekends are days 6 and 7 of each week (day 6, 7, 13, 14...). */
+export function isWeekend(day) {
+  const d = ((day - 1) % 7) + 1;
+  return d === 6 || d === 7;
+}
+
+export function extraListings(twistId, day = 1) {
+  if (twistId === 'appBoom') return 2;
+  if (twistId === 'touristSeason' && isWeekend(day)) return 2;
+  return 0;
+}
+
+/** Twist rules that depend on the day itself (2026-10-07): they reward a different plan, not
+ *  just a bigger number. */
+export function twistDayMultiplier(state, template) {
+  if (state.twist === 'touristSeason' && template.type === 'weird' && isWeekend(state.day)) return 1.3;
+  if (state.twist === 'rainySeason' && state.weather?.id === 'rainy' && !template.outdoor) return 1.2;
+  return 1;
 }
 
 export function weirdGigStars(twistId) {

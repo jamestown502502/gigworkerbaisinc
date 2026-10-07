@@ -69,7 +69,25 @@ export class GameState {
     this.lessonsSeen = [];       // takeaways shown this run, for the day-30 summary (2026-10-02)
     this.recallDone = [];        // takeaways already asked back on a recall morning (game/recall.js)
     // The month's real numbers, for the day-30 / eviction "math of the month" page (2026-09-29).
-    this.monthMath = { paidHours: 0, gigs: 0, lostToNonPayment: 0, rentPaid: 0, phonePaid: 0, travelEnergy: 0, sickDays: 0 };
+    this.monthMath = { paidHours: 0, gigs: 0, lostToNonPayment: 0, rentPaid: 0, phonePaid: 0, travelEnergy: 0, sickDays: 0,
+      // what the month was made of, for "why it went this way" (game/depth.js monthInsights)
+      byType: {}, tips: 0, toolBeltExtra: 0, travelSaved: 0, lateHustles: 0, hustleCash: 0, firstOverdueDay: 0, partialRent: 0 };
+    // 2026-10-07 depth pass (game/depth.js): pace for the rent forecast, bad-luck protection,
+    // standing contracts, the run's background, and an in-progress gig that survives the app
+    // being killed.
+    this.paceLog = [];           // what each finished day earned (gross)
+    this.dayStartEarned = 0;     // totalEarned at the start of today, for paceLog
+    this.lastCrisisDay = -99;    // day of the last crisis event (crises cool down for 4 days)
+    this.contracts = [];         // standing contracts: { client, title, payout, every, nextDay }
+    this.background = 'fresh';   // starting background (game/depth.js BACKGROUNDS)
+    this.activeGig = null;       // the gig in progress, cleared when its receipt prints
+    this.lessonsKnown = [];      // every takeaway ever shown, across runs: seen ones show compact
+    this.microgamePlays = {};    // plays per challenge across runs: variants unlock after a few
+    this.rentCredit = 0;         // Rent Hike: building chores knock this off the next rent
+    this.deeCovered = false;     // Tight-Knit Block / Neighborhood Kid: Dee has covered a short bill
+    this.rentGraceDays = 0;      // a partial rent payment of half or more buys 7 days off the eviction clock
+    this.choresWeek = 0;         // Rent Hike: the week the super's chores were last offered
+    this.eveningNoteDay = 0;     // a morning choice already spoke for this evening
     this.runNumber = 1;          // which run this is; kept across reset()
     this.lastRun = null;         // how the previous run ended ({ day, cash, complete }), for Welcome back
     this.lastPlayed = 0;         // ms timestamp of the last save, for Welcome back
@@ -128,6 +146,9 @@ export class GameState {
     const character = { ...this.character }; // a new run's creator starts from the last look
     const tutorialSeen = this.tutorialSeen;  // someone starting over has seen it (Settings replays it)
     const seenMicrogames = this.seenMicrogames || [];
+    const lessonsKnown = [...new Set([...(this.lessonsKnown || []), ...(this.lessonsSeen || [])])];
+    const microgamePlays = { ...(this.microgamePlays || {}) };
+    const background = this.background || 'fresh';
     const lastTwist = this.twist || this.lastTwist;
     // Welcome back says which run this is and how the last one ended, so a fresh Day 1 after a
     // finished month never reads as lost progress (QA round 3 #11).
@@ -142,6 +163,9 @@ export class GameState {
     this.characterCreated = false;
     this.tutorialSeen = tutorialSeen;
     this.seenMicrogames = seenMicrogames;
+    this.lessonsKnown = lessonsKnown;
+    this.microgamePlays = microgamePlays;
+    this.background = background;
     this.lastTwist = lastTwist;
     this.runNumber = runNumber;
     this.lastRun = lastRun;

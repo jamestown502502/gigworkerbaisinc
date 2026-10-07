@@ -18,7 +18,7 @@ const MATCH = { ignoreVary: true };
 // The music is precached whole here: the audio element fetches it in ranged pieces (206), which
 // cannot be cached at runtime, and would otherwise be the one thing missing offline.
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(['./', './manifest.webmanifest', './audio/apartment-bgm.mp3'])).catch(() => {}));
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(['./', './manifest.webmanifest', './audio/apartment-bgm.mp3', './audio/work-bgm.mp3', './audio/evening-bgm.mp3', './audio/summary-bgm.mp3'])).catch(() => {}));
   self.skipWaiting();
 });
 

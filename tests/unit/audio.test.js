@@ -93,3 +93,31 @@ describe('QA round 3 #7: sound comes back after the app was backgrounded', () =>
     expect(el.paused).toBe(false);
   });
 });
+
+describe('music states (2026-10-07)', () => {
+  it('a new part of the day starts its own track and fades the old one out', () => {
+    vi.useFakeTimers();
+    try {
+      audio.unlock();
+      const morning = FakeAudio.last;
+      expect(morning.src).toMatch(/apartment-bgm/);
+      audio.setMusicState('evening');
+      const evening = FakeAudio.last;
+      expect(evening.src).toMatch(/evening-bgm/);
+      expect(evening.paused).toBe(false);
+      vi.advanceTimersByTime(2000);
+      expect(morning.paused).toBe(true);
+      expect(audio.currentMusicState()).toBe('evening');
+      audio.setMusicState('evening');            // no-op
+      expect(FakeAudio.last).toBe(evening);
+    } finally { vi.useRealTimers(); }
+  });
+  it('muted: the state changes but nothing plays; unmuting plays the new state', () => {
+    audio.unlock();
+    settings.muted = true; audio.applyAudioSettings();
+    audio.setMusicState('summary');
+    settings.muted = false; audio.applyAudioSettings();
+    expect(FakeAudio.last.src).toMatch(/summary-bgm/);
+    expect(FakeAudio.last.paused).toBe(false);
+  });
+});

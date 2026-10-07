@@ -4,7 +4,8 @@ import { InputManager } from '../engine/input.js';
 import { withPronouns } from '../ui/character.js';
 import * as audio from '../engine/audio.js';
 import { RUN_LENGTH_DAYS } from '../engine/state.js';
-import { generateDailyGigs, gigEnergyCost, travelCost, makeReferralGig } from './gigs.js';
+import { generateDailyGigs, gigEnergyCost, travelCost, makeReferralGig, APP_GIGS, GIG_TEMPLATES } from './gigs.js';
+import { applyBackgroundStart, backgroundOf, backgroundScamMultiplier, clientStanding, clientMorningOffer, contractTerms } from './depth.js';
 import { getNode, resolveChoice, fillClient } from './choices.js';
 import { clientGreeting, rememberClient } from './clients.js';
 import { createEIGame, createEveningGame, QTE_READY_DURATION } from './qte.js';
@@ -22,6 +23,7 @@ import { TUTORIAL_STEPS, renderTutorial } from '../ui/tutorial.js';
 import { spawnBurst, spawnFloatingText, triggerShake, triggerTint, getShakeOffset, updateFX, renderFX, renderTint, renderTokens, spawnFlyToken } from '../ui/fx.js';
 import { effectTokens, isFiveStars, receiptState, HAPTIC } from '../ui/juice.js';
 import { createTransition, stepTransition, renderTransition } from '../ui/transition.js';
+import { syncA11y, announce } from '../ui/a11y.js';
 
 export const UPGRADES = [
   { name: 'Better Shoes', cost: 50, effect: 'Travel costs -1 energy', apply: (state) => { state.energyPerTravel = Math.max(1, (state.energyPerTravel || 3) - 1); } },
@@ -91,9 +93,10 @@ export function monthCard(state) {
 }
 
 /** Seconds the result card stays up after a minigame ends (a tap after 0.4 s skips the rest). */
-export function resultHold(kind, result = null) {
+export function resultHold(kind, result = null, lessonKnown = false) {
   // A card with a takeaway on it holds a second longer: it is a sentence to read, not a number.
-  const extra = result && result.lesson ? 1.2 : 0;
+  // Not when the player has read that takeaway before (2026-10-07 pacing).
+  const extra = result && result.lesson && !lessonKnown ? 1.2 : 0;
   return (kind === 'skill' ? 2.4 : 1.6) + extra;
 }
 
@@ -143,6 +146,16 @@ export class Game {
     if (!state.todayGigs || state.todayGigs.length === 0) {
       state.todayGigs = generateDailyGigs(state);
     }
+    // The app was closed (or Android ended it) in the middle of a gig. Put the job back on the
+    // board and roll the day back to the moment it was accepted: nothing lost, nothing gained.
+    this.message = '';
+    if (state.activeGig && state.activeGig.gig) {
+      const a = state.activeGig;
+      Object.assign(state, a.before || {});
+      state.todayGigs = [a.gig, ...(state.todayGigs || [])];
+      state.activeGig = null;
+      this.message = `The app closed during "${a.gig.title}". ${a.gig.client || 'The client'} rescheduled: it's back on the board.`;
+    }
     state.save();
     if (state.rentOverdueDays >= 14) this.phase = 'GAMEOVER';
     else if (state.runComplete && !state.freePlay) this.phase = 'SUMMARY';
@@ -176,7 +189,9 @@ export class Game {
 
   /** Leave the creator: into Day 1 for a new run, or back to the apartment when editing. */
   finishCreator() {
+    const newRun = !this.creatorEditing && !this.state.characterCreated;
     this.state.characterCreated = true;
+    if (newRun) applyBackgroundStart(this.state);   // a background's one-time start (depth.js)
     this.state.save();
     if (this.creatorEditing) { this.creatorEditing = false; this.setPhase('MORNING', 'fade'); return; }
     // A new run opens on a "Day 1" title card. It used to roll an odometer up from "Day 0", a day
@@ -226,6 +241,7 @@ export class Game {
 
   beginMorning() {
     const s = this.state;
+    s.dayStartEarned = s.totalEarned;
     this.shopOpen = false;
     this.skippedDay = false;
     this.eveningOutcome = '';
@@ -265,7 +281,62 @@ export class Game {
     // ...and the morning after each visit, one earlier takeaway comes back as a question (recall.js).
     const quiz = inTutorial ? null : recallCard(s);
     if (quiz) this.eventQueue.unshift(quiz);
+    // A happy client's referral or contract offer, and the Rent Hike super's chores (depth pass).
+    if (!inTutorial) {
+      const offer = this.clientOfferCard();
+      if (offer) this.eventQueue.push(offer);
+      const chores = this.choresCard();
+      if (chores) this.eventQueue.push(chores);
+    }
     s.save();
+  }
+
+  /** A regular's referral (a well-paid gig now) or a standing contract (a job every 5 days). */
+  clientOfferCard() {
+    const s = this.state;
+    const offer = clientMorningOffer(s);
+    if (!offer) return null;
+    const log = s.clientLog[offer.client];
+    if (offer.kind === 'referral') {
+      return {
+        tier: 2, label: 'A REFERRAL',
+        text: `${offer.client} told a friend about you. A well-paid job just landed on your board.`,
+        effect: (st) => {
+          const g = makeReferralGig(st);
+          g.title = g.title.replace('Referral: ', `Referral from ${offer.client}: `);
+          st.todayGigs.unshift(g);
+          st.clientLog[offer.client].lastReferral = st.day;
+          return `+1 referral gig on the board ($${g.payout})`;
+        },
+      };
+    }
+    const template = GIG_TEMPLATES.find((t) => log.lastJob && log.lastJob.includes(t.title)) || GIG_TEMPLATES.find((t) => t.hasQTE);
+    const terms = contractTerms(s, offer.client, template);
+    return {
+      tier: 2, label: "A REGULAR'S OFFER",
+      text: `${offer.client} wants to book you every ${terms.every} days: ${terms.title} at $${terms.payout}, no risk of not being paid. Let them down once and the booking ends.`,
+      choices: [
+        { text: 'Take the standing booking', apply: (st) => { st.contracts.push(terms); st.clientLog[offer.client].contractOffered = true; return `Booked. ${offer.client} expects you on day ${terms.nextDay}.`; },
+          after: 'Steady work trades a little freedom for pay you can plan around.' },
+        { text: 'Keep my days open', apply: (st) => { st.clientLog[offer.client].contractOffered = true; return `${offer.client} understands. The offer stands as a good word, not a booking.`; },
+          after: 'Free days keep you open for better-paying one-offs, and for rest.' },
+      ],
+    };
+  }
+
+  /** Rent Hike: once a week the super offers $40 off rent for an evening of chores. */
+  choresCard() {
+    const s = this.state;
+    if (s.twist !== 'rentHike' || s.choresWeek === s.weekNumber || (s.day - 1) % 7 < 2) return null;
+    s.choresWeek = s.weekNumber;
+    return {
+      tier: 2, label: 'THE SUPER',
+      text: 'The super is short-handed: help with the boiler and the trash tonight, and $40 comes off your next rent.',
+      choices: [
+        { text: 'Do the chores tonight (-$40 rent)', apply: (st) => { st.rentCredit = (st.rentCredit || 0) + 40; st.eveningDoneDay = st.day; st.eveningNoteDay = st.day; return '$40 off next rent. Tonight belongs to the boiler.'; } },
+        { text: 'Not this week', apply: () => 'You keep your evening.' },
+      ],
+    };
   }
 
   startNextEvent() {
@@ -273,6 +344,7 @@ export class Game {
     this.eventOutcome = '';
     const e = this.eventQueue.shift() || null;
     this.activeEvent = e ? { ...e } : null;
+    if (e && e.tier === 3) this.state.lastCrisisDay = this.state.day;   // crises cool down (events.js)
     if (e && e.tier === 3) audio.playSting();     // crisis lands with weight
     if (e && e.effect) {
       this.eventOutcome = e.effect(this.state) || '';
@@ -350,6 +422,10 @@ export class Game {
     const check = this.canAffordGig(gig);
     if (!check.ok) { this.message = check.reason; audio.playError(); return false; }
     this.currentGig = gig;
+    const s0 = this.state;
+    s0.activeGig = { gig, before: { cash: s0.cash, stress: s0.stress, reputation: s0.reputation, energy: s0.energy, health: s0.health, hoursLeft: s0.hoursLeft } };
+    if (gig.remote) s0.monthMath.travelSaved += s0.energyPerTravel;
+    else if (s0.energyPerTravel < 3) s0.monthMath.travelSaved += 3 - s0.energyPerTravel;
     audio.playAccept();
     spawnBurst(310, 552, { color: '#ffd700' });   // burst at the Accept button
     this.snapshot = { cash: this.state.cash, stress: this.state.stress, rep: this.state.reputation, energy: this.state.energy };
@@ -385,6 +461,7 @@ export class Game {
     if (node.minigame) {
       this.node = null;
       this.qte = createEIGame(node.minigame, this.state);
+      this.resultLessonChecked = false;
       this.qteKind = 'ei';
       this.eiNext = node.next;
       this.qteReadyT = 0;
@@ -401,9 +478,10 @@ export class Game {
     const { effects, outcomeText, lesson, landed } = resolveChoice(this.state, choice);
     const text = fillClient(outcomeText, this.currentGig.client);
     this.outcomeTexts.push(text);
+    const known = this.lessonKnown(lesson);
     this.noteLesson(lesson);
     this.node = null;
-    this.pendingOutcome = { choice: choice.text, text, lesson, effects, landed, next: choice.next || null };
+    this.pendingOutcome = { choice: choice.text, text, lesson, effects, landed, known, next: choice.next || null };
     // lift off the card's own effect line (not the sentence being read) and arc up to the meters
     effectTokens(effects).forEach((tk, i) => spawnFlyToken(120 + i * 90, 222, tk.key, tk.text, tk.color, { delay: 0.25 + i * 0.08, calm: this.state.settings.reduceMotion }));
     (landed ? audio.playTick : audio.playError)();
@@ -418,6 +496,12 @@ export class Game {
     else this.afterChoices();
   }
 
+  /** Seen before, this run or an earlier one: the card can be compact (2026-10-07 pacing). */
+  lessonKnown(lesson) {
+    const s = this.state;
+    return !!lesson && ((s.lessonsSeen || []).includes(lesson) || (s.lessonsKnown || []).includes(lesson));
+  }
+
   /** Every takeaway the player was shown this run, once each, for the day-30 summary. */
   noteLesson(lesson) {
     if (!lesson) return;
@@ -429,13 +513,14 @@ export class Game {
     this.node = null;
     if (this.currentGig.hasQTE) {
       this.qte = createQTE(this.currentGig, this.state);
+      this.resultLessonChecked = false;
       this.qteKind = 'skill';
       this.qteFxFired = false;
       this.qteEndTimer = 0;
       this.qteReadyT = 0; // brief "GET READY" beat before input goes live — see update()
       // The first time a player meets each microgame, its how-to card waits for a tap before the
       // clock starts (QA round 2 #20: some games were over before they were understood).
-      this.qteIntroHold = !(this.state.seenMicrogames || []).includes(this.qte.name);
+      this.qteIntroHold = !(this.state.seenMicrogames || []).includes(this.qte.introKey || this.qte.name);
     } else {
       this.finishGig(null);
     }
@@ -510,7 +595,7 @@ export class Game {
 
     // scam roll — risk% chance the client stiffs you, worse with flaky clients
     let scamText = '';
-    const scamChance = gig.risk * (gig.clientReliability <= 2 ? 1.5 : 1) * (gig.isRepeat ? 0.5 : 1) * scamMultiplier(s.twist);
+    const scamChance = gig.risk * (gig.clientReliability <= 2 ? 1.5 : 1) * (gig.isRepeat ? 0.5 : 1) * scamMultiplier(s.twist) * backgroundScamMultiplier(s);
     if (Math.random() * 100 < scamChance) {
       const kept = Math.random() * 0.5;
       const lost = payout - Math.round(payout * kept);
@@ -531,6 +616,26 @@ export class Game {
       this.outcomeTexts.push('Steady contract: payout doubled!');
     }
 
+    // Twist rules that reward a plan (2026-10-07): Heat Wave pays the day's first gig 15% more,
+    // the New App pays a streak bonus on every third app gig of the week.
+    const doneToday = s.gigHistory.filter((g) => g.day === s.day).length;
+    if (s.twist === 'heatwave' && doneToday === 0 && payout > 0) {
+      const early = Math.round(base * 0.15);
+      items.push({ label: 'Early start, before the heat', amount: early }); payout += early;
+    }
+    if (s.twist === 'appBoom' && APP_GIGS.includes(gig.choiceTree)) {
+      s.weekStats.appGigs = (s.weekStats.appGigs || 0) + 1;
+      if (s.weekStats.appGigs % 3 === 0) { items.push({ label: 'App streak bonus', amount: 40 }); payout += 40; }
+    }
+    // A regular who is happy with the work tips (depth.js clientStanding).
+    const standingBefore = clientStanding(s, gig.client);
+    if (standingBefore === 'regular' && !scamText && (!qteResult || qteResult.success) && Math.random() < 0.4) {
+      const tip = 10 + Math.floor(Math.random() * 6);
+      items.push({ label: `Tip from ${gig.client}`, amount: tip }); payout += tip;
+      s.monthMath.tips += tip;
+    }
+    if (s.hasToolBelt && gig.type === 'physical') s.monthMath.toolBeltExtra += Math.round(base - base / 1.3);
+
     // Money that changed hands during the job (choice-tree / EI effects already applied to state)
     const onTheJob = Math.round(s.cash - this.snapshot.cash);
     if (onTheJob !== 0) items.push({ label: onTheJob > 0 ? 'Extra on the job' : 'Spent on the job', amount: onTheJob });
@@ -546,6 +651,10 @@ export class Game {
       s.repeatClients.push(gig.client);
     }
     s.gigHistory.push({ day: s.day, title: gig.title, payout });
+    const bt = s.monthMath.byType[gig.type] || (s.monthMath.byType[gig.type] = { earned: 0, hours: 0, gigs: 0 });
+    bt.earned += payout; bt.hours += gig.hours; bt.gigs += 1;
+    if (this.qte && qteResult) s.microgamePlays[this.qte.name] = (s.microgamePlays[this.qte.name] || 0) + 1;
+    s.activeGig = null;
     s.clamp();
 
     const total = items.reduce((a, i) => a + i.amount, 0);
@@ -554,6 +663,11 @@ export class Game {
     const pleased = s.reputation >= this.snapshot.rep;
     // The client remembers: a job that left your reputation intact and paid in full went well.
     rememberClient(s, gig.client, gig.title, pleased && !scamText);
+    // A standing booking ends the first time it goes badly.
+    if (gig.contract && !(pleased && !scamText)) {
+      s.contracts = (s.contracts || []).filter((c) => c.client !== gig.client);
+      this.outcomeTexts.push(`${gig.client} ends the standing booking.`);
+    }
     const pool = pleased ? GOOD_REVIEWS : MIXED_REVIEWS;
     const review = withPronouns(pool[s.gigsCompleted % pool.length], s.character);
     this.results = {
@@ -604,6 +718,7 @@ export class Game {
   goEvening() {
     const s = this.state;
     this.shopOpen = false;
+    if (s.eveningNoteDay === s.day) this.eveningOutcome = 'You spend the evening on the boiler and the trash. $40 comes off your next rent.';
     if (s.daysUntilBills <= 0) {
       this.billsOpen = true;
       this.billsHint = null;
@@ -664,9 +779,11 @@ export class Game {
     const s = this.state;
     if (s.eveningDoneDay === s.day || this.billsOpen || this.wrapUpOpen) return;
     if (id === 'hustle') {
-      const cash = 20 + Math.floor(Math.random() * 21);
+      const owl = backgroundOf(s).id === 'nightowl';
+      const cash = Math.round((20 + Math.floor(Math.random() * 21)) * (owl ? 1.5 : 1));
       s.cash += cash; s.totalEarned += cash; s.weekStats.totalEarned += cash;
-      s.stress += 8; s.energy -= 10; s.health -= 3; s.tiredTomorrow = true;
+      s.stress += 8; s.energy -= 10; s.health -= 3; s.tiredTomorrow = owl ? 'light' : true;
+      s.monthMath.lateHustles += 1; s.monthMath.hustleCash += cash;
       s.eveningDoneDay = s.day;
       s.clamp();
       this.eveningOutcome = `Late hustle: +$${cash}. You'll feel it in the morning.`;
@@ -676,6 +793,7 @@ export class Game {
       return;
     }
     this.qte = createEveningGame(id === 'checkin' ? 'checkin' : 'breathe', this.state);
+    this.resultLessonChecked = false;
     this.qteKind = 'evening';
     this.qteReadyT = 0;
     this.qteEndTimer = 0;
@@ -696,7 +814,7 @@ export class Game {
       const how = result.score >= 85 ? 'Your breathing and the box moved as one.' : result.score >= 60 ? 'You found the rhythm.' : 'It took a while to settle, but you stayed with it.';
       this.eveningOutcome = `${how} -${relief} stress, +3 balance. Tomorrow's timed challenges will feel easier.`;
     } else {
-      s.support += Math.round((fx.support || 0) * supportMultiplier(s.twist));
+      s.support += Math.round((fx.support || 0) * supportMultiplier(s.twist) * (backgroundOf(s).id === 'local' ? 0.8 : 1));
       s.stress += fx.stress || 0;
       s.health += 2;
       s.eveningsRested += 1;
@@ -714,7 +832,7 @@ export class Game {
 
   billAmount(kind) {
     const s = this.state;
-    if (kind === 'rent') return RENT + rentExtra(s.twist) + s.unpaidRent;
+    if (kind === 'rent') return Math.max(0, RENT + rentExtra(s.twist) - (s.rentCredit || 0)) + s.unpaidRent - (this.billsPartial || 0);
     if (kind === 'phone') return PHONE + s.unpaidPhone;
     return FOOD;
   }
@@ -735,15 +853,46 @@ export class Game {
     s.cash -= amt;
     this.billsPaid[kind] = true;
     if (kind === 'rent') s.monthMath.rentPaid += amt; else s.monthMath.phonePaid += amt;
-    if (kind === 'rent') { s.unpaidRent = 0; s.rentOverdueDays = 0; }
+    if (kind === 'rent') { s.unpaidRent = 0; s.rentOverdueDays = 0; s.rentGraceDays = 0; s.rentCredit = 0; this.billsPartial = 0; }
     if (kind === 'phone') { s.unpaidPhone = 0; s.phoneCut = false; }
     audio.playCashOut();
     s.save();
   }
 
+  /** What the player can put toward rent they cannot pay in full: everything but $20 for food,
+   *  if that is at least $50 and still short of the whole amount. 0 = not offered. */
+  partialRentAmount() {
+    const s = this.state;
+    const owed = this.billsOpen && !this.billsPaid.rent ? this.billAmount('rent') : s.unpaidRent;
+    const pay = Math.floor(Math.min(owed, s.cash - 20));
+    return owed > 0 && pay >= 50 && pay < owed ? pay : 0;
+  }
+
+  /** Part of the rent now. Paying at least half of what is owed buys a grace week before the
+   *  eviction clock moves again: landlords take partial payments, and a month should turn on
+   *  choices, not on one bad week (2026-10-07). */
+  payRentPartial() {
+    const s = this.state;
+    const amt = this.partialRentAmount();
+    if (!amt) return;
+    const owed = this.billsOpen && !this.billsPaid.rent ? this.billAmount('rent') : s.unpaidRent;
+    s.cash -= amt;
+    s.monthMath.rentPaid += amt;
+    s.monthMath.partialRent += amt;
+    if (this.billsOpen && !this.billsPaid.rent) this.billsPartial = (this.billsPartial || 0) + amt;
+    else s.unpaidRent -= amt;
+    const grace = amt >= owed / 2;
+    if (grace) s.rentGraceDays = 7;
+    audio.playCashOut();
+    const msg = `Paid $${amt} toward rent. ${grace ? 'The landlord gives you a grace week.' : 'Pay half or more to earn a grace week.'}`;
+    if (this.billsOpen) this.billsHint = { kind: 'rent', text: msg, at: performance.now() };
+    else this.message = msg;
+    s.save();
+  }
+
   /** This week's rent, paid early from the apartment or the evening (QA round 3 #8). The bills
    *  screen then shows it already paid. Overdue rent is paid with payDebt('rent') instead. */
-  rentEarlyAmount() { return RENT + rentExtra(this.state.twist); }
+  rentEarlyAmount() { return Math.max(0, RENT + rentExtra(this.state.twist) - (this.state.rentCredit || 0)); }
   canPayRentEarly() {
     const s = this.state;
     return !s.rentPrepaid && s.unpaidRent === 0 && s.daysUntilBills > 0 && s.cash >= this.rentEarlyAmount();
@@ -755,6 +904,7 @@ export class Game {
     s.cash -= amt;
     s.monthMath.rentPaid += amt;
     s.rentPrepaid = true;
+    s.rentCredit = 0;
     audio.playCashOut();
     this.message = `Rent paid early: -$${amt}. It is ticked off when the bills come due.`;
     spawnFloatingText(485, 360, `-$${amt}`, { color: '#ff6b5e', size: 18 });
@@ -763,7 +913,19 @@ export class Game {
 
   closeBills() {
     const s = this.state;
-    if (!this.billsPaid.rent) s.unpaidRent += RENT + rentExtra(s.twist);
+    if (!this.billsPaid.rent) {
+      let owe = Math.max(0, RENT + rentExtra(s.twist) - (s.rentCredit || 0)) - (this.billsPartial || 0);
+      // Tight-Knit Block / Neighborhood Kid: once a month Dee covers up to $100 of a short rent.
+      if (owe > 0 && !s.deeCovered && (s.twist === 'tightKnit' || backgroundOf(s).id === 'local')) {
+        const cover = Math.min(100, owe);
+        owe -= cover; s.deeCovered = true;
+        this.message = `Dee slips $${cover} under your door for rent. "Pay it forward."`;
+      }
+      s.unpaidRent += Math.max(0, owe);
+      if (s.unpaidRent > 0 && !s.monthMath.firstOverdueDay) s.monthMath.firstOverdueDay = s.day;
+    }
+    s.rentCredit = 0;
+    this.billsPartial = 0;
     if (!this.billsPaid.phone) { s.unpaidPhone += PHONE; s.phoneCut = true; }
     s.hungry = !this.billsPaid.food;
     s.daysUntilBills = 7;
@@ -788,7 +950,7 @@ export class Game {
     if (kind === 'rent' && s.cash >= s.unpaidRent && s.unpaidRent > 0) {
       paid = s.unpaidRent;
       s.monthMath.rentPaid += paid;
-      s.cash -= s.unpaidRent; s.unpaidRent = 0; s.rentOverdueDays = 0;
+      s.cash -= s.unpaidRent; s.unpaidRent = 0; s.rentOverdueDays = 0; s.rentGraceDays = 0;
     }
     if (kind === 'phone' && s.cash >= s.unpaidPhone && s.unpaidPhone > 0) {
       paid = s.unpaidPhone;
@@ -832,13 +994,18 @@ export class Game {
       return;
     }
     const fromDay = s.day;
+    s.paceLog = [...(s.paceLog || []), Math.round(s.totalEarned - (s.dayStartEarned || 0))].slice(-10);
     s.day += 1;
     s.daysUntilBills -= 1;
-    if (s.unpaidRent > 0) s.rentOverdueDays += 1;
+    if (s.unpaidRent > 0) {
+      if ((s.rentGraceDays || 0) > 0) s.rentGraceDays -= 1;
+      else s.rentOverdueDays += 1;
+    }
     applyHealthDecay(s);
     s.ateYesterday = !s.hungry;
     s.energy = Math.min(100, s.energy + sleepRecovery(s));
-    if (s.tiredTomorrow) { s.energy = Math.max(10, s.energy - 15); s.tiredTomorrow = false; }
+    if (s.tiredTomorrow) { s.energy = Math.max(10, s.energy - (s.tiredTomorrow === 'light' ? 8 : 15)); s.tiredTomorrow = false; }
+    if (backgroundOf(s).id === 'nightowl') s.energy = Math.max(10, s.energy - 10);   // slow mornings
     s.calm = !!s.calmTonight;
     s.calmTonight = false;
     s.stress = Math.max(0, s.stress - 8);
@@ -897,8 +1064,19 @@ export class Game {
 
   // ---------- frame ----------
 
+  /** Which music the current moment wants (engine/audio.js music states). */
+  musicStateFor() {
+    switch (this.phase) {
+      case 'BROWSE': case 'TRAVEL': case 'GIG': case 'RESULTS': return 'work';
+      case 'EVENING': case 'EVENING_GAME': return 'evening';
+      case 'SUMMARY': case 'GAMEOVER': return 'summary';
+      default: return 'morning';
+    }
+  }
+
   update(dt) {
     updateFX(dt);
+    audio.setMusicState(this.musicStateFor());
     if (this.transition) {
       if (stepTransition(this.transition, dt)) this.transition = null;
       return; // the world holds still under the cover
@@ -952,6 +1130,10 @@ export class Game {
         this.qteReadyT += dt;
       } else {
         this.qte.update(dt);
+        if (this.qte.done && !this.resultLessonChecked) {
+          this.resultLessonChecked = true;
+          this.resultLessonKnown = this.lessonKnown(this.qte.result?.lesson);
+        }
         if (this.qte.done && this.qteKind === 'skill' && !this.qteFxFired) {
           this.qteFxFired = true;
           if (this.qte.result.success) triggerTint('#2ecc71', 0.22);
@@ -971,7 +1153,7 @@ export class Game {
           if (this.fiveStarsT !== null && this.fiveStarsT !== undefined) this.fiveStarsT += dt;
           // The result card (stars, score, what it earned or cost) holds long enough to read, and
           // any tap after the first 0.4 s moves on.
-          if (this.qteEndTimer > resultHold(this.qteKind, result)) {
+          if (this.qteEndTimer > resultHold(this.qteKind, result, this.resultLessonKnown)) {
             this.qteEndTimer = 0;
             if (this.qteKind === 'skill') this.finishGig(result);
             else if (this.qteKind === 'ei') this.finishEIGame(result);
@@ -1043,7 +1225,58 @@ export class Game {
     renderTint(ctx); // screen-space wash, drawn outside the shake translate on purpose
     if (this.transition) { renderTransition(ctx, this.transition); UI.begin(); } // nothing is tappable mid-transition
 
+    this.syncAccessibility();
     this.processInput();
+  }
+
+  /** Mirror this frame's buttons for screen readers and keyboards, and announce what changed. */
+  syncAccessibility() {
+    if (typeof document === 'undefined' || !this.ctx?.canvas?.getBoundingClientRect) return;
+    const seen = {};
+    const targets = [];
+    const add = (label, x, y, w, h, press) => {
+      const n = (seen[label] = (seen[label] || 0) + 1);
+      targets.push({ key: `${label}#${n}`, label, x, y, w, h, press });
+    };
+    for (const h of UI.hotspots) if (h.onClick && h.label) add(h.label, h.x, h.y, h.w, h.h, () => { UI.onPress?.(); h.onClick(); });
+    // answer buttons inside a challenge (PERCENT!, READ THE CLIENT, replies) press through handleTap
+    const q = this.qte;
+    if (q && !q.done && Array.isArray(q.buttons)) {
+      for (const b of q.buttons) {
+        const label = b.label || b.opt || b.text;
+        if (label && b.w) add(String(label), b.x, b.y, b.w, b.h, () => q.handleTap({ x: b.x + b.w / 2, y: b.y + b.h / 2 }));
+      }
+    }
+    syncA11y(this.ctx.canvas, targets);
+    const s = this.state;
+    const where = { CREATE: 'Character creator', MORNING: `Morning, day ${s.day}`, BROWSE: `Job board, ${s.todayGigs.length} gigs`, TRAVEL: 'Traveling to the job',
+      GIG: this.currentGig ? `At the job: ${this.currentGig.title}` : 'At the job', RESULTS: 'Receipt', EVENING: `Evening, day ${s.day}`, EVENING_GAME: 'Evening', SUMMARY: 'Thirty days done', GAMEOVER: 'Evicted' }[this.phase];
+    const said = [where, this.activeEvent?.text, this.pendingOutcome?.text, this.message].filter(Boolean).join('. ');
+    if (said !== this._lastSaid) { this._lastSaid = said; announce(said); }
+  }
+
+  /** Android Back (and the browser back button): close what is on top, or step back a screen.
+   *  Returns false at a root screen, where Back is allowed to leave the app (main.js). */
+  handleBack() {
+    if (this.staleTab) return false;
+    if (this.transition) return true;
+    if (this.settingsOpen) { this.settingsOpen = false; this.confirmReset = false; return true; }
+    if (this.mathOpen) { this.mathOpen = false; this.mathPage = 0; return true; }
+    if (this.shopOpen) { this.shopOpen = false; return true; }
+    if (this.resumePrompt) { if (this.confirmNewGame) { this.confirmNewGame = false; return true; } return false; }
+    if (this.billsOpen || this.wrapUpOpen) return true;                 // a decision is waiting
+    if (this.activeEvent && this.activeEvent.choices) return true;
+    if (this.ping && !this.ping.resolved && !this.ping.snoozed && this.phase === 'EVENING') { this.ping.snoozed = true; return true; }
+    switch (this.phase) {
+      case 'CREATE': if (this.creatorEditing) { this.cancelCreator(); return true; } return false;
+      case 'BROWSE': this.message = ''; this.setPhase('MORNING', 'fade'); return true;
+      case 'EVENING':
+        if (!this.restDay && !this.skippedDay) { this.backFromEvening(); return true; }
+        return false;
+      case 'TRAVEL': case 'GIG': case 'RESULTS': case 'EVENING_GAME':
+        this.settingsOpen = true; return true;                          // mid-job: Back pauses
+      default: return false;
+    }
   }
 
   processInput() {
@@ -1089,14 +1322,14 @@ export class Game {
       if ((this.phase === 'GIG' || this.phase === 'EVENING_GAME') && this.qte && this.qteKind === 'skill' && this.qteIntroHold && !this.settingsOpen) {
         if (click.y < 56 && click.x > 700 && UI.handleClick(click)) continue; // the HUD gear still works
         this.qteIntroHold = false;
-        this.state.seenMicrogames = [...(this.state.seenMicrogames || []), this.qte.name];
+        this.state.seenMicrogames = [...(this.state.seenMicrogames || []), this.qte.introKey || this.qte.name];
         this.qteReadyT = Math.max(0, QTE_READY_DURATION - 0.9); // read it already: a short count-in
         this.state.save();
         audio.playClick();
         continue;
       }
       if ((this.phase === 'GIG' || this.phase === 'EVENING_GAME') && this.qte && this.qte.done && !this.settingsOpen) {
-        if (this.qteEndTimer > 0.4) this.qteEndTimer = Math.max(this.qteEndTimer, resultHold(this.qteKind, this.qte.result));
+        if (this.qteEndTimer > 0.4) this.qteEndTimer = Math.max(this.qteEndTimer, resultHold(this.qteKind, this.qte.result, this.resultLessonKnown));
         continue;
       }
       if ((this.phase === 'GIG' || this.phase === 'EVENING_GAME') && this.qte && !this.qte.done && !this.settingsOpen) {

@@ -1,4 +1,5 @@
-import { extraListings, weirdGigStars, payMultiplier, repeatClientBonus } from './twists.js';
+import { extraListings, weirdGigStars, payMultiplier, repeatClientBonus, twistDayMultiplier } from './twists.js';
+import { creativeStars, backgroundPayMultiplier, clientStanding } from './depth.js';
 import { CLIENT_NAMES } from './clients.js';
 
 export const GIG_TEMPLATES = [
@@ -33,7 +34,7 @@ export function generateDailyGigs(state) {
   const weather = state.weather;
   // Reputation gates gig types (PRD progression table)
   let pool = GIG_TEMPLATES.filter((t) => {
-    if (t.type === 'creative') return state.reputation >= 2 || state.hasLaptop;
+    if (t.type === 'creative') return state.reputation >= creativeStars(state) || state.hasLaptop;
     if (t.type === 'weird') return state.reputation >= weirdGigStars(state.twist);
     return true;
   });
@@ -43,9 +44,18 @@ export function generateDailyGigs(state) {
     if (filtered.length > 0) pool = filtered;
   }
 
-  const count = (weather?.id === 'perfect' ? 8 : 6) + extraListings(state.twist);
+  const count = (weather?.id === 'perfect' ? 8 : 6) + extraListings(state.twist, state.day);
   const shuffled = [...pool].sort(() => Math.random() - 0.5);
   const gigs = [];
+  // Standing contracts due today go first (game/depth.js): a regular's booked job, no risk.
+  for (const c of state.contracts || []) {
+    if (c.nextDay !== state.day) continue;
+    c.nextDay += c.every;
+    const t = GIG_TEMPLATES.find((x) => x.title === c.title) || GIG_TEMPLATES[0];
+    const g = instantiate(t, state);
+    Object.assign(g, { title: `Contract: ${t.title}`, payout: c.payout, risk: 0, location: 'safe', client: c.client, isRepeat: true, clientReliability: 5, contract: true, standing: 'regular', description: `${c.client}'s standing booking, every ${c.every} days.` });
+    gigs.push(g);
+  }
   for (let i = 0; i < count; i++) {
     const t = shuffled[i % shuffled.length];
     gigs.push(instantiate(t, state));
@@ -61,11 +71,15 @@ function instantiate(t, state) {
   if (location === 'sketchy') { payout = Math.round(payout * 1.2); risk += 10; }
   if (t.type === 'physical' && state.hasToolBelt) payout = Math.round(payout * 1.3);
   if (state.reputation >= 4) payout = Math.round(payout * 1.25);
-  payout = Math.round(payout * payMultiplier(state.twist, t));
+  payout = Math.round(payout * payMultiplier(state.twist, t) * twistDayMultiplier(state, t) * backgroundPayMultiplier(state, t));
 
-  const client = pick(CLIENT_NAMES);
+  // A client you let down twice stops hiring you; one you let down once pays less (depth.js).
+  const hiring = CLIENT_NAMES.filter((n) => clientStanding(state, n) !== 'done');
+  const client = pick(hiring.length ? hiring : CLIENT_NAMES);
+  const standing = clientStanding(state, client);
   const isRepeat = state.repeatClients.includes(client);
   if (isRepeat) payout = Math.round(payout * repeatClientBonus(state.twist));
+  if (standing === 'wary') payout = Math.round(payout * 0.9);
 
   return {
     title: t.title,
@@ -81,6 +95,7 @@ function instantiate(t, state) {
     clientReliability: randInt(1, 5),
     client,
     isRepeat,
+    standing,
     description: pick(FLAVOR[location]),
     remote: t.type === 'creative' && state.hasLaptop,
   };
@@ -118,6 +133,9 @@ export function gigEnergyCost(gig, state) {
   if (state.hungry) cost *= 2;
   return Math.max(1, cost);
 }
+
+/** Gig types the New App counts toward its weekly streak. */
+export const APP_GIGS = ['rushShift', 'dogWalking', 'mysteryShop'];
 
 export function travelCost(gig, state) {
   if (gig.remote) return 0;

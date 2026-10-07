@@ -12,6 +12,7 @@ import * as clients from './game/clients.js';
 import * as recall from './game/recall.js';
 import * as longform from './game/longform.js';
 import * as events from './game/events.js';
+import * as gigs from './game/gigs.js';
 import { drawText, roundRectPath } from './ui/text.js';
 
 export { drawSprite, imageCache } from './engine/sprites.js';
@@ -19,7 +20,7 @@ export { drawSprite, imageCache } from './engine/sprites.js';
 function drawLoading(ctx, pct) {
   ctx.fillStyle = '#1d150d';
   ctx.fillRect(0, 0, 800, 600);
-  drawText(ctx, 'GIG WORKER SIMULATOR', 400, 250, { size: 28, weight: 'bold', color: '#ffd700', align: 'center', outline: true });
+  drawText(ctx, 'SIDE HUSTLE CITY', 400, 250, { size: 28, weight: 'bold', color: '#ffd700', align: 'center', outline: true });
   drawText(ctx, 'Loading the neighborhood...', 400, 290, { size: 15, color: '#c9a876', align: 'center' });
   ctx.fillStyle = '#3a2d1f';
   roundRectPath(ctx, 250, 320, 300, 14, 7); ctx.fill();
@@ -56,6 +57,7 @@ async function boot() {
   window.__clients = clients; // e2e hook: ...and every client greeting
   window.__recall = recall;   // e2e hook: ...and every recall question
   window.__longform = longform; // e2e hook: ...and the long-form jobs
+  window.__gigs = gigs;         // e2e hook: the job board generator
   window.__events = events;     // e2e hook: ...and every morning event (QA round 3 #12)
 
   // Another tab or window of the game saved (the storage event only fires in the OTHER tabs): this
@@ -67,6 +69,18 @@ async function boot() {
     }
   });
 
+  // Android Back (TWA / WebView) and the browser's back button arrive as history pops. A guard
+  // entry keeps them inside the game: Back closes what is on top or steps back a screen
+  // (Game.handleBack). At a root screen it asks once, and a second Back within 2 s leaves.
+  try {
+    history.pushState({ sideHustle: true }, '');
+    window.addEventListener('popstate', () => {
+      if (game.handleBack()) { history.pushState({ sideHustle: true }, ''); return; }
+      game.message = 'Press back again to leave the game.';
+      game.exitArmedAt = performance.now();
+    });
+  } catch { /* no history API: Back simply leaves */ }
+
   let last = performance.now();
   let rafId = null;
   function frame(now) {
@@ -77,6 +91,12 @@ async function boot() {
     if (!window.__loopPaused) {
       game.update(dt);
       game.render(ctx);
+    }
+    // the "press back again" window closed without a second Back: re-arm the guard entry
+    if (game.exitArmedAt && now - game.exitArmedAt > 2000) {
+      game.exitArmedAt = 0;
+      if (game.message === 'Press back again to leave the game.') game.message = '';
+      try { history.pushState({ sideHustle: true }, ''); } catch { /* ignore */ }
     }
     rafId = requestAnimationFrame(frame);
   }

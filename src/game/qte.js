@@ -453,7 +453,7 @@ export const THREAD_LESSON = {
 export class ReadClient {
   constructor(state, scenario) {
     this.name = 'READ THE CLIENT';
-    this.hint = 'Look and listen. What\'s really going on with them?';
+    this.hint = 'Look and listen. Faces and posture are clues, not proof: the surest read is to ask.';
     const base = scenario || READ_CLIENT_SCENARIOS[drawFromDeck(state, 'readClient', READ_CLIENT_SCENARIOS.length)];
     this.s = { ...base, responses: shuffled(base.responses) };
     this.step = 0;          // 0 = pick feeling, 1 = pick response, 2 = reveal
@@ -483,7 +483,7 @@ export class ReadClient {
     const feelingRight = this.picked === this.s.feeling;
     const resp = this.response;
     const score = (feelingRight ? 50 : 0) + (resp.good ? 50 : 0);
-    this.result = { success: score >= 50, score, lesson: FEELING_LESSON[this.s.feeling], effects: { ...resp.effects }, summary: feelingRight ? `You read them right (${FEELING_LABEL[this.s.feeling].toLowerCase()}).` : `They were ${FEELING_LABEL[this.s.feeling].toLowerCase()}, not ${FEELING_LABEL[this.picked].toLowerCase()}.` };
+    this.result = { success: score >= 50, score, lesson: FEELING_LESSON[this.s.feeling], effects: { ...resp.effects }, summary: feelingRight ? `Your read matched what they told you (${FEELING_LABEL[this.s.feeling].toLowerCase()}).` : `They said they were ${FEELING_LABEL[this.s.feeling].toLowerCase()}, not ${FEELING_LABEL[this.picked].toLowerCase()}.` };
     if (!feelingRight) this.result.effects.rep = (this.result.effects.rep || 0) - 0.1;
     this.done = true;
     score >= 50 ? playWarm() : playFail();
@@ -499,7 +499,7 @@ export class ReadClient {
     if (this.step === 0 && !this.canPick()) {
       drawText(ctx, 'Look at them...', AREA.x + AREA.w / 2, AREA.y + 190, { size: 16, weight: 'bold', color: '#c9a876', align: 'center' });
     } else if (this.step === 0) {
-      drawText(ctx, 'What\'s going on with them?', AREA.x + AREA.w / 2, AREA.y + 190, { size: 16, weight: 'bold', color: '#f1c40f', align: 'center' });
+      drawText(ctx, 'Your best guess: how might they be feeling?', AREA.x + AREA.w / 2, AREA.y + 190, { size: 16, weight: 'bold', color: '#f1c40f', align: 'center' });
       this.s.options.forEach((opt, i) => {
         const b = { x: AREA.x + 40 + (i % 2) * 270, y: AREA.y + 210 + Math.floor(i / 2) * 70, w: 250, h: 56, label: FEELING_LABEL[opt], onTap: () => { this.picked = opt; this.step = 1; playTick(); } };
         this.buttons.push(b); drawChoice(ctx, b);
@@ -512,8 +512,10 @@ export class ReadClient {
       });
     } else {
       const right = this.picked === this.s.feeling;
-      drawText(ctx, right ? `Right call — they were ${FEELING_LABEL[this.s.feeling].toLowerCase()}.` : `They were actually ${FEELING_LABEL[this.s.feeling].toLowerCase()}.`, AREA.x + AREA.w / 2, AREA.y + 210, { size: 18, weight: 'bold', color: right ? '#2ecc71' : '#e67e22', align: 'center' });
+      // Their own words confirm it: body language suggests, people tell (2026-10-07 critique).
+      drawText(ctx, right ? `Good read: they tell you they're ${FEELING_LABEL[this.s.feeling].toLowerCase()}.` : `They tell you they're ${FEELING_LABEL[this.s.feeling].toLowerCase()}, not ${FEELING_LABEL[this.picked].toLowerCase()}.`, AREA.x + AREA.w / 2, AREA.y + 210, { size: 18, weight: 'bold', color: right ? '#2ecc71' : '#e67e22', align: 'center', maxWidth: AREA.w - 40 });
       drawText(ctx, this.response.good ? 'They relax. That landed.' : 'They stiffen. That did not land.', AREA.x + AREA.w / 2, AREA.y + 244, { size: 15, color: '#e0e0e0', align: 'center' });
+      drawText(ctx, 'Cues are clues, not proof. When unsure, ask how they are doing.', AREA.x + AREA.w / 2, AREA.y + 272, { size: 13, color: '#c9a876', align: 'center', maxWidth: AREA.w - 40 });
     }
   }
 }

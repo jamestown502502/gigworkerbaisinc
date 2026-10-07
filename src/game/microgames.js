@@ -68,7 +68,17 @@ export const LESSONS = {
   assemble: 'Read every step before the first screw, and sort the hardware. Order matters more than speed.',
   percent: 'Percent means "out of 100". Find 10% by moving the decimal one place, then build from there.',
   frame: 'Rule of thirds: put the subject on a third line, off center, with space on the side it faces.',
+  packFragile: 'Heavy low, fragile on top: nothing should ever rest on what can break.',
+  rakeShift: 'Check the wind again mid-job. A pile that was downwind an hour ago can be upwind now.',
+  sortFinal: 'Final sale means no returns at all: no refund, no exchange, no credit. Say so kindly, up front.',
 };
+
+/** Variants (2026-10-07): after a challenge has been played twice (across runs), half the time it
+ *  comes with one new rule, so the tenth play still asks something of you. The first time a variant
+ *  appears, its own how-to card waits for a tap (introKey). */
+export function variantFor(state, name, rand = Math.random) {
+  return ((state?.microgamePlays || {})[name] || 0) >= 2 && rand() < 0.5;
+}
 
 // ---------------------------------------------------------------- LIFT! (Help Move Furniture)
 const LIFT_LEAD = 0.45;
@@ -267,10 +277,16 @@ const PIECES = [[2, 2, 'Toolbox'], [2, 1, 'Bike rack'], [2, 1, 'Paint cans'], [1
  *  crush what is under them when you brake. Scored, not just captioned. */
 export const HEAVY = new Set(['Toolbox', 'Paint cans']);
 const PIECE_COLORS = ['#8e6e4e', '#5d7a8a', '#9b59b6', '#c0873f', '#6f8f4e', '#b85c4e'];
+export const FRAGILE = new Set(['Lamp', 'Fan']);
 export class PackTheCar {
-  constructor(state) {
+  constructor(state, opts = {}) {
     this.name = 'PACK!';
-    this.hint = 'Tap the trunk to drop the next item. Heavy items go on the floor (bottom row).';
+    this.variant = opts.variant ?? variantFor(state, 'PACK!');
+    this.introKey = this.variant ? 'PACK!:fragile' : 'PACK!';
+    this.fragileLow = 0;
+    this.hint = this.variant
+      ? 'New rule: the lamp and the fan are fragile, so they ride in the TOP row. Heavy items still go on the floor.'
+      : 'Tap the trunk to drop the next item. Heavy items go on the floor (bottom row).';
     this.d = difficultyFactor(state);
     this.queue = shuffle(PIECES.map((p, i) => ({ w: p[0], h: p[1], label: p[2], color: PIECE_COLORS[i] })));
     this.grid = Array.from({ length: GRID.rows }, () => Array(GRID.cols).fill(null));
@@ -297,6 +313,7 @@ export class PackTheCar {
     } else haptic(8);
     // heavy and not touching the floor: it still fits, but it will slide
     if (HEAVY.has(p.label) && row + p.h < GRID.rows) { this.heavyHigh += 1; this.warn = { text: `${p.label} up high will slide when you brake.`, t: 1.6 }; playError(); }
+    if (this.variant && FRAGILE.has(p.label) && row !== 0) { this.fragileLow += 1; this.warn = { text: `${p.label} under other things may crack.`, t: 1.6 }; playError(); }
     this.queue.shift(); this.packed += 1; playTick();
     if (this.queue.length === 0) this.finish();
     return true;
@@ -321,8 +338,8 @@ export class PackTheCar {
   finish() {
     const total = PIECES.length;
     const success = this.packed >= total - 1;
-    const raw = (this.packed / total) * 80 + (success ? 20 * Math.max(0, this.timeLeft) / this.timeMax : 0) - this.heavyHigh * 15;
-    this.result = { success, score: Math.max(0, Math.round(raw)), lesson: LESSONS.pack };
+    const raw = (this.packed / total) * 80 + (success ? 20 * Math.max(0, this.timeLeft) / this.timeMax : 0) - this.heavyHigh * 15 - this.fragileLow * 15;
+    this.result = { success, score: Math.max(0, Math.round(raw)), lesson: this.variant ? LESSONS.packFragile : LESSONS.pack };
     this.done = true;
     success ? playSuccess() : playFail();
   }
@@ -350,7 +367,7 @@ export class PackTheCar {
       const px = this.preview.x + (this.preview.w - pw) / 2, py = this.preview.y + (this.preview.h - ph) / 2 - 8;
       ctx.fillStyle = p.color; ctx.fillRect(px, py, pw, ph);
       ctx.strokeStyle = '#1d150d'; ctx.lineWidth = 2; ctx.strokeRect(px, py, pw, ph);
-      drawText(ctx, HEAVY.has(p.label) ? `${p.label} (heavy)` : p.label, this.preview.x + this.preview.w / 2, this.preview.y + this.preview.h - 14, { size: 14, weight: 'bold', color: HEAVY.has(p.label) ? '#ffd27a' : '#ffffff', align: 'center' });
+      drawText(ctx, HEAVY.has(p.label) ? `${p.label} (heavy)` : this.variant && FRAGILE.has(p.label) ? `${p.label} (fragile)` : p.label, this.preview.x + this.preview.w / 2, this.preview.y + this.preview.h - 14, { size: 14, weight: 'bold', color: HEAVY.has(p.label) ? '#ffd27a' : this.variant && FRAGILE.has(p.label) ? '#9fd8ff' : '#ffffff', align: 'center' });
     }
     ctx.fillStyle = '#5d4023'; roundRectPath(ctx, this.backSeat.x, this.backSeat.y, this.backSeat.w, this.backSeat.h, 9); ctx.fill();
     drawText(ctx, 'Back seat (skip)', this.backSeat.x + this.backSeat.w / 2, this.backSeat.y + 30, { size: 14, weight: 'bold', color: '#ffffff', align: 'center' });
@@ -363,9 +380,14 @@ export class PackTheCar {
 // ---------------------------------------------------------------- RAKE! (Yard Work)
 const LEAF_COLORS = ['#d35400', '#e67e22', '#c0392b', '#f39c12'];
 export class RakeThePile {
-  constructor(state) {
+  constructor(state, opts = {}) {
     this.name = 'RAKE!';
-    this.hint = 'Check the wind, tap where the pile goes, then drag the leaves into it.';
+    this.variant = opts.variant ?? variantFor(state, 'RAKE!');
+    this.introKey = this.variant ? 'RAKE!:shift' : 'RAKE!';
+    this.shifted = false; this.shiftT = -9;
+    this.hint = this.variant
+      ? 'New rule: the wind turns halfway through. Rake fast while it helps you, or wait it out.'
+      : 'Check the wind, tap where the pile goes, then drag the leaves into it.';
     this.d = difficultyFactor(state);
     // Downwind (2026-10-02): the wind blows one way this time; you choose where the pile goes. Gusts
     // carry loose leaves downwind, so a pile set downwind collects them and one set upwind loses
@@ -419,6 +441,10 @@ export class RakeThePile {
       this.last = { x: pointer.x, y: pointer.y };
     } else this.last = null;
     if (this.pile) this.nextGust -= dt;
+    // Variant: halfway through, the wind turns around (and says so).
+    if (this.variant && !this.shifted && this.pile && this.timeLeft <= this.timeMax / 2) {
+      this.shifted = true; this.shiftT = this.t; this.wind = -this.wind; this.downwind = !this.downwind; playError();
+    }
     if (this.nextGust <= 0 && this.pile) {   // a gust carries a few loose leaves downwind
       this.nextGust = 3.4; this.gust = 0.8;
       for (const l of shuffle(this.leaves.filter((x) => !x.inPile)).slice(0, 4)) {
@@ -446,7 +472,7 @@ export class RakeThePile {
   }
   finish() {
     const pct = this.inPileCount() / this.leaves.length;
-    this.result = { success: pct >= 0.7, score: Math.round(pct * 100), lesson: LESSONS.rake, downwind: this.downwind };
+    this.result = { success: pct >= 0.7, score: Math.round(pct * 100), lesson: this.variant ? LESSONS.rakeShift : LESSONS.rake, downwind: this.downwind };
     this.done = true;
     this.result.success ? playSuccess() : playFail();
   }
@@ -454,7 +480,8 @@ export class RakeThePile {
     timerBar(ctx, this.timeLeft / this.timeMax);
     ctx.fillStyle = 'rgba(46, 90, 40, 0.35)'; ctx.fillRect(AREA.x, AREA.y + 62, AREA.w, AREA.h - 62);
     // the wind, always visible
-    drawText(ctx, this.wind > 0 ? 'Wind  →  →' : '←  ←  Wind', AREA.x + AREA.w / 2, AREA.y + 82, { size: 17, weight: 'bold', color: '#d6eaf8', align: 'center', outline: true });
+    const turned = this.t - this.shiftT < 1.8;
+    drawText(ctx, turned ? (this.wind > 0 ? 'The wind turns!  →  →' : '←  ←  The wind turns!') : this.wind > 0 ? 'Wind  →  →' : '←  ←  Wind', AREA.x + AREA.w / 2, AREA.y + 82, { size: 17, weight: 'bold', color: turned ? '#ffd27a' : '#d6eaf8', align: 'center', outline: true });
     if (!this.pile) {
       for (const sp of this.spots) {
         ctx.strokeStyle = '#f5deb3'; ctx.lineWidth = 2; ctx.setLineDash([6, 6]);
@@ -569,26 +596,34 @@ export const SORT_BINS = [
   { id: 'exchange', label: 'EXCHANGE' },
   { id: 'credit', label: 'STORE CREDIT' },
 ];
-export function binFor(item) { return !item.receipt ? 'credit' : item.tags ? 'refund' : 'exchange'; }
+export function binFor(item) { return item.finalSale ? 'none' : !item.receipt ? 'credit' : item.tags ? 'refund' : 'exchange'; }
+const NO_RETURN_BIN = { id: 'none', label: 'NO RETURN' };
 const RETURN_ITEMS = ['Sweater', 'Headphones', 'Sneakers', 'Desk lamp', 'Backpack', 'Rain jacket', 'Blender', 'Scarf'];
 export class SortReturns {
-  constructor(state, items) {
+  constructor(state, items, opts = {}) {
     this.name = 'SORT!';
-    this.hint = 'Receipt and tags: refund. Receipt, no tags: exchange. No receipt: store credit.';
+    this.variant = opts.variant ?? (items ? false : variantFor(state, 'SORT!'));
+    this.introKey = this.variant ? 'SORT!:final' : 'SORT!';
+    this.hint = this.variant
+      ? 'New rule: FINAL SALE items cannot be returned at all. Otherwise: receipt + tags refund, receipt only exchange, no receipt credit.'
+      : 'Receipt and tags: refund. Receipt, no tags: exchange. No receipt: store credit.';
     this.d = difficultyFactor(state);
     const combos = shuffle([[true, true], [true, false], [false, true], [true, true], [false, false], [true, false]]);
     this.items = items ?? shuffle(RETURN_ITEMS).slice(0, 6).map((name, i) => ({ name, receipt: combos[i][0], tags: combos[i][1] }));
+    if (this.variant) for (const i of shuffle([0, 1, 2, 3, 4, 5]).slice(0, 2)) this.items[i].finalSale = true;
     this.idx = 0; this.correct = 0; this.perItem = 4.2 / this.d; this.itemLeft = this.perItem; this.t = 0;
     this.feedback = null; this.pause = 0;
     this.done = false; this.result = null;
-    this.bins = SORT_BINS.map((b, i) => ({ ...b, x: AREA.x + 20 + i * 195, y: AREA.y + AREA.h - 110, w: 180, h: 64 }));
+    const bins = this.variant ? [...SORT_BINS, NO_RETURN_BIN] : SORT_BINS;
+    const bw = this.variant ? 136 : 180, gap = this.variant ? 146 : 195;
+    this.bins = bins.map((b, i) => ({ ...b, x: AREA.x + 20 + i * gap, y: AREA.y + AREA.h - 110, w: bw, h: 64 }));
   }
   judge(binId) {
     const item = this.items[this.idx];
     const right = binFor(item) === binId;
     if (right) { this.correct += 1; playTick(); haptic(8); } else { playError(); haptic(30); }
     this.hop = { id: binId, t: this.t, right };
-    this.feedback = { right, text: right ? 'Correct.' : `That one is ${SORT_BINS.find((b) => b.id === binFor(item)).label.toLowerCase()}.` };
+    this.feedback = { right, text: right ? 'Correct.' : `That one is ${[...SORT_BINS, NO_RETURN_BIN].find((b) => b.id === binFor(item)).label.toLowerCase()}.` };
     this.pause = 0.7;
   }
   update(dt) {
@@ -612,7 +647,7 @@ export class SortReturns {
     if (b) this.judge(b.id);
   }
   finish() {
-    this.result = { success: this.correct >= this.items.length - 1, score: Math.round((this.correct / this.items.length) * 100), lesson: LESSONS.sort };
+    this.result = { success: this.correct >= this.items.length - 1, score: Math.round((this.correct / this.items.length) * 100), lesson: this.variant ? LESSONS.sortFinal : LESSONS.sort };
     this.done = true;
     this.result.success ? playSuccess() : playFail();
   }
@@ -626,6 +661,7 @@ export class SortReturns {
     drawText(ctx, item.name, card.x + card.w / 2, card.y + 42, { size: 24, weight: 'bold', color: '#ffffff', align: 'center' });
     drawText(ctx, `Receipt: ${item.receipt ? 'yes' : 'no'}`, card.x + card.w / 2, card.y + 84, { size: 18, color: item.receipt ? '#2ecc71' : '#ff8a7e', align: 'center' });
     drawText(ctx, `Tags on: ${item.tags ? 'yes' : 'no'}`, card.x + card.w / 2, card.y + 114, { size: 18, color: item.tags ? '#2ecc71' : '#ff8a7e', align: 'center' });
+    if (item.finalSale) drawText(ctx, 'FINAL SALE', card.x + card.w / 2, card.y + 140, { size: 13, weight: 'bold', color: '#ffd27a', align: 'center' });
     if (this.feedback) drawText(ctx, this.feedback.text, AREA.x + AREA.w / 2, card.y + card.h + 26, { size: 17, weight: 'bold', color: this.feedback.right ? '#2ecc71' : '#ff8a7e', align: 'center', outline: true });
     const s = shakeOffset(this.d, this.t);
     for (const b of this.bins) {
