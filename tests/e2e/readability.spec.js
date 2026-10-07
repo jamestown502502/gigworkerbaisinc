@@ -418,3 +418,38 @@ test('QA round 3 screens are readable', async ({ page }) => {
   await shot(() => { window.__game.staleTab = true; }, 'open in another tab');
   expect(problems, problems.join('\n')).toEqual([]);
 });
+
+// Depth pass (2026-10-07): every new or changed state.
+test('depth pass screens are readable', async ({ page }) => {
+  test.setTimeout(240000);
+  await boot(page, { save: { tutorialSeen: true, characterCreated: true, energy: 100, cash: 430, day: 12, daysUntilBills: 4, gigsCompleted: 20, runNumber: 5, twist: 'heatwave', health: 35, upgradesOwned: ['Bike', 'Laptop', 'Tool Belt', 'Better Shoes', 'Phone Upgrade'], hasToolBelt: true, paceLog: [60, 80, 40] } });
+  await settleMorning(page);
+  await page.evaluate(() => { window.__loopPaused = true; });
+  const problems = [];
+  const shot = async (fn, label) => { await page.evaluate(fn); await page.evaluate(() => { window.__game.transition = null; window.__game.step(1 / 60); }); problems.push(...await audit(page, label)); };
+  await shot(() => {}, 'apartment: props, forecast short');
+  await shot(() => { const s = window.__state; s.paceLog = [200, 210]; }, 'apartment: forecast on pace');
+  await shot(() => { const s = window.__state; s.unpaidRent = 600; s.rentOverdueDays = 4; s.cash = 300; }, 'apartment: overdue, pay part');
+  await shot(() => { const g = window.__game, s = g.state; s.unpaidRent = 0; s.rentOverdueDays = 0; s.clientLog = { Rosa: { visits: 3, good: 3, bad: 0, lastGood: true, lastJob: 'Help Move Furniture' } }; const c = g.clientOfferCard(); g.eventQueue = [c]; g.activeEvent = null; g.startNextEvent(); g.eventT = 1; }, 'contract offer');
+  await shot(() => { const g = window.__game, s = g.state; s.clientLog.Rosa.contractOffered = true; s.day = 20; const R = Math.random; Math.random = () => 0.1; const c = g.clientOfferCard(); Math.random = R; g.activeEvent = null; g.eventQueue = [c]; g.startNextEvent(); g.eventT = 1; }, 'referral');
+  await shot(() => { const g = window.__game, s = g.state; s.twist = 'rentHike'; s.day = 17; s.weekNumber = 3; s.choresWeek = 0; const c = g.choresCard(); g.activeEvent = null; g.eventQueue = [c]; g.startNextEvent(); g.eventT = 1; }, 'chores');
+  await shot(() => { const g = window.__game, s = g.state; g.activeEvent = null; g.eventQueue = []; s.twist = 'heatwave'; s.cash = 400; s.daysUntilBills = 0; g.phase = 'EVENING'; g.ping = null; g.goEvening(); }, 'bills: pay part');
+  await shot(() => { window.__game.payRentPartial(); }, 'bills: after part');
+  await page.evaluate(() => { const g = window.__game; g.closeBills(); g.finishWrapUp(); g.phase = 'MORNING'; });
+  // the browse board with a contract, a regular and a wary client
+  await shot(() => { const g = window.__game, s = g.state; s.contracts = [{ client: 'Rosa', title: 'Help Move Furniture', payout: 130, every: 5, nextDay: s.day }]; s.clientLog.Tony = { visits: 1, good: 0, bad: 1, lastGood: false }; s.clientLog.Dev = { visits: 2, good: 2, bad: 0, lastGood: true }; s.todayGigs = window.__gigs.generateDailyGigs(s); s.todayGigs[1].client = 'Tony'; s.todayGigs[1].standing = 'wary'; s.todayGigs[2].client = 'Dev'; s.todayGigs[2].standing = 'regular'; g.goBrowse(); g.phase = 'BROWSE'; }, 'board: contract, regular, wary');
+  // challenge variants, intro and play
+  const gigSetup = 'const g = window.__game, M = window.__micro; g.phase = "GIG"; g.qteKind = "skill"; g.qteEndTimer = 0; g.pendingOutcome = null; g.node = null; g.currentGig = g.state.todayGigs[0]; g.fiveStarsT = null;';
+  for (const [cls, label] of [['PackTheCar', 'pack fragile'], ['RakeThePile', 'rake shift'], ['SortReturns', 'sort final']]) {
+    await shot(new Function(`${gigSetup} g.qte = new M.${cls}(g.state, ${cls === 'SortReturns' ? 'null, ' : ''}{ variant: true }); g.qteIntroHold = true; g.qteReadyT = 0;`), `${label} intro`);
+    await shot(new Function(`${gigSetup} g.qte = new M.${cls}(g.state, ${cls === 'SortReturns' ? 'null, ' : ''}{ variant: true }); g.qteIntroHold = false; g.qteReadyT = 99; ${cls === 'RakeThePile' ? 'g.qte.placePile(1); g.qte.timeLeft = g.qte.timeMax / 2 - 0.01; g.qte.update(0.02, { down: false });' : ''}`), `${label} play`);
+  }
+  // a compact (already-seen) reaction card
+  await shot(() => { const g = window.__game; g.qte = null; g.qteKind = null; g.phase = 'GIG'; g.pendingOutcome = { choice: 'Offer to do 2 trips instead', text: 'Rosa thinks it over and nods. Two trips, nothing dropped, nobody hurt.', lesson: 'Offering a safer plan, instead of a flat no, keeps the job and your reputation.', effects: { energy: -5, rep: 0.2 }, landed: true, known: true }; }, 'compact reaction card');
+  // why it went this way
+  await shot(() => { const g = window.__game, s = g.state; g.pendingOutcome = null; Object.assign(s.monthMath, { paidHours: 45, byType: { physical: { earned: 600, hours: 30, gigs: 8 }, creative: { earned: 500, hours: 15, gigs: 4 } }, lostToNonPayment: 110, toolBeltExtra: 95, lateHustles: 3, hustleCash: 90, firstOverdueDay: 15, tips: 24, partialRent: 380, sickDays: 2, travelSaved: 40 }); s.totalEarned = 1100; g.phase = 'SUMMARY'; g.mathOpen = true; g.mathPage = 1; }, 'why it went this way');
+  await shot(() => { const g = window.__game; g.mathPage = 0; }, 'math page one');
+  // creator with a background
+  await shot(() => { const g = window.__game; g.mathOpen = false; g.phase = 'CREATE'; g.creatorEditing = false; g.state.background = 'local'; }, 'creator: background');
+  expect(problems, problems.join('\n')).toEqual([]);
+});

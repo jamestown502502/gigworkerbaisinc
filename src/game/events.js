@@ -72,7 +72,11 @@ export const EVENTS = [
 export function rollDailyEvents(state) {
   // Days 1-2 are a safe onboarding window: crisis events can't fire yet.
   const wid = state.weather && state.weather.id;
-  const pool = EVENTS.filter((e) => (state.day >= 3 || e.tier < 3) && (!e.weather || !wid || e.weather.includes(wid)));
+  // Bad-luck protection (2026-10-07): a crisis cools down for 4 days, and never lands while rent is
+  // already overdue. Three crises in a row could decide a month before any choice did; a run should
+  // be lost to decisions, not dice.
+  const crisisOk = state.day >= 3 && state.day - (state.lastCrisisDay ?? -99) >= 4 && !(state.unpaidRent > 0);
+  const pool = EVENTS.filter((e) => (crisisOk || e.tier < 3) && (!e.weather || !wid || e.weather.includes(wid)));
   const events = [];
   const roll = Math.random();
   if (roll < 0.30) return events;                      // 30%: no events

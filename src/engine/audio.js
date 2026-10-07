@@ -8,8 +8,22 @@
 // starts it again from whatever state it is in (QA round 2 #5: on Android a muted-then-unmuted
 // track could stay silent because nothing ever restarted it).
 let audioCtx = null;
-let bgmAudio = null;
+let bgmAudio = null;   // the element of the CURRENT music state (kept for the code below that predates states)
 let bgmNode = null;
+
+// Music states (2026-10-07): one track per part of the day instead of one loop for everything.
+// Each state is its own <audio> element -> MediaElementSource -> its own gain -> the music bus,
+// so a change of state crossfades (no hard cut) and mute/backgrounding still act on one bus.
+export const MUSIC_TRACKS = {
+  morning: '/audio/apartment-bgm.mp3',
+  work: '/audio/work-bgm.mp3',
+  evening: '/audio/evening-bgm.mp3',
+  summary: '/audio/summary-bgm.mp3',
+};
+const CROSSFADE = 1.4;
+const players = {};      // state -> { el, node, gain }
+let musicState = 'morning';
+export function currentMusicState() { return musicState; }
 let master = null, sfxBus = null, musicBus = null;
 let unlocked = false;
 let backgrounded = false;
@@ -132,30 +146,68 @@ export function soundIsOn() { return sfxVolume() > 0; }
 export function playBuzz()      { tone(120, 0.08, { type: 'square', vol: 0.04 }); tone(120, 0.08, { type: 'square', vol: 0.04, when: 0.12 }); }
 export function playWarm()      { tone(392, 0.12, { type: 'triangle', vol: 0.05 }); tone(494, 0.12, { type: 'triangle', vol: 0.05, when: 0.1 }); tone(587, 0.25, { type: 'triangle', vol: 0.05, when: 0.2 }); }
 
+/** The player for one music state, created the first time it is needed. */
+function player(name) {
+  if (players[name]) return players[name];
+  const el = new Audio(MUSIC_TRACKS[name] || MUSIC_TRACKS.morning);
+  el.loop = true;
+  const p = { el, node: null, gain: null };
+  const ctx = ac();
+  if (ctx && ctx.createMediaElementSource) {
+    try {
+      p.node = ctx.createMediaElementSource(el);
+      p.gain = ctx.createGain();
+      p.node.connect(p.gain); p.gain.connect(musicBus);
+    } catch { p.node = null; p.gain = null; }
+  }
+  if (!p.node) el.volume = musicVolume(); // no Web Audio: the element's own volume is all there is
+  players[name] = p;
+  return p;
+}
+
 export function startBGM() {
   if (settings.muted || musicVolume() <= 0 || backgrounded) return; // nothing to hear: don't spend battery on it
-  if (!bgmAudio) {
-    bgmAudio = new Audio('/audio/apartment-bgm.mp3');
-    bgmAudio.loop = true;
-    const ctx = ac();
-    if (ctx && ctx.createMediaElementSource) {
-      try { bgmNode = ctx.createMediaElementSource(bgmAudio); bgmNode.connect(musicBus); } catch { bgmNode = null; }
-    }
-    if (!bgmNode) bgmAudio.volume = musicVolume(); // no Web Audio: the element's own volume is all there is
-  }
-  if (bgmAudio.paused) bgmAudio.play().catch(() => { /* retried on the next activation event */ });
+  const p = player(musicState);
+  bgmAudio = p.el; bgmNode = p.node;
+  if (p.gain && audioCtx) { p.gain.gain.cancelScheduledValues?.(audioCtx.currentTime); p.gain.gain.setValueAtTime(1, audioCtx.currentTime); }
+  if (p.el.paused) p.el.play().catch(() => { /* retried on the next activation event */ });
 }
 
 export function stopBGM() {
-  bgmAudio?.pause();
+  for (const p of Object.values(players)) p.el.pause();
+}
+
+/** Move the music to another part of the day ('morning' | 'work' | 'evening' | 'summary').
+ *  The old track fades out as the new one fades in. Safe to call every frame. */
+export function setMusicState(name) {
+  if (!MUSIC_TRACKS[name] || name === musicState) return;
+  const prev = players[musicState];
+  musicState = name;
+  if (settings.muted || musicVolume() <= 0 || backgrounded || !unlocked) {
+    prev?.el.pause();
+    return;   // startBGM() picks the new state up on the next unlock / unmute / return
+  }
+  const next = player(name);
+  bgmAudio = next.el; bgmNode = next.node;
+  const t = audioCtx ? audioCtx.currentTime : 0;
+  if (next.gain) { next.gain.gain.setValueAtTime(0.0001, t); next.gain.gain.linearRampToValueAtTime(1, t + CROSSFADE); }
+  next.el.play().catch(() => {});
+  if (prev && prev !== next) {
+    if (prev.gain) {
+      prev.gain.gain.setValueAtTime(prev.gain.gain.value || 1, t);
+      prev.gain.gain.linearRampToValueAtTime(0.0001, t + CROSSFADE);
+      const el = prev.el;
+      setTimeout(() => { if (players[musicState]?.el !== el) el.pause(); }, CROSSFADE * 1000 + 100);
+    } else prev.el.pause();
+  }
 }
 
 /** Re-applies current master/music/mute settings to whatever's already playing. Call after Settings changes. */
 export function applyAudioSettings() {
   applyGains();
-  if (bgmAudio) {
-    bgmAudio.muted = !!settings.muted;               // honoured on iOS, unlike .volume
-    if (!bgmNode) bgmAudio.volume = musicVolume();
+  for (const p of Object.values(players)) {
+    p.el.muted = !!settings.muted;                   // honoured on iOS, unlike .volume
+    if (!p.node) p.el.volume = musicVolume();
   }
   if (settings.muted || musicVolume() <= 0) stopBGM();
   else if (unlocked || bgmAudio) startBGM();
@@ -168,13 +220,14 @@ export function applyAudioSettings() {
 export function setBackgrounded(hidden) {
   backgrounded = hidden;
   if (hidden) {
-    bgmAudio?.pause();
+    stopBGM();
     if (audioCtx && audioCtx.state === 'running') audioCtx.suspend().catch(() => {});
   } else {
     if (audioCtx) wake(audioCtx);
     // Outside a tap the browser may refuse to start the music again; the next tap does it (main.js
     // calls unlock() on every pointerup), so the player never has to reload for sound.
-    if (bgmAudio && !settings.muted && musicVolume() > 0 && bgmAudio.paused) bgmAudio.play().catch(() => {});
+    // startBGM plays the CURRENT music state, which may have changed while the app was away.
+    if ((unlocked || bgmAudio) && !settings.muted && musicVolume() > 0) startBGM();
   }
 }
 

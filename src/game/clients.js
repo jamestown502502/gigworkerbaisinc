@@ -63,5 +63,7 @@ export function rememberClient(state, name, jobTitle, good) {
   if (!state || !name) return;
   const book = state.clientLog || (state.clientLog = {});
   const prev = book[name] || { visits: 0 };
-  book[name] = { visits: prev.visits + 1, lastJob: jobTitle, lastGood: !!good };
+  // good/bad counts drive consequences (game/depth.js clientStanding): referrals, contracts, grudges.
+  book[name] = { ...prev, visits: prev.visits + 1, lastJob: jobTitle, lastGood: !!good,
+    good: (prev.good || 0) + (good ? 1 : 0), bad: (prev.bad || 0) + (good ? 0 : 1) };
 }

@@ -9,7 +9,7 @@
 //   - everything else same-origin (art, audio, icons, manifest): stale-while-revalidate, instant
 //     from cache and refreshed in the background, because these keep the same URL across deploys
 // CACHE_NAME changes only when this strategy changes; content updates flow through the rules above.
-const CACHE_NAME = 'gigworker-v1';
+const CACHE_NAME = 'gigworker-v2';   // v2: the music-state tracks are precached too (2026-10-07)
 // The game's JS loads as a CORS module request carrying an Origin header, and the host answers with
 // a Vary header, so a strict lookup misses a file that IS cached and the game fails to boot offline.
 // These are static files with one representation each, so Vary can be ignored safely.
@@ -18,7 +18,7 @@ const MATCH = { ignoreVary: true };
 // The music is precached whole here: the audio element fetches it in ranged pieces (206), which
 // cannot be cached at runtime, and would otherwise be the one thing missing offline.
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(['./', './manifest.webmanifest', './audio/apartment-bgm.mp3'])).catch(() => {}));
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(['./', './manifest.webmanifest', './audio/apartment-bgm.mp3', './audio/work-bgm.mp3', './audio/evening-bgm.mp3', './audio/summary-bgm.mp3'])).catch(() => {}));
   self.skipWaiting();
 });
 

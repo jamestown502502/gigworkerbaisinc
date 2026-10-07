@@ -154,7 +154,9 @@ function drawGigCard(ctx, x, y, w, h, gig, game, s) {
     size: 12, weight: 'bold', color: tooTired ? '#ff6b5e' : wmod > 0 ? '#ff9d5c' : '#2ecc71', font: 'monospace', align: 'right',
   });
 
-  drawText(ctx, gig.description, x + 20, y + 65, { size: 12, color: '#c3ccd6' });
+  // Who is hiring, when it matters: a regular, a wary client (pays 10% less), or a contract.
+  const tag = gig.contract ? `★ ${gig.client}'s contract` : gig.standing === 'regular' ? `${gig.client} ♥ regular` : gig.standing === 'wary' ? `${gig.client} · wary, pays 10% less` : gig.standing === 'known' ? `${gig.client} · knows you` : '';
+  drawText(ctx, tag ? `${tag} · ${gig.description}` : gig.description, x + 20, y + 65, { size: 12, color: gig.standing === 'wary' ? '#ffb27a' : '#c3ccd6', maxWidth: w - 130 });
 
   const rlabel = `⚠ ${gig.risk}%`;
   const tw = textWidth(ctx, rlabel, 12, 'monospace', 'bold');
@@ -181,8 +183,8 @@ function drawGigCard(ctx, x, y, w, h, gig, game, s) {
 
   if (blocked) {
     drawText(ctx, noTime ? 'NO TIME' : 'TOO TIRED', x + w - 51, y + 62, { size: 11, weight: 'bold', color: '#ff6b5e', align: 'center' });
-    UI.register(x, y, w, h, () => { playError(); game.cardFlash = { gig, at: Date.now() }; game.message = noTime ? `Needs ${gig.hours}h, you have ${s.hoursLeft}h left.` : `Needs ${cost} energy, you have ${Math.round(s.energy)}.`; });
+    UI.register(x, y, w, h, () => { playError(); game.cardFlash = { gig, at: Date.now() }; game.message = noTime ? `Needs ${gig.hours}h, you have ${s.hoursLeft}h left.` : `Needs ${cost} energy, you have ${Math.round(s.energy)}.`; }, `${gig.title}, $${gig.payout}, ${gig.hours} hours, ${noTime ? 'no time left today' : 'too tired'}`);
   } else {
-    UI.register(x, y, w, h, () => { game.selectedGig = gig; game.message = ''; });
+    UI.register(x, y, w, h, () => { game.selectedGig = gig; game.message = ''; }, `${selected ? 'Selected: ' : ''}${gig.title}, $${gig.payout}, ${gig.hours} hours, ${cost} energy, ${gig.risk}% scam risk${gig.client ? `, client ${gig.client}` : ''}`);
   }
 }

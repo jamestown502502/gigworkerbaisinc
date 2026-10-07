@@ -3,19 +3,21 @@ import { drawSprite, drawFullscreen } from '../engine/sprites.js';
 import { InputManager } from '../engine/input.js';
 import { drawCharacter, optionRow, pronounsFor, pronounPreview, randomLook, BUILDS, FACIAL_HAIR, HAIR_COLORS, HAIR_STYLES, PRONOUNS, SHIRT_COLORS, SKIN_TONES } from './character.js';
 import { travelCost } from '../game/gigs.js';
-import { UPGRADES, CONSUMABLES, EVENING_OPTIONS } from '../game/loop.js';
+import { UPGRADES, CONSUMABLES, EVENING_OPTIONS, PHONE, FOOD } from '../game/loop.js';
 import { drawText, drawWrapped, roundRectPath, wrapLines } from './text.js';
 import { twistOf, goalOf, windDownMultiplier } from '../game/twists.js';
 import { playError, applyAudioSettings } from '../engine/audio.js';
 import { QTE_READY_DURATION } from '../game/qte.js';
 import { easeOutBack, receiptState, heartbeat } from './juice.js';
 import { RUN_LENGTH_DAYS } from '../engine/state.js';
+import { daysToEviction, rentForecast, monthInsights, backgroundsOpen, backgroundOf, BACKGROUNDS, STANDING_LABEL } from '../game/depth.js';
 
 // ---------- immediate-mode UI ----------
 export const UI = {
   hotspots: [],
   begin() { this.hotspots.length = 0; }, // reuse the array instead of allocating a new one every frame
-  register(x, y, w, h, onClick) { this.hotspots.push({ x, y, w, h, onClick }); },
+  /** `label` (optional) is what a screen reader says for this hotspot (ui/a11y.js). */
+  register(x, y, w, h, onClick, label = null) { this.hotspots.push({ x, y, w, h, onClick, label }); },
   /** A modal's backdrop: swallows every tap that misses the modal's own buttons, so nothing
    *  underneath (customizer swatches, phase buttons) can be hit through it. */
   absorb() {
@@ -82,7 +84,7 @@ export function button(ctx, x, y, w, h, label, { color = '#5d4023', textColor = 
     drawText(ctx, label, x + w / 2, y + h / 2, { size: fontSize, weight: 'bold', color: '#e8d9b8', align: 'center', baseline: 'middle', maxWidth: w - 12, shadow: false });
     if (flash > 0) { ctx.fillStyle = `rgba(255,236,170,${0.35 * flash})`; roundRectPath(ctx, x, y, w, h, 9); ctx.fill(); }
     ctx.restore();
-    if (onClick) UI.register(x, y, w, h, onClick);
+    if (onClick) UI.register(x, y, w, h, onClick, label);
     return;
   }
   const base = disabled ? '#3a3128' : color;
@@ -110,8 +112,8 @@ export function button(ctx, x, y, w, h, label, { color = '#5d4023', textColor = 
   if (flash > 0) { ctx.fillStyle = `rgba(255,236,170,${0.35 * flash})`; roundRectPath(ctx, x, y, w, h, 9); ctx.fill(); }
   ctx.restore();
 
-  if (!disabled && onClick) UI.register(x, y, w, h, onClick);
-  else if (disabled && onDisabled) UI.register(x, y, w, h, onDisabled);   // error feedback, never silent
+  if (!disabled && onClick) UI.register(x, y, w, h, onClick, label);
+  else if (disabled && onDisabled) UI.register(x, y, w, h, onDisabled, `${label} (unavailable)`);   // error feedback, never silent
 }
 
 // Lighten a #rrggbb hex by amount (0-255).
@@ -185,8 +187,28 @@ export function creatorScreen(ctx, game) {
   drawText(ctx, 'Every option is open to everyone. Change any of it later from your apartment.', 400, 64, { size: 13, color: '#c9a876', align: 'center' });
 
   panel(ctx, 30, 80, 270, 400);
-  drawCharacter(ctx, 105, 100, 120, 240, c);
-  drawWrapped(ctx, pronounPreview(c), 165, 380, 240, 18, { size: 13, color: '#f0e0b0', align: 'center' });
+  if (game.creatorEditing) {
+    drawCharacter(ctx, 105, 100, 120, 240, c);
+    drawWrapped(ctx, pronounPreview(c), 165, 380, 240, 18, { size: 13, color: '#f0e0b0', align: 'center' });
+  } else {
+    // A new run also picks a background: horizontal progression, one more opens each run
+    // (game/depth.js). Each is a trade-off, so later runs differ rather than get easier.
+    drawCharacter(ctx, 115, 92, 100, 200, c);
+    drawWrapped(ctx, pronounPreview(c), 165, 312, 240, 17, { size: 12, color: '#f0e0b0', align: 'center' });
+    const open = backgroundsOpen(s);
+    const cur = backgroundOf(s);
+    const idx = Math.max(0, open.findIndex((b) => b.id === cur.id));
+    const cycle = (d) => { s.background = open[(idx + d + open.length) % open.length].id; s.save(); };
+    drawText(ctx, 'BACKGROUND', 165, 360, { size: 11, weight: 'bold', color: '#c9a876', align: 'center' });
+    if (open.length > 1) {
+      button(ctx, 40, 370, 40, 40, '‹', { fontSize: 18, onClick: () => cycle(-1) });
+      button(ctx, 250, 370, 40, 40, '›', { fontSize: 18, onClick: () => cycle(1) });
+    }
+    drawText(ctx, cur.name, 165, 390, { size: 15, weight: 'bold', color: '#ffd700', align: 'center', baseline: 'middle', maxWidth: 160 });
+    drawWrapped(ctx, cur.text, 165, 424, 246, 15, { size: 11, color: '#e8dcc4', align: 'center', shadow: false });
+    const next = BACKGROUNDS.find((b) => b.unlockRun > (s.runNumber || 1));
+    if (next) drawText(ctx, `${open.length} of ${BACKGROUNDS.length} open · a new one each run`, 165, 470, { size: 11, color: '#a89878', align: 'center' });
+  }
 
   panel(ctx, 320, 80, 450, 400);
   const reg = (x, y, w, h, cb) => UI.register(x, y, w, h, cb);
@@ -220,6 +242,45 @@ export function creatorScreen(ctx, game) {
   }
 }
 
+/** The next bills and how the player's pace compares (game/depth.js rentForecast). */
+export function forecastFor(game) {
+  const s = game.state;
+  if (s.unpaidRent > 0) return null;
+  const total = (s.rentPrepaid ? 0 : game.rentEarlyAmount()) + PHONE + FOOD;
+  return rentForecast(s, total);
+}
+
+/** What the apartment shows (2026-10-07): the month's conditions first, then what you bought.
+ *  Each has a line it says when tapped (and to a screen reader). Pure, for the tests. */
+export function apartmentProps(s) {
+  const out = [];
+  if (s.unpaidRent > 0) out.push(['propNotice', `Past-due notice: $${s.unpaidRent} of rent owed. ${daysToEviction(s)} days to eviction.`]);
+  out.push(s.health < 40 ? ['propPlantWilt', 'The plant is wilting with you. Balance is low: rest tonight.'] : ['propPlant', 'The plant is doing fine. So is your balance.']);
+  if (!s.hungry && s.groceriesDay === s.day) out.push(['propGroceries', 'Groceries: you ate properly today.']);
+  if (s.twist === 'heatwave') out.push(['propFan', 'Heat Wave Month: the fan never stops. Your first gig each day pays 15% more.']);
+  if (s.twist === 'rainySeason') out.push(['propUmbrella', 'Rainy Season: on rainy days indoor gigs pay 20% more.']);
+  const owned = s.upgradesOwned || [];
+  const buys = [['Bike', 'propBike', 'Bike: travel costs 1 energy.'], ['Laptop', 'propLaptop', 'Laptop: creative gigs can be done from home.'],
+    ['Tool Belt', 'propToolbelt', 'Tool Belt: physical gigs pay 30% more.'], ['Better Shoes', 'propShoes', 'Better Shoes: travel costs 1 less energy.'],
+    ['Work Gloves', 'propGloves', 'Work Gloves: physical gigs cost 5 less energy.'], ['Phone Upgrade', 'propPhone', 'Phone Upgrade: you can see how reliable a client is.'],
+    ['Sturdy Leash', 'propLeash', 'Sturdy Leash: a new option on dog walks.']];
+  for (const [name, key, line] of buys) if (owned.includes(name)) out.push([key, line]);
+  return out.slice(0, 8);
+}
+
+function drawApartmentProps(ctx, game) {
+  const slots = [[40, 166], [256, 166], [40, 222], [256, 222], [40, 278], [256, 278], [40, 334], [256, 334]];
+  apartmentProps(game.state).forEach(([key, line], i) => {
+    const [x, y] = slots[i];
+    // a pool of lamp light behind each, so dark pixel art reads on the dark panel
+    const g = ctx.createRadialGradient(x + 27, y + 27, 4, x + 27, y + 27, 32);
+    g.addColorStop(0, 'rgba(255, 214, 150, 0.55)'); g.addColorStop(1, 'rgba(255, 214, 150, 0)');
+    ctx.fillStyle = g; ctx.fillRect(x - 6, y - 6, 66, 66);
+    drawSprite(ctx, key, x + 3, y + 3, 48, 48);
+    UI.register(x, y, 54, 54, () => { game.message = line; }, line);
+  });
+}
+
 // ---------- APARTMENT (morning) ----------
 export function apartmentScreen(ctx, game) {
   const s = game.state;
@@ -230,6 +291,7 @@ export function apartmentScreen(ctx, game) {
   panel(ctx, 30, 120, 300, 360);
   drawText(ctx, 'YOU', 180, 146, { size: 18, weight: 'bold', color: '#ffffff', align: 'center' });
   drawCharacter(ctx, 130, 160, 100, 200, s.character);
+  if (!game.activeEvent) drawApartmentProps(ctx, game);
   drawText(ctx, `${pronounsFor(s.character).label} · ${BUILDS[s.character.body] ?? BUILDS[0]}`, 180, 392, { size: 13, color: '#c9a876', align: 'center' });
   button(ctx, 80, 410, 200, 44, 'Edit look', { fontSize: 14, onClick: () => { if (!game.activeEvent) game.openCreator(); } });
 
@@ -241,12 +303,14 @@ export function apartmentScreen(ctx, game) {
     `Lifetime earnings: $${Math.round(s.totalEarned)}`,
   ];
   if (s.calm) lines.push('Rested: timed challenges are easier today');
-  if (s.unpaidRent > 0) lines.push(`OVERDUE RENT: $${s.unpaidRent} (${14 - s.rentOverdueDays} days to eviction!)`);
+  if (s.unpaidRent > 0) lines.push(`OVERDUE RENT: $${s.unpaidRent} (${daysToEviction(s)} days to eviction!)`);
   if (s.phoneCut) lines.push(`Phone cut — pay $${s.unpaidPhone} to restore listings`);
   if (s.hungry) lines.push('Hungry — energy costs are doubled. Buy groceries in the Shop.');
   const twist = twistOf(s), goal = goalOf(s);
   if (twist) lines.push(`This month: ${twist.name}`);
   if (goal) lines.push(s.sideGoalDone ? `Side goal done: ${goal.text}` : `Side goal: ${goal.text} (${goal.progress(s)})`);
+  const fc = forecastFor(game);
+  if (fc) lines.push(fc.line);
   // The panel grows to fit its lines (a hungry, phone-cut, overdue morning has nine of them).
   let need = 0;
   for (const line of lines) {
@@ -261,13 +325,18 @@ export function apartmentScreen(ctx, game) {
   for (const line of lines) {
     const warn = /OVERDUE|Phone cut|Hungry/.test(line);
     const monthLine = line.startsWith('This month') || line.startsWith('Side goal');
-    ly = drawWrapped(ctx, warn ? '⚠ ' + line : line, 380, ly, 370, monthLine ? 18 : 20, { size: monthLine ? 13 : 14, color: warn ? '#ff6b5e' : line.startsWith('Rested') || line.startsWith('Side goal done') ? '#2ecc71' : monthLine ? '#f5deb3' : '#e0e0e0' });
+    const fcLine = fc && line === fc.line;
+    ly = drawWrapped(ctx, warn ? '⚠ ' + line : line, 380, ly, 370, monthLine ? 18 : 20, { size: monthLine ? 13 : 14, color: warn ? '#ff6b5e' : fcLine ? (fc.warn ? '#ffb27a' : '#9fe3b8') : line.startsWith('Rested') || line.startsWith('Side goal done') ? '#2ecc71' : monthLine ? '#f5deb3' : '#e0e0e0' });
   }
 
   // debt quick-pay, right under the panel
   let by = 130 + panelH;
   if (s.unpaidRent > 0 && s.cash >= s.unpaidRent) {
     button(ctx, 360, by, 250, 40, `Pay Overdue Rent $${s.unpaidRent}`, { color: '#7a3020', onClick: () => game.payDebt('rent') });
+    by += 48;
+  } else if (s.unpaidRent > 0 && game.partialRentAmount()) {
+    // Part now, the rest later: half or more buys a grace week (loop.js payRentPartial).
+    button(ctx, 360, by, 250, 40, `Pay $${game.partialRentAmount()} toward rent`, { color: '#7a5a20', fontSize: 15, onClick: () => game.payRentPartial() });
     by += 48;
   }
   if (s.phoneCut && s.cash >= s.unpaidPhone) {
@@ -471,6 +540,15 @@ function outcomeCard(ctx, game) {
   const ey = drawWrapped(ctx, o.text, 105, 168, 590, 24, { size: 17, color: '#f0f0f0' });
   const fx = effectLine(o.effects);
   drawText(ctx, fx || 'No change', 105, Math.min(ey + 8, 270), { size: 15, weight: 'bold', color: '#f5deb3' });  // neutral: a cost is not shown as a win
+  if (o.lesson && o.known) {
+    // Seen before (this run or an earlier one): one quiet line, so a fourth run is not a reread of
+    // the first. The full card is still there the first time (2026-10-07 pacing).
+    panel(ctx, 80, 300, 640, 58, { alpha: 0.8 });
+    drawText(ctx, 'TAKEAWAY', 105, 324, { size: 11, weight: 'bold', color: '#c9a876' });
+    drawText(ctx, o.lesson, 105, 344, { size: 13, color: '#e8dcc4', maxWidth: 595 });
+    button(ctx, 300, 378, 200, 52, 'Continue', { color: '#2c6e49', onClick: () => game.continueOutcome() });
+    return;
+  }
   if (o.lesson) {
     panel(ctx, 80, 300, 640, 128);
     ctx.fillStyle = '#f1c40f'; ctx.fillRect(82, 302, 636, 4);
@@ -723,7 +801,10 @@ export function eveningScreen(ctx, game) {
     y = drawWrapped(ctx, `• ${g2.title} (+$${g2.payout})`, 70, y, 300, 18, { size: 13, color: '#c9a876' }) + 1;
   }
   if (s.unpaidRent > 0) {
-    drawWrapped(ctx, `⚠ Overdue rent $${s.unpaidRent} — eviction in ${14 - s.rentOverdueDays} days`, 70, Math.max(y, 340), 300, 18, { size: 13, color: '#ff6b5e' });
+    drawWrapped(ctx, `⚠ Overdue rent $${s.unpaidRent} — eviction in ${daysToEviction(s)} days`, 70, Math.max(y, 340), 300, 18, { size: 13, color: '#ff6b5e' });
+  } else {
+    const fc = forecastFor(game);
+    if (fc) drawWrapped(ctx, fc.line, 70, Math.max(y + 4, 330), 300, 18, { size: 13, color: fc.warn ? '#ffb27a' : '#9fe3b8' });
   }
 
   // evening choice panel (right)
@@ -735,6 +816,8 @@ export function eveningScreen(ctx, game) {
   if (canBack && !game.shopOpen) button(ctx, 270, 526, 110, 52, '← Back', { color: '#5d4023', onClick: () => game.backFromEvening() });
   if (!game.shopOpen && s.unpaidRent > 0 && s.cash >= s.unpaidRent) {
     button(ctx, 390, 526, 240, 52, `Pay Rent Debt $${s.unpaidRent}`, { color: '#7a3020', onClick: () => game.payDebt('rent') });
+  } else if (!game.shopOpen && !game.billsOpen && !game.wrapUpOpen && s.unpaidRent > 0 && game.partialRentAmount()) {
+    button(ctx, 390, 526, 240, 52, `Pay $${game.partialRentAmount()} toward rent`, { color: '#7a5a20', fontSize: 15, onClick: () => game.payRentPartial() });
   } else if (!game.shopOpen && !game.billsOpen && !game.wrapUpOpen && game.canPayRentEarly()) {
     button(ctx, 390, 526, 240, 52, `Pay rent early $${game.rentEarlyAmount()}`, { color: '#2c5a6e', fontSize: 15, onClick: () => game.payRentEarly() });
   }
@@ -924,9 +1007,15 @@ function billsModal(ctx, game) {
     const paid = game.billsPaid[b.kind];
     drawText(ctx, `${b.label}: $${amt}${paid ? (b.kind === 'rent' && game.billsPaidEarly ? '  ✓ PAID EARLY' : '  ✓ PAID') : ''}`, 210, by + 16, { size: 15, weight: 'bold', color: paid ? '#2ecc71' : '#f0f0f0' });
     const hint = game.billsHint && game.billsHint.kind === b.kind && performance.now() - game.billsHint.at < 4500 ? game.billsHint.text : null;
+    const partHere = b.kind === 'rent' && !paid && s.cash < amt && game.partialRentAmount();
     if (hint) drawWrapped(ctx, hint, 210, by + 33, 280, 13, { size: 11, weight: 'bold', color: '#ff8a7e', shadow: false });
-    else drawText(ctx, b.warn, 210, by + 34, { size: 11, color: '#a89878', maxWidth: 280 });
-    if (!paid) {
+    else if (!partHere) drawText(ctx, b.warn, 210, by + 34, { size: 11, color: '#a89878', maxWidth: 280 });
+    const part = b.kind === 'rent' && !paid && s.cash < amt ? game.partialRentAmount() : 0;
+    if (part) {
+      // Short on rent: put part of it down now; half or more earns a grace week.
+      button(ctx, 500, by, 96, 40, 'Pay part', { color: '#7a5a20', fontSize: 14, onClick: () => game.payRentPartial() });
+      if (!hint) drawText(ctx, `Short. Put $${part} toward it now; half or more buys a grace week.`, 210, by + 34, { size: 11, color: '#f5c27a', maxWidth: 280 });
+    } else if (!paid) {
       button(ctx, 500, by, 96, 40, 'Pay', {
         color: '#2c6e49',
         disabled: s.cash < amt,
@@ -1023,7 +1112,7 @@ export function settingsModal(ctx, game) {
 /** One line for what rent needs next, with the amount (QA round 3 #10). */
 export function rentStatusLine(game) {
   const s = game.state;
-  if (s.unpaidRent > 0) return { text: `Overdue rent $${s.unpaidRent}  ·  eviction in ${Math.max(0, 14 - s.rentOverdueDays)} days`, warn: true };
+  if (s.unpaidRent > 0) return { text: `Overdue rent $${s.unpaidRent}  ·  eviction in ${daysToEviction(s)} days`, warn: true };
   if (s.rentPrepaid) return { text: `This week's rent is paid  ·  next due in ${Math.max(0, s.daysUntilBills)} days`, warn: false };
   const amt = game.rentEarlyAmount();
   const d = s.daysUntilBills;
@@ -1109,6 +1198,18 @@ export function monthMathModal(ctx, game) {
   ctx.fillRect(0, 0, 800, 600);
   UI.absorb();
   panel(ctx, 110, 40, 580, 520, { alpha: 0.98 });
+  if (game.mathPage === 1) {
+    // WHY IT WENT THIS WAY (2026-10-07): the month's own numbers, read back as reasons.
+    drawText(ctx, 'WHY IT WENT THIS WAY', 400, 80, { size: 24, weight: 'bold', color: '#ffd700', align: 'center' });
+    let y = 122;
+    for (const line of monthInsights(game.state)) {
+      ctx.fillStyle = '#f1c40f'; ctx.beginPath(); ctx.arc(146, y - 5, 4, 0, Math.PI * 2); ctx.fill();
+      y = drawWrapped(ctx, line, 160, y, 500, 21, { size: 15, color: '#f0f0f0' }) + 12;
+    }
+    button(ctx, 180, 490, 200, 48, '‹ The numbers', { ghost: true, fontSize: 15, onClick: () => { game.mathPage = 0; } });
+    button(ctx, 420, 490, 200, 48, 'Close', { color: '#2c6e49', onClick: () => { game.mathOpen = false; game.mathPage = 0; } });
+    return;
+  }
   drawText(ctx, 'THE MATH OF THE MONTH', 400, 80, { size: 24, weight: 'bold', color: '#ffd700', align: 'center' });
   const rows = [
     ['Paid hours worked', `${k.hours} h`],
@@ -1128,7 +1229,8 @@ export function monthMathModal(ctx, game) {
     : "With no paid hours, a week's rent was out of reach from the start.";
   let y = drawWrapped(ctx, line, 400, 330, 520, 22, { size: 16, color: '#ffffff', align: 'center' }) + 8;
   drawWrapped(ctx, "The pay per gig, the rent, and the chance a client doesn't pay were set by the job, not by you. Your choices moved these numbers a little. They didn't set them.", 400, y, 520, 21, { size: 15, color: '#c9e4d3', align: 'center' });
-  button(ctx, 300, 490, 200, 48, 'Close', { color: '#2c6e49', onClick: () => { game.mathOpen = false; } });
+  button(ctx, 180, 490, 200, 48, 'Why it went this way ›', { color: '#6b4a2e', fontSize: 14, onClick: () => { game.mathPage = 1; } });
+  button(ctx, 420, 490, 200, 48, 'Close', { color: '#2c6e49', onClick: () => { game.mathOpen = false; game.mathPage = 0; } });
 }
 
 // ---------- SUMMARY (day 30) ----------
