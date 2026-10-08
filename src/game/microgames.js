@@ -605,7 +605,7 @@ export class SortReturns {
     this.variant = opts.variant ?? (items ? false : variantFor(state, 'SORT!'));
     this.introKey = this.variant ? 'SORT!:final' : 'SORT!';
     this.hint = this.variant
-      ? 'New rule: FINAL SALE items cannot be returned at all. Otherwise: receipt + tags refund, receipt only exchange, no receipt credit.'
+      ? 'Final sale: no return. Receipt + tags: refund. Receipt only: exchange. Else: credit.'
       : 'Receipt and tags: refund. Receipt, no tags: exchange. No receipt: store credit.';
     this.d = difficultyFactor(state);
     const combos = shuffle([[true, true], [true, false], [false, true], [true, true], [false, false], [true, false]]);
