@@ -2,14 +2,19 @@
 // iOS ignores HTMLMediaElement.volume, so mute must work through the Web Audio graph and by pausing
 // the element; unmute must start the element again. Real output can't be heard under Node, so this
 // checks the graph and the element with a stub AudioContext.
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 class FakeParam { constructor(v) { this.value = v; } setTargetAtTime(v) { this.value = v; } setValueAtTime(v) { this.value = v; } linearRampToValueAtTime() {} exponentialRampToValueAtTime() {} }
 class FakeNode { connect(n) { return n; } }
 class FakeGain extends FakeNode { constructor() { super(); this.gain = new FakeParam(1); } }
 class FakeCtx {
-  constructor() { this.state = 'running'; this.currentTime = 0; this.destination = new FakeNode(); }
+  constructor() {
+    this.state = FakeCtx.startState; this.currentTime = 0; this.sampleRate = 48000; this.destination = new FakeNode(); this.primed = 0;
+    this.sessionAtCreate = globalThis.navigator?.audioSession?.type;
+  }
   createGain() { return new FakeGain(); }
+  createBuffer() { return {}; }
+  createBufferSource() { const ctx = this; return Object.assign(new FakeNode(), { buffer: null, start() { ctx.primed++; } }); }
   createOscillator() { return Object.assign(new FakeNode(), { frequency: new FakeParam(0), start() {}, stop() {}, type: '' }); }
   createMediaElementSource(el) { this.source = el; return new FakeNode(); }
   resume() { this.state = 'running'; return Promise.resolve(); }
@@ -25,6 +30,7 @@ let audio, settings, ctxs;
 beforeEach(async () => {
   vi.resetModules();
   ctxs = [];
+  FakeCtx.startState = 'running';
   FakeAudio.last = undefined;
   globalThis.window.AudioContext = class extends FakeCtx { constructor() { super(); ctxs.push(this); } };
   globalThis.Audio = FakeAudio;
@@ -119,5 +125,54 @@ describe('music states (2026-10-07)', () => {
     settings.muted = false; audio.applyAudioSettings();
     expect(FakeAudio.last.src).toMatch(/summary-bgm/);
     expect(FakeAudio.last.paused).toBe(false);
+  });
+});
+
+// iPhone audio (2026-10-08), the same defect Tour Life had. Two WebKit rules no Chromium test sees:
+//   1. iOS gives web audio an 'ambient' session, which the Ring/Silent switch mutes outright, unless
+//      the page asks for 'playback' before it makes its AudioContext.
+//   2. A context made or resumed outside a touchend/click/keydown stays silent; inside one, WebKit
+//      opens the output once a source starts, so unlock() also starts a one-sample silent buffer.
+describe('iPhone audio (2026-10-08)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("asks iOS for a 'playback' session before the context exists, so the Silent switch does not mute the game", () => {
+    vi.stubGlobal('navigator', { audioSession: { type: 'auto' } });
+    audio.unlock();
+    expect(ctxs[0].sessionAtCreate).toBe('playback');
+  });
+
+  it('still unlocks where there is no audioSession API (Android Chrome, desktop)', () => {
+    vi.stubGlobal('navigator', {});
+    expect(() => audio.unlock()).not.toThrow();
+    expect(ctxs).toHaveLength(1);
+  });
+
+  it('the first tap resumes the context and starts a silent buffer inside the gesture', () => {
+    FakeCtx.startState = 'suspended';
+    audio.unlock();
+    expect(ctxs[0].state).toBe('running');
+    expect(ctxs[0].primed).toBe(1);
+  });
+
+  it('a context a sound made outside a gesture is resumed and primed by the next tap', () => {
+    FakeCtx.startState = 'suspended';
+    const resume = FakeCtx.prototype.resume;
+    FakeCtx.prototype.resume = () => Promise.reject(new Error('NotAllowedError'));   // outside a gesture: refused
+    audio.playClick();               // the game loop plays a sound before any tap
+    FakeCtx.prototype.resume = resume;
+    expect(ctxs[0].state).toBe('suspended');
+    expect(ctxs[0].primed).toBe(0);
+    audio.unlock();                  // the touchend that follows
+    expect(ctxs[0].state).toBe('running');
+    expect(ctxs[0].primed).toBe(1);
+    expect(ctxs).toHaveLength(1);
+  });
+
+  it('primes once for a new context, not on every tap once it is running', () => {
+    audio.unlock();
+    audio.unlock();
+    audio.unlock();
+    expect(ctxs[0].primed).toBe(1);
   });
 });
