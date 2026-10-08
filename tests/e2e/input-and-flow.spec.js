@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 import { boot, tapLogical, phase, settleMorning, step } from './helpers.js';
 
 async function dragLogical(page, x1, y1, x2, y2, steps = 8) {

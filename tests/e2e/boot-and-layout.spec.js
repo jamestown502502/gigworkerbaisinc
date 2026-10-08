@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 import { boot, tapLogical, phase, settleMorning, step } from './helpers.js';
 
 test('boots to a rendered first frame without hanging (QA #6)', async ({ page }) => {
@@ -34,28 +34,21 @@ test('first pointer activation unlocks audio (QA #9)', async ({ page, browserNam
   const hasWebAudio = await page.evaluate(() => typeof window.AudioContext !== 'undefined' || typeof window.webkitAudioContext !== 'undefined');
   test.skip(!hasWebAudio, 'this Playwright browser build has no Web Audio (real iOS Safari does)');
   await tapLogical(page, 400, 300);
-  const state = await page.evaluate(async () => {
-    const mod = await import('/src/engine/audio.js').catch(() => null);
-    return mod ? mod.contextState() : 'n/a';
-  });
-  // In the built bundle the module path differs; fall back to the unlock flag exposed by the game.
-  if (state === 'n/a') {
-    const running = await page.evaluate(() => new Promise((r) => setTimeout(() => r(window.__audioState && window.__audioState()), 200)));
-    test.skip(running === undefined, 'audio probe not exposed in this build');
-    // The regression this guards is that unlock() was wired to `touchstart`, which Android Chrome
-    // does not count as a user activation — when that happens no AudioContext is ever constructed
-    // and the probe reads 'none'. So "not none" is the assertion that actually catches the bug,
-    // and it holds on every browser.
-    //
-    // Reaching 'running' additionally requires a working audio output device. GitHub's headless
-    // Linux runners have none, so Firefox there resumes to 'suspended' (it reaches 'running' on a
-    // real desktop Firefox, confirmed locally). Keep the strict check on Chromium only.
-    expect(running).not.toBe('none');
-    if (browserName === 'chromium') expect(running).toBe('running');
-  } else {
-    expect(['running', 'suspended']).toContain(state);
-    if (browserName === 'chromium') expect(state).toBe('running');
-  }
+  // Read the game's own probe. (This used to try import('/src/engine/audio.js') first, which only
+  // exists on a dev server: against the real build it fetched index.html as a module and logged a
+  // console error, surfaced by the error fixture on 2026-10-08.)
+  const running = await page.evaluate(() => new Promise((r) => setTimeout(() => r(window.__audioState && window.__audioState()), 200)));
+  test.skip(running === undefined, 'audio probe not exposed in this build');
+  // The regression this guards is that unlock() was wired to `touchstart`, which Android Chrome
+  // does not count as a user activation — when that happens no AudioContext is ever constructed
+  // and the probe reads 'none'. So "not none" is the assertion that actually catches the bug,
+  // and it holds on every browser.
+  //
+  // Reaching 'running' additionally requires a working audio output device. GitHub's headless
+  // Linux runners have none, so Firefox there resumes to 'suspended' (it reaches 'running' on a
+  // real desktop Firefox, confirmed locally). Keep the strict check on Chromium only.
+  expect(running).not.toBe('none');
+  if (browserName === 'chromium') expect(running).toBe('running');
 });
 
 test('first launch opens the character creator, then the tutorial; Skip is visible on every step (QA #5, #11, #16)', async ({ page }) => {

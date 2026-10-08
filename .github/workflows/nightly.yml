@@ -1,0 +1,51 @@
+name: Nightly flake hunt
+
+# The gate already runs the whole suite on every PR, so the nightly run hunts the thing a single
+# run cannot see: tests that pass most of the time. Every test runs 3 times against main with no
+# retries; any failure opens (or updates) a GitHub issue instead of blocking merges.
+on:
+  schedule:
+    - cron: '30 7 * * *'   # 07:30 UTC, about 3:30 am US Eastern
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  e2e:
+    name: nightly (repeat x3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium webkit firefox
+      - run: npx playwright test --repeat-each=3
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: nightly-traces
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  report:
+    needs: e2e
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Nightly flake hunt failing"
+          num=$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
+          body="Nightly run failed on $(date -u +%F): $RUN_URL"
+          if [ -n "$num" ]; then gh issue comment "$num" -R "$GITHUB_REPOSITORY" --body "$body";
+          else gh issue create -R "$GITHUB_REPOSITORY" --title "$title" --body "$body"; fi

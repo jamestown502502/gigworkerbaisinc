@@ -5,7 +5,8 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: 'tests/e2e',
   timeout: 60_000,
-  retries: process.env.CI ? 1 : 0,
+  // retries: 0 — a test that only passes on a retry is a coin flip, not a pass (2026-10-08 review).
+  retries: 0,
   workers: 2,
   reporter: process.env.CI ? [['github'], ['list']] : 'list',
   use: {
