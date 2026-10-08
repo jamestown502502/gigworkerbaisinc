@@ -28,7 +28,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium webkit
-      - run: npx playwright test tests/e2e/visual.spec.js --update-snapshots
+      - run: npx playwright test tests/e2e/visual.spec.js --project=desktop-chromium --project=iphone-webkit --update-snapshots
       - run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
