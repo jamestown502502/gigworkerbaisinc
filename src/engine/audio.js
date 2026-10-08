@@ -49,6 +49,11 @@ function ac() {
   const Ctor = window.AudioContext || window.webkitAudioContext;
   if (!Ctor) return null;                       // no Web Audio (old browser, test runner): silent
   if (!audioCtx) {
+    // iPhone (2026-10-08): iOS gives web audio an 'ambient' session by default, which the
+    // Ring/Silent switch mutes outright: every sound and the music. Ask for 'playback' (Safari 17+;
+    // elsewhere the API does not exist). Trade-off: like any music app, the game pauses the
+    // player's own music app while it is open.
+    try { const session = navigator.audioSession; if (session) session.type = 'playback'; } catch { /* not iOS */ }
     audioCtx = new Ctor();
     master = audioCtx.createGain();
     master.connect(audioCtx.destination);
@@ -77,10 +82,19 @@ function applyGains() {
 }
 
 /** Must be called from a real user-activation event (pointerup / touchend / keydown / click).
- *  Resumes the context and starts the BGM loop. Safe to call repeatedly. */
+ *  Resumes the context and starts the BGM loop. Safe to call repeatedly. While the context is
+ *  not yet running it also starts a one-sample silent buffer: inside a gesture, that is what makes
+ *  WebKit actually open the output for a context it made or resumed silently (iPhone, 2026-10-08). */
 export function unlock() {
   try {
+    const wasRunning = audioCtx && audioCtx.state === 'running';
     const ctx = ac();   // wakes a suspended or interrupted context (see wake)
+    if (ctx && !wasRunning && !backgrounded) {
+      const src = ctx.createBufferSource();
+      src.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+      src.connect(ctx.destination);
+      src.start(0);
+    }
     startBGM();
     unlocked = (ctx && ctx.state === 'running') || unlocked;
   } catch { /* no Web Audio — the game is silent but playable */ }
