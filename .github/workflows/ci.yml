@@ -1,13 +1,23 @@
 name: CI
 
+# The per-PR GATE (about 10 minutes).
+# - Required to merge (GitHub ruleset on main requires the `gate` job).
+# - Required to go live (Vercel Deployment Check on `gate`: production builds, but is not
+#   promoted to the public domain until this passes for the merged commit).
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   unit-and-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -16,10 +26,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - name: Gotcha guard (bugs we have shipped before)
+        run: npm run guard
       - run: npm run build
 
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     needs: unit-and-build
     steps:
       - uses: actions/checkout@v4
@@ -34,4 +47,17 @@ jobs:
         if: failure()
         with:
           name: playwright-traces
-          path: test-results/
+          path: |
+            playwright-report/
+            test-results/
+
+  # One stable check name for the ruleset and Vercel to require.
+  gate:
+    if: always()
+    needs: [unit-and-build, e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "unit-and-build=${{ needs.unit-and-build.result }} e2e=${{ needs.e2e.result }}"
+          test "${{ needs.unit-and-build.result }}" = success
+          test "${{ needs.e2e.result }}" = success

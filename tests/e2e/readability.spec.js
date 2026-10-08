@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 import { boot, settleMorning, auditText as audit } from './helpers.js';
 
 // Readability audit (2026-09-28). The text-overlap sweep missed a Text Back bubble spilling onto

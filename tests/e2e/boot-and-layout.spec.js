@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 import { boot, tapLogical, phase, settleMorning, step } from './helpers.js';
 
 test('boots to a rendered first frame without hanging (QA #6)', async ({ page }) => {
@@ -34,28 +34,21 @@ test('first pointer activation unlocks audio (QA #9)', async ({ page, browserNam
   const hasWebAudio = await page.evaluate(() => typeof window.AudioContext !== 'undefined' || typeof window.webkitAudioContext !== 'undefined');
   test.skip(!hasWebAudio, 'this Playwright browser build has no Web Audio (real iOS Safari does)');
   await tapLogical(page, 400, 300);
-  const state = await page.evaluate(async () => {
-    const mod = await import('/src/engine/audio.js').catch(() => null);
-    return mod ? mod.contextState() : 'n/a';
-  });
-  // In the built bundle the module path differs; fall back to the unlock flag exposed by the game.
-  if (state === 'n/a') {
-    const running = await page.evaluate(() => new Promise((r) => setTimeout(() => r(window.__audioState && window.__audioState()), 200)));
-    test.skip(running === undefined, 'audio probe not exposed in this build');
-    // The regression this guards is that unlock() was wired to `touchstart`, which Android Chrome
-    // does not count as a user activation — when that happens no AudioContext is ever constructed
-    // and the probe reads 'none'. So "not none" is the assertion that actually catches the bug,
-    // and it holds on every browser.
-    //
-    // Reaching 'running' additionally requires a working audio output device. GitHub's headless
-    // Linux runners have none, so Firefox there resumes to 'suspended' (it reaches 'running' on a
-    // real desktop Firefox, confirmed locally). Keep the strict check on Chromium only.
-    expect(running).not.toBe('none');
-    if (browserName === 'chromium') expect(running).toBe('running');
-  } else {
-    expect(['running', 'suspended']).toContain(state);
-    if (browserName === 'chromium') expect(state).toBe('running');
-  }
+  // Read the game's own probe. (This used to try import('/src/engine/audio.js') first, which only
+  // exists on a dev server: against the real build it fetched index.html as a module and logged a
+  // console error, surfaced by the error fixture on 2026-10-08.)
+  const running = await page.evaluate(() => new Promise((r) => setTimeout(() => r(window.__audioState && window.__audioState()), 200)));
+  test.skip(running === undefined, 'audio probe not exposed in this build');
+  // The regression this guards is that unlock() was wired to `touchstart`, which Android Chrome
+  // does not count as a user activation — when that happens no AudioContext is ever constructed
+  // and the probe reads 'none'. So "not none" is the assertion that actually catches the bug,
+  // and it holds on every browser.
+  //
+  // Reaching 'running' additionally requires a working audio output device. GitHub's headless
+  // Linux runners have none, so Firefox there resumes to 'suspended' (it reaches 'running' on a
+  // real desktop Firefox, confirmed locally). Keep the strict check on Chromium only.
+  expect(running).not.toBe('none');
+  if (browserName === 'chromium') expect(running).toBe('running');
 });
 
 test('first launch opens the character creator, then the tutorial; Skip is visible on every step (QA #5, #11, #16)', async ({ page }) => {
@@ -178,22 +171,35 @@ test('Continue closes the prompt and keeps the run', async ({ page }) => {
 
 // Google Play expects a wrapped web app to work offline at a basic level. Before public/sw.js the
 // game showed the browser's offline page. Chromium only: it is the engine inside an Android TWA.
-test('boots offline after one online visit (Android TWA readiness)', async ({ page, context, browserName }) => {
-  test.skip(browserName !== 'chromium', 'Android wraps Chromium; other engines differ in offline SW support under Playwright');
-  await page.goto('/');
-  await page.waitForFunction(() => window.__booted === true, null, { timeout: 15_000 });
-  await page.waitForFunction(async () => {
-    if (!navigator.serviceWorker.controller) return false;
-    const c = await caches.open('gigworker-v1');
-    const keys = (await c.keys()).map((r) => new URL(r.url).pathname);
-    return keys.some((p) => p.startsWith('/assets/')) && keys.includes('/media/apartment.png');
-  }, null, { timeout: 15_000 });
-  await context.setOffline(true);
-  await page.reload();
-  await page.waitForFunction(() => window.__booted === true, null, { timeout: 15_000 });
-  const art = await page.evaluate(async () => !!(await caches.match('/media/apartment.png')));
-  expect(art).toBe(true);
-  await context.setOffline(false);
+test.describe('offline', () => {
+  // Offline on purpose: the service worker's background refresh of a cached file fails, and the
+  // browser logs that as net::ERR_FAILED. That is the expected sound of being offline, not a bug.
+  test.use({ allowConsoleErrors: [/net::ERR_(FAILED|INTERNET_DISCONNECTED)/] });
+
+  test('boots offline after one online visit (Android TWA readiness)', async ({ page, context, browserName }) => {
+    test.skip(browserName !== 'chromium', 'Android wraps Chromium; other engines differ in offline SW support under Playwright');
+    await page.goto('/');
+    await page.waitForFunction(() => window.__booted === true, null, { timeout: 15_000 });
+    // Wait until EVERY file this first visit loaded is cached (2026-10-08: this used to go offline
+    // once any one /assets/ file was cached, racing the worker's caching of the rest, which made
+    // the offline reload fail now and then; a real player goes offline long after this finishes).
+    await page.waitForFunction(async () => {
+      if (!navigator.serviceWorker.controller) return false;
+      const c = await caches.open('gigworker-v1');
+      const cached = new Set((await c.keys()).map((r) => new URL(r.url).pathname));
+      const loaded = performance.getEntriesByType('resource')
+        .map((e) => new URL(e.name))
+        .filter((u) => u.origin === location.origin && !u.pathname.endsWith('.mp3'))
+        .map((u) => u.pathname);
+      return loaded.length > 0 && cached.has(location.pathname) && loaded.every((p) => cached.has(p)) && cached.has('/media/apartment.png');
+    }, null, { timeout: 30_000 });
+    await context.setOffline(true);
+    await page.reload();
+    await page.waitForFunction(() => window.__booted === true, null, { timeout: 15_000 });
+    const art = await page.evaluate(async () => !!(await caches.match('/media/apartment.png')));
+    expect(art).toBe(true);
+    await context.setOffline(false);
+  });
 });
 
 test('settings closes on a tap outside the panel, not inside it (QA round 2 #10)', async ({ page }) => {

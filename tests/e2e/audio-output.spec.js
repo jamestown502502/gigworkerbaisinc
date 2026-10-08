@@ -11,7 +11,7 @@
 //
 // Chromium profiles only: Playwright's WebKit build has no Web Audio on Windows, and Firefox's
 // prototypes differ enough that the splice is not worth maintaining twice.
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 import { boot } from './helpers.js';
 
 function installProbe({ silentSwitchOn }) {

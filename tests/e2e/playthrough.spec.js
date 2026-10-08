@@ -6,7 +6,7 @@
 // real requestAnimationFrame loop, real taps (choices, the challenge itself, the receipt's
 // Continue), and checks that each one reaches its result, prints and stamps the receipt, and hands
 // the player back.
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 import { boot } from './helpers.js';
 
 const JOBS = [

@@ -5,3 +5,5 @@ dist/
 
 test-results/
 playwright-report/
+tests/**/*-win32.png
+tests/**/*-darwin.png

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 import { boot, settleMorning, step, auditText } from './helpers.js';
 
 // Text-overlap sweep: every screen is rendered with the text probe on, and no two drawn
