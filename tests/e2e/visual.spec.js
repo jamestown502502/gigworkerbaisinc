@@ -80,7 +80,9 @@ test('twelve screens match their approved baselines', async ({ page }) => {
   for (const [name, setup] of SCREENS) {
     await page.evaluate(setup);
     await page.evaluate(() => window.__game.step(1 / 60));
+    // maxDiffPixels 50: these screens are pixel-identical run to run. The first setting, 1% of the
+    // image, was too loose to catch a covered button (found on Tour Life, 2026-10-08).
     await expect.soft(page.locator('canvas'), `${name} looks different from its baseline`)
-      .toHaveScreenshot(`${name}.png`, { maxDiffPixelRatio: 0.01 });
+      .toHaveScreenshot(`${name}.png`, { maxDiffPixels: 50 });
   }
 });
