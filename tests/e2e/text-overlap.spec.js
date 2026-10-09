@@ -45,7 +45,15 @@ test('no two texts overlap on any screen', async ({ page }) => {
     await page.evaluate((k) => { const g = window.__game; g.qte = null; g.currentGig.type = k; g.afterChoices(); g.step(1); }, kind);
     problems.push(...await sweep(page, `qte-${kind}`));
   }
-  await page.evaluate(() => { const g = window.__game; g.qte = null; g.node = null; g.finishGig({ success: false, score: 12 }); g.step(2); });
+  // Audit the receipt once it has printed, been stamped, and every delta token has landed on its
+  // meter. A fixed step(2) caught a "+$7" token mid-landing on the cash meter whenever the random
+  // gig printed enough lines to push the stamp late (flaky since at least 2026-10-02; hidden by
+  // retries until 2026-10-08). The token landing on the meter is the intended effect, not overlap.
+  await page.evaluate(() => {
+    const g = window.__game; g.qte = null; g.node = null; g.finishGig({ success: false, score: 12 });
+    for (let i = 0; i < 600 && !g.receiptStamped; i++) g.step(1 / 60);
+    g.step(1.5);                                      // longest token: 0.34 s delay + 0.7 s flight
+  });
   problems.push(...await sweep(page, 'results'));
   await page.evaluate(() => { const g = window.__game; g.results = null; g.goEvening(); g.ping = null; g.step(1); });
   problems.push(...await sweep(page, 'evening'));
