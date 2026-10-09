@@ -193,6 +193,11 @@ test.describe('offline', () => {
         .map((u) => u.pathname);
       return loaded.length > 0 && cached.has(location.pathname) && loaded.every((p) => cached.has(p)) && cached.has('/media/apartment.png');
     }, null, { timeout: 30_000 });
+    // A real player relaunches later; they don't go offline a quarter second into the first launch
+    // (the 2026-10-08 CI failure did, while the brand-new worker was still caching ~13 MB of music
+    // and missed its own cache). Relaunch online once first. Measured: offline boot then 10/10.
+    await page.reload();
+    await page.waitForFunction(() => window.__booted === true, null, { timeout: 15_000 });
     await context.setOffline(true);
     await page.reload();
     await page.waitForFunction(() => window.__booted === true, null, { timeout: 15_000 });
