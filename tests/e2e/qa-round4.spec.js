@@ -49,6 +49,7 @@ async function screens(page, label) {
   await shot(() => {
     const g = window.__game, L = window.__longform;
     g.qteKind = 'skill'; g.qte = new L.RushShift(g.state); g.qte.accepted = 9; g.qte.badTaken = 5; g.qte.pay = 52; g.qte.miles = 60; g.qte.clock = 180; g.qte.finish(); g.qteEndTimer = 2;
+    g.step(0.4); g.qteEndTimer = 2;   // the red fumble flash (0.28 s, by design) has faded
   }, 'RUSH! below target, with the why');
   await shot(() => { const g = window.__game, Q = window.__qte; g.phase = 'EVENING_GAME'; g.qteKind = 'evening'; g.qteEndTimer = 0; g.qte = new Q.Breathe(); g.qte.chooseT = 3; }, 'breathing chooser with previews');
   await shot(() => { const g = window.__game; g.qte = null; g.phase = 'MORNING'; g.settingsOpen = true; }, 'settings with large text and full screen');

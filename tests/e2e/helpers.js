@@ -23,6 +23,17 @@ export async function tapLogical(page, x, y) {
   await step(page, 6 / 60);
 }
 
+/** Tap a button by its label, wherever the layout puts it. The accessibility layer (ui/a11y.js)
+ *  mirrors every labelled button at its drawn position, so its box is the button's box; the tap is a
+ *  real one on the canvas underneath (the mirror never takes pointer events). */
+export async function tapLabel(page, label) {
+  await step(page, 1 / 60);
+  const box = await page.locator('#a11y-layer button', { hasText: label }).first().boundingBox();
+  if (!box) throw new Error(`tapLabel: no button labelled "${label}"`);
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await step(page, 6 / 60);
+}
+
 export async function step(page, seconds) {
   await page.evaluate((s) => window.__game.step(s), seconds);
 }

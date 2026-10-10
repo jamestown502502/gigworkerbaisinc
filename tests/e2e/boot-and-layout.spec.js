@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures.js';
-import { boot, tapLogical, phase, settleMorning, step } from './helpers.js';
+import { boot, tapLabel, tapLogical, phase, settleMorning, step } from './helpers.js';
 
 test('boots to a rendered first frame without hanging (QA #6)', async ({ page }) => {
   await boot(page);
@@ -123,10 +123,10 @@ test('settings: reset progress needs a confirm and keeps settings (QA #18)', asy
   await boot(page, { save: { tutorialSeen: true, day: 7, cash: 777, settings: { muted: true } } });
   await tapLogical(page, 778, 16); // gear
   expect(await page.evaluate(() => window.__game.settingsOpen)).toBe(true);
-  await tapLogical(page, 495, 482); // Reset progress
+  await tapLabel(page, 'Start new game'); // reset progress
   expect(await page.evaluate(() => window.__game.confirmReset)).toBe(true);
   expect(await page.evaluate(() => window.__game.state.day)).toBe(7);
-  await tapLogical(page, 495, 482); // YES
+  await tapLabel(page, 'Start over? YES');
   await step(page, 1);
   expect(await page.evaluate(() => window.__game.state.day)).toBe(1);
   expect(await page.evaluate(() => window.__game.state.settings.muted)).toBe(true);
@@ -144,8 +144,8 @@ test('during the tutorial, settings open, and New game / Close inside them work'
   expect(await page.evaluate(() => window.__game.settingsOpen)).toBe(false);
   expect(await page.evaluate(() => window.__game.tutorialVisible())).toBe(true); // tutorial resumes
   await tapLogical(page, 778, 16);
-  await tapLogical(page, 495, 482); // Start new game
-  await tapLogical(page, 495, 482); // Start over? YES
+  await tapLabel(page, 'Start new game');
+  await tapLabel(page, 'Start over? YES');
   await step(page, 1);
   expect(await phase(page)).toBe('CREATE');
 });
