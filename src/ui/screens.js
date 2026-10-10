@@ -756,15 +756,15 @@ function resultCard(ctx, game) {
   if (globalThis.__textProbe) globalThis.__textProbe.push({ layer: true });
   ctx.fillStyle = `rgba(8, 6, 4, ${0.88 * k})`;
   roundRectPath(ctx, 92, 102, 616, 426, 12); ctx.fill();
-  const x = 190, y = r.lesson ? (r.why ? 124 : 146) : 160, w = 420, h = r.lesson ? (r.why ? 380 : 330) : 290;
+  const skillTag = skillFor(q.name);
+  const tagH = (skillTag && r.lesson ? 20 : 0) + (r.why ? 12 : 0);
+  const x = 190, y = r.lesson ? (r.why ? 116 : 138) : 160, w = 420, h = (r.lesson ? (r.why ? 380 : 330) : 290) + tagH;
   ctx.save();
   modalScale(ctx, t, 400, y + h / 2);
   panel(ctx, x, y, w, h, { alpha: 0.98 });
   const accent = r.success ? '#2ecc71' : '#e74c3c';
   ctx.fillStyle = accent; ctx.fillRect(x + 2, y + 2, w - 4, 4);
-  const skillTag = skillFor(q.name);
-  if (skillTag) drawText(ctx, `SKILL: ${skillTag.toUpperCase()}`, 400, y + 27, { size: 12, weight: 'bold', color: '#8ec6ea', align: 'center' });
-  drawText(ctx, title, 400, y + 57, { size: 28, weight: 'bold', color: r.success ? '#2ecc71' : '#ff6b5e', align: 'center', outline: true });
+  drawText(ctx, title, 400, y + 46, { size: 28, weight: 'bold', color: r.success ? '#2ecc71' : '#ff6b5e', align: 'center', outline: true });
   if (game.fiveStarsT !== null && game.fiveStarsT !== undefined) fiveStarRow(ctx, 400, y + 96, game.fiveStarsT, game.state.settings.reduceMotion);
   else starRow(ctx, 400, y + 96, stars, k);
   // score bar fills to the score; the notch marks the "good job" line
@@ -777,7 +777,9 @@ function resultCard(ctx, game) {
   // The why: one real-world takeaway, so the score comes with a reason (2026-10-02). A shift game
   // first says what decided its result (QA round 4 #3).
   let ly = by + 70 + lines.length * 20;
-  if (r.why) ly = drawWrapped(ctx, r.why, 400, ly, w - 44, 18, { size: 14, weight: 'bold', color: r.success ? '#9fe0b5' : '#ffb3a8', align: 'center' }) + 4;
+  // The skill this challenge practised, named above its lesson (QA round 4 depth pass).
+  if (skillTag && r.lesson) { drawText(ctx, `SKILL: ${skillTag.toUpperCase()}`, 400, ly, { size: 12, weight: 'bold', color: '#8ec6ea', align: 'center' }); ly += 20; }
+  if (r.why) ly = drawWrapped(ctx, r.why, 400, ly, w - 60, 20, { size: 14, color: r.success ? '#9fe0b5' : '#ffb3a8', align: 'center' }) + 8;
   if (r.lesson) drawWrapped(ctx, r.lesson, 400, ly, w - 44, 18, { size: 14, color: '#e8c98a', align: 'center' });
   if (t > 0.4) drawText(ctx, 'Tap to continue', 400, y + h - 16, { size: 13, color: '#e8d9b8', align: 'center' });
   ctx.restore();
