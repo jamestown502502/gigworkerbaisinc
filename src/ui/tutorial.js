@@ -7,14 +7,16 @@ export const TUTORIAL_STEPS = [
   { phase: 'MORNING', rect: null, text: 'Welcome to the gig economy. Survive 30 days: pay rent, stay healthy, build your reputation.' },
   { phase: 'MORNING', rect: [0, 0, 800, 56], text: 'Five meters: cash, stress, reputation, energy, and balance (your overall wellbeing). Tap any of them for a hint.' },
   { phase: 'MORNING', rect: [0, 0, 800, 56], text: 'Energy is the hard limit. A gig shows its full energy cost before you accept, and you cannot take one you cannot afford. Hit zero and the day ends.' },
-  { phase: 'MORNING', rect: [60, 526, 210, 52], text: 'Tap "Check Listings" to see today\'s available gigs.' },
+  // `ready`: a step waits until what it points at is on screen (QA round 4 #6: this one used to
+  // highlight an empty spot while the morning's news and events were still up).
+  { phase: 'MORNING', rect: [60, 526, 210, 52], text: 'Tap "Check Listings" to see today\'s available gigs.', ready: (g) => g.morningReady && !g.shopOpen && !g.restDay && !g.activeEvent && !g.rentPay && !g.confirmRentEarly },
   { phase: 'BROWSE', rect: [90, 100, 560, 340], text: 'Each gig shows payout, hours, location, risk, and energy cost. Tap a card to select it. Drag or use the arrows to scroll.' },
   { phase: 'BROWSE', rect: [200, 526, 220, 52], text: 'Selected a gig? Accept it here to head out.' },
   { phase: 'GIG', rect: [80, 120, 640, 140], text: 'Your choices matter. They affect your cash, stress, reputation, and energy.' },
   { phase: 'GIG', rect: null, text: 'Some gigs have timed challenges; social gigs start by reading the client. High stress makes challenges harder, and reading people well makes regulars.' },
-  { phase: 'EVENING', rect: [50, 100, 340, 300], text: "Rent is due every 7 days. Miss it for 14 days and you're evicted — game over." },
-  { phase: 'EVENING', rect: [410, 100, 340, 300], text: 'Evenings are a choice: wind down, call someone, or hustle late. What you do at night sets up tomorrow.' },
-  { phase: 'EVENING', rect: [60, 526, 200, 52], text: 'Sleep ends the day. Energy recovers (more with good balance), fresh gigs appear tomorrow.' },
+  { phase: 'EVENING', rect: [50, 100, 340, 300], text: "Rent is due every 7 days. Miss it for 14 days and you're evicted — game over.", ready: (g) => !g.billsOpen && !g.wrapUpOpen && !g.shopOpen && !g.rentPay && !(g.ping && !g.ping.resolved && !g.ping.snoozed) },
+  { phase: 'EVENING', rect: [410, 100, 340, 300], text: 'Evenings are a choice: wind down, call someone, or hustle late. What you do at night sets up tomorrow.', ready: (g) => !g.billsOpen && !g.wrapUpOpen && !g.shopOpen && !g.rentPay && !(g.ping && !g.ping.resolved && !g.ping.snoozed) },
+  { phase: 'EVENING', rect: [180, 526, 210, 52], text: 'Sleep ends the day. Energy recovers (more with good balance), fresh gigs appear tomorrow.', ready: (g) => !g.billsOpen && !g.wrapUpOpen && !g.shopOpen && !g.rentPay && !(g.ping && !g.ping.resolved && !g.ping.snoozed) },
 ];
 
 // Lerped highlight so the cutout glides between steps instead of jumping.

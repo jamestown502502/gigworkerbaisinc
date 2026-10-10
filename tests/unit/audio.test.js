@@ -16,15 +16,22 @@ class FakeCtx {
   createBuffer() { return {}; }
   createBufferSource() { const ctx = this; return Object.assign(new FakeNode(), { buffer: null, start() { ctx.primed++; } }); }
   createOscillator() { return Object.assign(new FakeNode(), { frequency: new FakeParam(0), start() {}, stop() {}, type: '' }); }
-  createMediaElementSource(el) { this.source = el; return new FakeNode(); }
+  createMediaElementSource(el) { this.source = el; (this.sources ||= []).push(el); return new FakeNode(); }
   resume() { this.state = 'running'; return Promise.resolve(); }
   suspend() { this.state = 'suspended'; return Promise.resolve(); }
 }
 class FakeAudio {
-  constructor(src) { this.src = src; this.paused = true; this.volume = 1; this.muted = false; FakeAudio.last = this; }
+  constructor(src) { this.src = src; this.paused = true; this.volume = 1; this.muted = false; FakeAudio.last = this; FakeAudio.all.push(this); }
   play() { this.paused = false; return Promise.resolve(); }
   pause() { this.paused = true; }
+  addEventListener(type, fn) { ((this.listeners ||= {})[type] ||= []).push(fn); }
 }
+
+
+/** The <audio> element for one track. Since QA round 4 #1 every player exists after the first tap,
+ *  so the most recently created element is no longer the one playing. */
+const track = (re) => FakeAudio.all.find((a) => re.test(a.src));
+const morningEl = () => track(/apartment-bgm/);
 
 let audio, settings, ctxs;
 beforeEach(async () => {
@@ -32,6 +39,7 @@ beforeEach(async () => {
   ctxs = [];
   FakeCtx.startState = 'running';
   FakeAudio.last = undefined;
+  FakeAudio.all = [];
   globalThis.window.AudioContext = class extends FakeCtx { constructor() { super(); ctxs.push(this); } };
   globalThis.Audio = FakeAudio;
   audio = await import('../../src/engine/audio.js');
@@ -42,13 +50,13 @@ beforeEach(async () => {
 describe('mute that works on iPhone and Android', () => {
   it('music runs through the Web Audio graph, not the element volume iOS ignores', () => {
     audio.unlock();
-    expect(ctxs[0].source).toBe(FakeAudio.last);
-    expect(FakeAudio.last.paused).toBe(false);
+    expect(ctxs[0].sources).toContain(morningEl());
+    expect(morningEl().paused).toBe(false);
   });
 
   it('mute pauses the music and mutes the element; unmute starts it again', () => {
     audio.unlock();
-    const el = FakeAudio.last;
+    const el = morningEl();
     settings.muted = true; audio.applyAudioSettings();
     expect(el.paused).toBe(true);
     expect(el.muted).toBe(true);
@@ -62,12 +70,12 @@ describe('mute that works on iPhone and Android', () => {
     audio.unlock();
     expect(FakeAudio.last).toBeUndefined();
     settings.muted = false; audio.applyAudioSettings();
-    expect(FakeAudio.last.paused).toBe(false);
+    expect(morningEl().paused).toBe(false);
   });
 
   it('going to the background silences everything; coming back restores it', () => {
     audio.unlock();
-    const el = FakeAudio.last;
+    const el = morningEl();
     audio.setBackgrounded(true);
     expect(el.paused).toBe(true);
     expect(ctxs[0].state).toBe('suspended');
@@ -81,14 +89,14 @@ describe('mute that works on iPhone and Android', () => {
     settings.muted = true; audio.applyAudioSettings();
     audio.setBackgrounded(true);
     audio.setBackgrounded(false);
-    expect(FakeAudio.last.paused).toBe(true);
+    expect(morningEl().paused).toBe(true);
   });
 });
 
 describe('QA round 3 #7: sound comes back after the app was backgrounded', () => {
   it('an iOS "interrupted" context is resumed on return, and the next tap restarts the music', () => {
     audio.unlock();
-    const el = FakeAudio.last;
+    const el = morningEl();
     audio.setBackgrounded(true);
     ctxs[0].state = 'interrupted';   // what Safari reports after a call or app switch
     el.play = () => Promise.reject(new Error('NotAllowedError')); // no gesture: the browser refuses
@@ -105,17 +113,19 @@ describe('music states (2026-10-07)', () => {
     vi.useFakeTimers();
     try {
       audio.unlock();
-      const morning = FakeAudio.last;
-      expect(morning.src).toMatch(/apartment-bgm/);
+      const morning = morningEl();
+      expect(morning.paused).toBe(false);
       audio.setMusicState('evening');
-      const evening = FakeAudio.last;
+      const evening = track(/evening-bgm/);
       expect(evening.src).toMatch(/evening-bgm/);
       expect(evening.paused).toBe(false);
       vi.advanceTimersByTime(2000);
       expect(morning.paused).toBe(true);
       expect(audio.currentMusicState()).toBe('evening');
+      const made = FakeAudio.all.length;
       audio.setMusicState('evening');            // no-op
-      expect(FakeAudio.last).toBe(evening);
+      expect(FakeAudio.all.length).toBe(made);
+      expect(evening.paused).toBe(false);
     } finally { vi.useRealTimers(); }
   });
   it('muted: the state changes but nothing plays; unmuting plays the new state', () => {
@@ -123,8 +133,8 @@ describe('music states (2026-10-07)', () => {
     settings.muted = true; audio.applyAudioSettings();
     audio.setMusicState('summary');
     settings.muted = false; audio.applyAudioSettings();
-    expect(FakeAudio.last.src).toMatch(/summary-bgm/);
-    expect(FakeAudio.last.paused).toBe(false);
+    expect(track(/summary-bgm/).paused).toBe(false);
+    expect(morningEl().paused).toBe(true);
   });
 });
 
@@ -174,5 +184,58 @@ describe('iPhone audio (2026-10-08)', () => {
     audio.unlock();
     audio.unlock();
     expect(ctxs[0].primed).toBe(1);
+  });
+});
+
+// QA round 4 #1 (Android: no music during gigs) and #7 (sounds while the page is not in front).
+describe('QA round 4: every track playable, nothing queued while away', () => {
+  it('the first tap primes every music track inside the gesture, then pauses the ones not playing', async () => {
+    audio.unlock();
+    expect(FakeAudio.all.map((a) => a.src.split('/').pop()).sort()).toEqual(['apartment-bgm.mp3', 'evening-bgm.mp3', 'summary-bgm.mp3', 'work-bgm.mp3']);
+    expect(track(/work-bgm/).paused).toBe(true);        // primed and paused at once: nothing loads
+    expect(track(/work-bgm/).preload).toBe('none');
+    expect(morningEl().paused).toBe(false);
+  });
+  it('a muted game primes nothing', () => {
+    settings.muted = true;
+    audio.unlock();
+    expect(FakeAudio.all.length).toBe(0);
+  });
+  it('the watchdog restarts music that should be playing but stopped', async () => {
+    audio.unlock();
+    await Promise.resolve(); await Promise.resolve();
+    morningEl().paused = true;              // a refused play() or a stalled stream
+    audio.ensureMusic();
+    expect(morningEl().paused).toBe(false);
+  });
+  it('the watchdog leaves a backgrounded or muted game alone', async () => {
+    audio.unlock();
+    audio.setBackgrounded(true);
+    audio.ensureMusic();
+    expect(morningEl().paused).toBe(true);
+    audio.setBackgrounded(false);
+    settings.muted = true; audio.applyAudioSettings();
+    audio.ensureMusic();
+    expect(morningEl().paused).toBe(true);
+  });
+  it('no sound effect is scheduled while backgrounded (they would all burst out on return)', () => {
+    audio.unlock();
+    let made = 0;
+    const orig = ctxs[0].createOscillator.bind(ctxs[0]);
+    ctxs[0].createOscillator = () => { made++; return orig(); };
+    audio.setBackgrounded(true);
+    audio.playClick(); audio.playSuccess(); audio.playTick();
+    expect(made).toBe(0);
+    audio.setBackgrounded(false);
+    audio.playClick();
+    expect(made).toBe(1);
+  });
+  it('a track that fails to load is built again the next time it is wanted', () => {
+    audio.unlock();
+    const first = morningEl();
+    const handlers = first.listeners?.error || [];
+    for (const h of handlers) h();
+    audio.setMusicState('work'); audio.setMusicState('morning');
+    expect(FakeAudio.all.filter((a) => /apartment-bgm/.test(a.src)).length).toBe(handlers.length ? 2 : 1);
   });
 });

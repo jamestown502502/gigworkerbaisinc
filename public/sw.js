@@ -64,6 +64,15 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // The music element asks for byte ranges. A cached whole file answers them with a real 206
+  // slice, as a media player expects, instead of the whole file (QA round 4 #1, Android).
+  if (request.headers.has('range')) {
+    event.respondWith(
+      caches.match(request.url, MATCH).then((hit) => (hit ? rangeResponse(request, hit) : fetch(request))),
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(request, MATCH).then((hit) => {
       const network = fetch(request).then((res) => putInCache(request, res)).catch(() => hit);
@@ -71,3 +80,23 @@ self.addEventListener('fetch', (event) => {
     }),
   );
 });
+
+async function rangeResponse(request, whole) {
+  const m = /bytes=(\d*)-(\d*)/.exec(request.headers.get('range') || '');
+  const blob = await whole.blob();
+  const size = blob.size;
+  if (!m || (!m[1] && !m[2])) return new Response(blob, { status: 200, headers: whole.headers });
+  let start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]));
+  let end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+  if (start >= size || start > end) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
+  return new Response(blob.slice(start, end + 1), {
+    status: 206,
+    statusText: 'Partial Content',
+    headers: {
+      'Content-Type': whole.headers.get('Content-Type') || 'audio/mpeg',
+      'Content-Range': `bytes ${start}-${end}/${size}`,
+      'Content-Length': String(end - start + 1),
+      'Accept-Ranges': 'bytes',
+    },
+  });
+}

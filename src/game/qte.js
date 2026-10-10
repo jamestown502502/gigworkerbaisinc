@@ -295,6 +295,25 @@ export class Breathe {
       drawText(ctx, p.label, b.x + b.w / 2, b.y + 40, { size: 24, weight: 'bold', color: '#ffffff', align: 'center' });
       drawText(ctx, p.sub, b.x + b.w / 2, b.y + 70, { size: 14, color: '#c9e4f5', align: 'center', maxWidth: b.w - 20 });
       c.lines.forEach((l, i) => drawText(ctx, l, b.x + b.w / 2, b.y + 100 + i * 20, { size: 13, color: '#e8dcc4', align: 'center' }));
+      // A live preview of the breathing guide on each card (QA round 4 #11: the ring only appeared
+      // after a choice, so the first screen read as "the ring is missing").
+      const px = b.x + 32, py = b.y + 36, pr = 16, col = c.key === 'calm' ? '#5dade2' : '#9b8cd9';
+      const cyc = (this.chooseT % (c.key === 'calm' ? 10 : 16)) / (c.key === 'calm' ? 10 : 16);
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+      let dot;
+      if (c.key === 'calm') {
+        ctx.beginPath(); ctx.arc(px, py, pr, 0, Math.PI * 2); ctx.stroke();
+        const a = Math.PI / 2 + cyc * Math.PI * 2;
+        ctx.strokeStyle = col; ctx.beginPath(); ctx.arc(px, py, pr, Math.PI / 2, a); ctx.stroke();
+        dot = [px + Math.cos(a) * pr, py + Math.sin(a) * pr];
+      } else {
+        ctx.strokeRect(px - pr, py - pr, pr * 2, pr * 2);
+        const per = cyc * 4, side = Math.floor(per), f = per - side;
+        const cs = [[px - pr, py + pr], [px - pr, py - pr], [px + pr, py - pr], [px + pr, py + pr]];
+        const p0 = cs[side % 4], p1 = cs[(side + 1) % 4];
+        dot = [p0[0] + (p1[0] - p0[0]) * f, p0[1] + (p1[1] - p0[1]) * f];
+      }
+      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(dot[0], dot[1], 4, 0, Math.PI * 2); ctx.fill();
     }
     const soundOn = soundIsOn();
     const t = { x: AREA.x + 150, y: AREA.y + 238, w: 300, h: 46, label: '', onTap: () => { if (soundOn) { this.eyesClosed = !this.eyesClosed; playTick(); } } };
@@ -491,7 +510,8 @@ export class ReadClient {
   render(ctx) {
     this.buttons = [];
     const shown = this.cuesShown();
-    drawFace(ctx, AREA.x + 30, AREA.y + 40, 96, this.s.seed, shown >= 1 || this.step === 2 ? this.s.feeling : 'neutral');
+    // Below the hint line (QA round 4 #10: the instruction ran across the top of the face).
+    drawFace(ctx, AREA.x + 34, AREA.y + 60, 86, this.s.seed, shown >= 1 || this.step === 2 ? this.s.feeling : 'neutral');
     const endY = drawWrapped(ctx, this.s.line, AREA.x + 150, AREA.y + 64, AREA.w - 180, 21, { size: 15, color: '#f0f0f0', shadow: false });
     (this.s.cues || []).slice(0, Math.max(0, shown - 1)).forEach((cue, i) => {
       drawText(ctx, cue, AREA.x + 150, endY + 2 + i * 19, { size: 13, color: '#e8c98a', shadow: false, maxWidth: AREA.w - 180 });

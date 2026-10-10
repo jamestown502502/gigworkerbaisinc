@@ -36,6 +36,7 @@ export const SHIFT_MIN = 180;       // a three-hour shift, compressed
 const IDLE_MIN_PER_SEC = 4;         // waiting for a ping still costs shift time
 const DRIVE_SECS = 1.3;             // an accepted order plays out in this many real seconds
 export const LOW_PRIORITY_AT = 0.6; // acceptance under this: the app sends worse orders
+export const RUSH_TARGET = 13;       // real dollars an hour after gas: the shift's goal, shown live (QA round 4 #3)
 
 /** One order. About half are good (pay well per mile); the rest look fine and are not. */
 export function makeOrder(rand = Math.random, lowPriority = false) {
@@ -61,6 +62,7 @@ export class RushShift {
     this.order = null; this.decideLeft = 0;
     this.nextPing = 0.8; this.driving = null;
     this.pay = 0; this.miles = 0; this.accepted = 0; this.declined = 0;
+    this.badTaken = 0;   // accepted orders under $1 a mile: the reason a busy shift can still lose
     this.verdict = null; this.buttons = [];
     this.timeMax = Math.round(SHIFT_MIN / IDLE_MIN_PER_SEC);
     this.done = false; this.result = null;
@@ -75,6 +77,7 @@ export class RushShift {
     this.accepted += 1; this.pay += o.pay; this.miles += o.miles;
     this.driving = { left: DRIVE_SECS, minutes: o.minutes };
     const pm = perMile(o);
+    if (pm < 1) this.badTaken += 1;
     this.verdict = { good: pm >= 1, text: pm >= 1 ? `${money(pm)} a mile: worth the drive.` : `${money(pm)} a mile. After gas, ${money(o.pay - o.miles * GAS_PER_MILE)} for ${o.minutes} min.`, t: 2.2 };
     pm >= 1 ? playGood() : playError();
   }
@@ -116,8 +119,16 @@ export class RushShift {
     this.order = null;
     const rate = this.realHourly();
     const score = Math.max(0, Math.min(100, Math.round(((rate - 6) / 16) * 100)));
+    // Taking most orders and still missing the target is the lesson, so the card says why
+    // (QA round 4 #3: "accepted most of the deliveries but the result shows fumbled").
+    const why = rate >= RUSH_TARGET
+      ? `Real pay $${rate.toFixed(2)}/hr beat the $${RUSH_TARGET}/hr target.`
+      : this.badTaken > 0
+        ? `Real pay $${rate.toFixed(2)}/hr, under the $${RUSH_TARGET}/hr target: ${this.badTaken} of your ${this.accepted} orders paid under $1 a mile, and gas ate them.`
+        : `Real pay $${rate.toFixed(2)}/hr, under the $${RUSH_TARGET}/hr target: too much of the shift went to waiting.`;
     this.result = {
-      success: rate >= 13, score, lesson: LONGFORM_LESSONS.rush, hourly: Math.round(rate * 100) / 100,
+      success: rate >= RUSH_TARGET, score, lesson: LONGFORM_LESSONS.rush, hourly: Math.round(rate * 100) / 100,
+      target: RUSH_TARGET, why, accepted: this.accepted, badTaken: this.badTaken,
       items: [
         { label: `Order pay (${this.accepted} orders)`, amount: Math.round(this.pay) },
         { label: `Gas and wear (${Math.round(this.miles)} mi)`, amount: -Math.round(this.gas()) },
@@ -163,7 +174,8 @@ export class RushShift {
     }
     if (this.verdict) drawText(ctx, this.verdict.text, cx, AREA.y + 246, { size: 15, weight: 'bold', color: this.verdict.good ? '#9fe0b5' : '#ffb3a8', align: 'center', maxWidth: AREA.w - 40 });
     if (low) drawText(ctx, 'Acceptance under 60%: the app is sending you lower-paying orders.', cx, AREA.y + 334, { size: 14, weight: 'bold', color: '#ff8a7e', align: 'center', maxWidth: AREA.w - 40 });
-    drawText(ctx, `Pay ${money(Math.round(this.pay))}   ·   Gas -${money(Math.round(this.gas()))}   ·   Real ${money(Math.round(this.realHourly()))}/hr`, cx, AREA.y + AREA.h - 22, { size: 16, weight: 'bold', color: '#ffffff', align: 'center' });
+    const onTarget = this.clock < 1 || this.realHourly() >= RUSH_TARGET;
+    drawText(ctx, `Pay ${money(Math.round(this.pay))}   ·   Gas -${money(Math.round(this.gas()))}   ·   Real ${money(Math.round(this.realHourly()))}/hr (target $${RUSH_TARGET})`, cx, AREA.y + AREA.h - 22, { size: 16, weight: 'bold', color: onTarget ? '#9fe0b5' : '#ffb3a8', align: 'center', maxWidth: AREA.w - 20 });
   }
 }
 

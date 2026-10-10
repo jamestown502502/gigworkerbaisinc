@@ -4,13 +4,18 @@ import { InputManager } from '../engine/input.js';
 import { drawCharacter, optionRow, pronounsFor, pronounPreview, randomLook, BUILDS, FACIAL_HAIR, HAIR_COLORS, HAIR_STYLES, PRONOUNS, SHIRT_COLORS, SKIN_TONES } from './character.js';
 import { travelCost } from '../game/gigs.js';
 import { UPGRADES, CONSUMABLES, EVENING_OPTIONS, PHONE, FOOD } from '../game/loop.js';
-import { drawText, drawWrapped, roundRectPath, wrapLines } from './text.js';
+import { drawText, drawWrapped, roundRectPath, wrapLines, setTextScale, systemPrefersLargeText, scaledSize } from './text.js';
+
+/** A line height for text of `size`, grown with Large Text the way drawWrapped grows it. */
+const lineFor = (size, px) => px * scaledSize(size) / size;
 import { twistOf, goalOf, windDownMultiplier } from '../game/twists.js';
 import { playError, applyAudioSettings } from '../engine/audio.js';
 import { QTE_READY_DURATION } from '../game/qte.js';
 import { easeOutBack, receiptState, heartbeat } from './juice.js';
 import { RUN_LENGTH_DAYS } from '../engine/state.js';
 import { daysToEviction, rentForecast, monthInsights, backgroundsOpen, backgroundOf, BACKGROUNDS, STANDING_LABEL } from '../game/depth.js';
+import { storyOf, storyEnding } from '../game/story.js';
+import { skillFor } from '../game/skills.js';
 
 // ---------- immediate-mode UI ----------
 export const UI = {
@@ -103,7 +108,7 @@ export function button(ctx, x, y, w, h, label, { color = '#5d4023', textColor = 
   drawText(ctx, label, x + w / 2, y + h / 2, {
     size: fontSize,
     weight: 'bold',
-    color: disabled ? '#b5a488' : textColor,
+    color: disabled ? '#c4b498' : textColor,   // #b5a488 read 4.05:1 on a disabled button (QA round 4 audit)
     align: 'center',
     baseline: 'middle',
     outline: !disabled,
@@ -242,12 +247,61 @@ export function creatorScreen(ctx, game) {
   }
 }
 
-/** The next bills and how the player's pace compares (game/depth.js rentForecast). */
+/** The next bills and how the player's pace compares (game/depth.js rentForecast). With rent
+ *  overdue it is the plan to clear it before eviction instead (QA round 4 #13: the forecast used
+ *  to vanish exactly when it mattered most). */
 export function forecastFor(game) {
   const s = game.state;
-  if (s.unpaidRent > 0) return null;
+  if (s.unpaidRent > 0) {
+    const days = Math.max(1, daysToEviction(s));
+    const need = Math.max(0, s.unpaidRent - s.cash);
+    const line = need === 0 ? `You have the $${s.unpaidRent} overdue. Pay it to stop the eviction clock.`
+      : `Clear $${s.unpaidRent} overdue within ${days} days: about $${Math.ceil(need / days)} a day on top of your cash.`;
+    return { days, need, warn: need > 0, line, overdue: true };
+  }
   const total = (s.rentPrepaid ? 0 : game.rentEarlyAmount()) + PHONE + FOOD;
   return rentForecast(s, total);
+}
+
+/** This week's bills, one row each, with a labelled rent forecast under them (QA round 4 #4, #13).
+ *  Morning and evening both show it. Returns the y below it. */
+export function billsCard(ctx, game, x, y, w) {
+  const s = game.state;
+  const days = Math.max(0, s.daysUntilBills);
+  const due = days <= 0 ? 'due tonight' : `due Day ${s.day + days} evening (in ${days} day${days === 1 ? '' : 's'})`;
+  drawText(ctx, `BILLS: ${due}`, x, y, { size: 12, weight: 'bold', color: '#f1c40f' });
+  y += lineFor(12, 18);
+  const rent = game.rentEarlyAmount();
+  const rows = [
+    ['Rent', `$${rent}`, s.rentPrepaid ? ['✓ paid early', '#2ecc71'] : ['due', '#e0e0e0']],
+    ['Phone', `$${PHONE}`, ['due', '#e0e0e0']],
+    ['Groceries', `$${FOOD}`, ['due', '#e0e0e0']],
+  ];
+  if (s.unpaidRent > 0) rows.unshift(['Overdue rent', `$${s.unpaidRent}`, [`${daysToEviction(s)} days to eviction`, '#ff6b5e']]);
+  if (s.unpaidPhone > 0) rows.splice(rows.length - 1, 0, ['Phone (unpaid)', `$${s.unpaidPhone}`, ['listings cut', '#ff6b5e']]);
+  for (const [label, amt, [status, col]] of rows) {
+    drawText(ctx, label, x + 8, y, { size: 13, color: '#e0e0e0' });
+    drawText(ctx, amt, x + w * 0.52, y, { size: 13, weight: 'bold', color: '#f0f0f0', align: 'right', font: 'monospace' });
+    drawText(ctx, status, x + w * 0.56, y, { size: 13, color: col, maxWidth: w * 0.44 });
+    y += lineFor(13, 16);
+  }
+  const fc = forecastFor(game);
+  if (fc) {
+    y += 3;
+    drawText(ctx, 'RENT FORECAST', x, y, { size: 12, weight: 'bold', color: '#5dade2' });
+    y = drawWrapped(ctx, fc.line, x, y + lineFor(13, 17), w, 17, { size: 13, color: fc.warn ? '#ffb27a' : '#9fe3b8' });
+  }
+  return y;
+}
+
+/** How tall billsCard will be, for sizing the panel before drawing. */
+export function billsCardHeight(ctx, game, w) {
+  const s = game.state;
+  let rows = 3 + (s.unpaidRent > 0 ? 1 : 0) + (s.unpaidPhone > 0 ? 1 : 0);
+  let h = lineFor(12, 18) + rows * lineFor(13, 16);
+  const fc = forecastFor(game);
+  if (fc) h += 3 + lineFor(13, 17) + wrapLines(ctx, fc.line, w, { size: 13 }).length * lineFor(13, 17);
+  return h;
 }
 
 /** What the apartment shows (2026-10-07): the month's conditions first, then what you bought.
@@ -294,58 +348,62 @@ export function apartmentScreen(ctx, game) {
   if (!game.activeEvent) drawApartmentProps(ctx, game);
   drawText(ctx, `${pronounsFor(s.character).label} · ${BUILDS[s.character.body] ?? BUILDS[0]}`, 180, 392, { size: 13, color: '#c9a876', align: 'center' });
   button(ctx, 80, 410, 200, 44, 'Edit look', { fontSize: 14, onClick: () => { if (!game.activeEvent) game.openCreator(); } });
+  // This run's personal goal, from the background's story (game/story.js).
+  const story = storyOf(s);
+  drawText(ctx, `${story.goal.check(s) ? '✓ ' : ''}Goal: ${story.goal.progress(s)}`, 180, 472, { size: 12, color: story.goal.check(s) ? '#2ecc71' : '#f5deb3', align: 'center', maxWidth: 280 });
 
   // stats summary panel
+  // Two compact stat lines, then this week's bills and the rent forecast as their own labelled card
+  // (QA round 4 #4, #13), then the day's conditions.
   const lines = [
-    `Hours available today: ${s.hoursLeft}`,
-    `Gigs on the board: ${s.todayGigs.length}`,
-    `Gigs completed so far: ${s.gigsCompleted}`,
-    `Lifetime earnings: $${Math.round(s.totalEarned)}`,
+    `${s.hoursLeft} hours today  ·  ${s.todayGigs.length} gigs on the board  ·  $${Math.round(s.totalEarned)} earned`,
   ];
-  if (s.calm) lines.push('Rested: timed challenges are easier today');
-  if (s.unpaidRent > 0) lines.push(`OVERDUE RENT: $${s.unpaidRent} (${daysToEviction(s)} days to eviction!)`);
-  if (s.phoneCut) lines.push(`Phone cut — pay $${s.unpaidPhone} to restore listings`);
-  if (s.hungry) lines.push('Hungry — energy costs are doubled. Buy groceries in the Shop.');
+  const after = [];
+  if (s.calm) after.push('Rested: timed challenges are easier today');
+  if (s.hungry) after.push('Hungry: energy costs double. Groceries are in the Shop.');
   const twist = twistOf(s), goal = goalOf(s);
-  if (twist) lines.push(`This month: ${twist.name}`);
-  if (goal) lines.push(s.sideGoalDone ? `Side goal done: ${goal.text}` : `Side goal: ${goal.text} (${goal.progress(s)})`);
-  const fc = forecastFor(game);
-  if (fc) lines.push(fc.line);
-  // The panel grows to fit its lines (a hungry, phone-cut, overdue morning has nine of them).
-  let need = 0;
-  for (const line of lines) {
+  const goalText = goal ? (s.sideGoalDone ? `Side goal done: ${goal.text}` : `Side goal: ${goal.text} (${goal.progress(s)})`) : '';
+  if (twist || goal) after.push(`This month: ${[twist && twist.name, goalText].filter(Boolean).join('. ')}`);
+  // The panel grows to fit (a hungry, overdue, phone-cut morning is the tallest). At Large Text the
+  // month line, then the rested line, give way rather than run into the day's buttons.
+  const debtRow = (s.unpaidRent > 0 && s.cash >= 10) || (s.phoneCut && s.cash >= s.unpaidPhone) ? 48 : 0;
+  const lineH = (line) => {
     const small = line.startsWith('This month') || line.startsWith('Side goal');
-    const shown = /OVERDUE|Phone cut|Hungry/.test(line) ? '⚠ ' + line : line;
-    need += wrapLines(ctx, shown, 370, { size: small ? 13 : 14 }).length * (small ? 18 : 20);
+    return wrapLines(ctx, /Hungry/.test(line) ? '⚠ ' + line : line, 370, { size: small ? 13 : 14 }).length * lineFor(small ? 13 : 14, small ? 17 : 19);
+  };
+  let need = lines.length * lineFor(14, 19) + 8 + billsCardHeight(ctx, game, 370) + 6 + after.reduce((a, l) => a + lineH(l), 0);
+  for (const drop of ['This month', 'Rested']) {
+    if (120 + Math.max(220, 64 + need) + debtRow + 10 <= 520) break;
+    const i = after.findIndex((l) => l.startsWith(drop));
+    if (i >= 0) { need -= lineH(after[i]); after.splice(i, 1); }
   }
-  const panelH = Math.max(220, 76 + need);
+  const panelH = Math.max(220, 64 + need);
   panel(ctx, 360, 120, 410, panelH);
   drawText(ctx, `Morning — Day ${s.day}${s.freePlay && s.day > RUN_LENGTH_DAYS ? ' (free play)' : ''}`, 380, 152, { size: 22, weight: 'bold', color: '#ffffff' });
-  let ly = 180;
-  for (const line of lines) {
-    const warn = /OVERDUE|Phone cut|Hungry/.test(line);
+  let ly = 178;
+  for (const line of lines) ly = drawWrapped(ctx, line, 380, ly, 370, 19, { size: 14, color: '#e0e0e0', maxWidth: 370 });
+  ly = billsCard(ctx, game, 380, ly + 8, 370) + 6;
+  for (const line of after) {
+    const warn = /Hungry/.test(line);
     const monthLine = line.startsWith('This month') || line.startsWith('Side goal');
-    const fcLine = fc && line === fc.line;
-    ly = drawWrapped(ctx, warn ? '⚠ ' + line : line, 380, ly, 370, monthLine ? 18 : 20, { size: monthLine ? 13 : 14, color: warn ? '#ff6b5e' : fcLine ? (fc.warn ? '#ffb27a' : '#9fe3b8') : line.startsWith('Rested') || line.startsWith('Side goal done') ? '#2ecc71' : monthLine ? '#f5deb3' : '#e0e0e0' });
+    ly = drawWrapped(ctx, warn ? '⚠ ' + line : line, 380, ly, 370, monthLine ? 17 : 19, { size: monthLine ? 13 : 14, color: warn ? '#ff6b5e' : line.startsWith('Rested') || line.startsWith('Side goal done') ? '#2ecc71' : monthLine ? '#f5deb3' : '#e0e0e0' });
   }
 
   // debt quick-pay, right under the panel
   let by = 130 + panelH;
-  if (s.unpaidRent > 0 && s.cash >= s.unpaidRent) {
-    button(ctx, 360, by, 250, 40, `Pay Overdue Rent $${s.unpaidRent}`, { color: '#7a3020', onClick: () => game.payDebt('rent') });
-    by += 48;
-  } else if (s.unpaidRent > 0 && game.partialRentAmount()) {
-    // Part now, the rest later: half or more buys a grace week (loop.js payRentPartial).
-    button(ctx, 360, by, 250, 40, `Pay $${game.partialRentAmount()} toward rent`, { color: '#7a5a20', fontSize: 15, onClick: () => game.payRentPartial() });
-    by += 48;
+  // Debts share one row, so an overdue-and-cut-off morning never pushes into the day's buttons.
+  const debts = [];
+  if (s.unpaidRent > 0 && s.cash >= 10) debts.push([`Pay overdue rent ($${s.unpaidRent})...`, s.cash >= s.unpaidRent ? '#7a3020' : '#7a5a20', () => game.openRentPay()]);
+  if (s.phoneCut && s.cash >= s.unpaidPhone) debts.push([`Pay phone $${s.unpaidPhone}`, '#7a3020', () => game.payDebt('phone')]);
+  if (debts.length === 1) button(ctx, 360, by, 250, 40, debts[0][0], { color: debts[0][1], fontSize: 15, onClick: debts[0][2] });
+  if (debts.length === 2) {
+    button(ctx, 360, by, 250, 40, debts[0][0], { color: debts[0][1], fontSize: 14, onClick: debts[0][2] });
+    button(ctx, 618, by, 152, 40, debts[1][0], { color: debts[1][1], fontSize: 14, onClick: debts[1][2] });
   }
-  if (s.phoneCut && s.cash >= s.unpaidPhone) {
-    button(ctx, 360, by, 250, 40, `Pay Phone Bill $${s.unpaidPhone}`, { color: '#7a3020', onClick: () => game.payDebt('phone') });
-    by += 48;
-  }
+  if (debts.length) by += 48;
   // Rent can be paid ahead of the bills screen whenever the cash is there (QA round 3 #8).
   if (game.morningReady && !game.shopOpen && !game.restDay && by + 40 <= 516) {
-    if (game.canPayRentEarly()) button(ctx, 360, by, 250, 40, `Pay rent early $${game.rentEarlyAmount()}`, { color: '#2c5a6e', fontSize: 15, onClick: () => game.payRentEarly() });
+    if (game.canPayRentEarly()) button(ctx, 360, by, 250, 40, `Pay rent early $${game.rentEarlyAmount()}`, { color: '#2c5a6e', fontSize: 15, onClick: () => game.askPayRentEarly() });
     else if (s.rentPrepaid) drawText(ctx, "✓ This week's rent is paid", 485, by + 20, { size: 14, weight: 'bold', color: '#2ecc71', align: 'center', baseline: 'middle' });
   }
 
@@ -372,6 +430,7 @@ export function apartmentScreen(ctx, game) {
   }
 
   if (game.shopOpen) shopOverlay(ctx, game);
+  rentModals(ctx, game);
 
   // morning flavor ticker (fade in → hold → fade out per line)
   if (game.ticker.idx < game.ticker.lines.length) {
@@ -405,7 +464,10 @@ function eventModal(ctx, game) {
   const labels = { 1: 'MORNING NOTE', 2: 'SOMETHING CAME UP', 3: 'CRISIS' };
   const accent = e.label ? '#f1c40f' : accents[e.tier] || '#8a99a8';
   const textLines = wrapLines(ctx, e.text, 410, { size: 15 }).length + (e.subtext ? wrapLines(ctx, e.subtext, 410, { size: 15 }).length + 0.6 : 0);
-  const h = e.choices ? 140 + e.choices.length * 58 : Math.max(200, 150 + Math.ceil(textLines * 21));
+  // Measured at the real line height, so Large Text grows the card instead of running into its
+  // buttons (QA round 4 #15); two lines or fewer keep the old size exactly.
+  const textH = Math.ceil(textLines * lineFor(15, 21));
+  const h = e.choices ? Math.max(140, 96 + textH) + e.choices.length * 58 : Math.max(200, 150 + textH);
   const y = Math.max(80, 300 - h / 2);
 
   ctx.save();
@@ -431,7 +493,7 @@ function eventModal(ctx, game) {
     });
   } else {
     if (game.eventOutcome) {
-      drawText(ctx, game.eventOutcome, 400, ty + 10, { size: 15, weight: 'bold', color: accent, align: 'center' });
+      drawText(ctx, game.eventOutcome, 400, ty + 10, { size: 15, weight: 'bold', color: accent, align: 'center', maxWidth: 440 });
     }
     if (e.resolved && e.label === 'REMEMBER THIS?' && /^Right/.test(game.eventOutcome || '')) goldSticker(ctx, 612, y + 30, game.eventT || 0, game.state.settings.reduceMotion);
     button(ctx, 300, y + h - 62, 200, 44, 'Continue', { color: '#2c6e49', fontSize: 15, onClick: () => game.startNextEvent() });
@@ -620,7 +682,10 @@ function getReady(ctx, game) {
   ctx.translate(-400, -270);
   drawText(ctx, left > 0.6 ? 'GET READY' : 'GO!', 400, 270, { size: 34, weight: 'bold', color: left > 0.6 ? '#ffffff' : '#2ecc71', align: 'center', outline: true });
   ctx.restore();
-  drawWrapped(ctx, game.qte.hint, 400, 330, 520, 24, { size: 18, color: '#f5deb3', align: 'center' });
+  const hy = drawWrapped(ctx, game.qte.hint, 400, 330, 520, 24, { size: 18, color: '#f5deb3', align: 'center' });
+  // Name what is being practised before the practice (QA round 4 depth pass).
+  const skill = skillFor(game.qte.name);
+  if (skill) drawText(ctx, `You'll practise: ${skill.toLowerCase()}`, 400, Math.max(hy + 18, 420), { size: 16, weight: 'bold', color: '#9fe3b8', align: 'center' });
 }
 
 function starRow(ctx, cx, y, n, k) {
@@ -630,13 +695,14 @@ function starRow(ctx, cx, y, n, k) {
     const on = i < n;
     const scale = on ? 0.6 + 0.4 * appear + (appear > 0 && appear < 1 ? 0.25 * Math.sin(Math.PI * appear) : 0) : 1;
     // scaled about its own centre, drawn at its real position (so the text probe measures where it is);
-    // unlit stars are #7d6b4f, 3.7:1 on the card (was #4a3d2a at 1.79:1, under the 3:1 graphics floor)
+    // unlit stars are #a08b63, 5:1 on the card (#7d6b4f measured 3.5:1 by pixel but under 3:1 by the
+    // audit's ring, which the wide star glyph overlaps; was #4a3d2a at 1.79:1 before that)
     const sx = cx + (i - 1) * 46;
     ctx.save();
     ctx.translate(sx, y);
     ctx.scale(scale, scale);
     ctx.translate(-sx, -y);
-    drawText(ctx, '★', sx, y, { size: 38, color: on && appear > 0 ? '#f1c40f' : '#7d6b4f', align: 'center', baseline: 'middle', shadow: false });
+    drawText(ctx, '★', sx, y, { size: 38, color: on && appear > 0 ? '#f1c40f' : '#a08b63', align: 'center', baseline: 'middle', shadow: false });
     ctx.restore();
   }
 }
@@ -648,7 +714,7 @@ function fiveStarRow(ctx, cx, y, t, calm) {
     const sc = calm ? 1 : 0.4 + 0.6 * easeOutBack(appear);
     const sx = cx + (i - 2) * 44;
     ctx.save(); ctx.translate(sx, y); ctx.scale(sc, sc); ctx.translate(-sx, -y);
-    drawText(ctx, '★', sx, y, { size: 36, color: appear > 0 ? '#f1c40f' : '#7d6b4f', align: 'center', baseline: 'middle', shadow: false });
+    drawText(ctx, '★', sx, y, { size: 36, color: appear > 0 ? '#f1c40f' : '#a08b63', align: 'center', baseline: 'middle', shadow: false });
     ctx.restore();
   }
 }
@@ -667,7 +733,9 @@ function resultCard(ctx, game) {
   const stars = !r.success ? 0 : score >= 85 ? 3 : score >= 60 ? 2 : 1;
   let title, lines = [];
   if (game.qteKind === 'skill') {
-    title = !r.success ? 'FUMBLED' : score >= 85 ? 'GREAT WORK!' : score >= 60 ? 'GOOD JOB' : 'GOT IT DONE';
+    // A whole shift (RUSH!, MARKET!) is measured against a target, not "fumbled" (QA round 4 #3).
+    title = r.items ? (r.success ? (score >= 85 ? 'GREAT SHIFT!' : 'ON TARGET') : 'BELOW TARGET')
+      : !r.success ? 'FUMBLED' : score >= 85 ? 'GREAT WORK!' : score >= 60 ? 'GOOD JOB' : 'GOT IT DONE';
     const base = game.currentGig ? game.currentGig.payout : 0;
     if (r.items) lines.push(r.items.map((it) => `${it.label.replace(/ \(.*\)$/, '')} ${it.amount >= 0 ? '+' : '-'}$${Math.abs(it.amount)}`).join('  ·  ') + (r.hourly !== undefined ? `  ·  $${r.hourly.toFixed(2)}/hr` : ''));
     else lines.push(r.success ? `Pay bonus +$${Math.round(base * (score / 500))}  ·  Reputation +0.1` : `Pay cut -$${Math.round(base * 0.3)}  ·  Reputation -0.2  ·  Stress +3`);
@@ -688,13 +756,15 @@ function resultCard(ctx, game) {
   if (globalThis.__textProbe) globalThis.__textProbe.push({ layer: true });
   ctx.fillStyle = `rgba(8, 6, 4, ${0.88 * k})`;
   roundRectPath(ctx, 92, 102, 616, 426, 12); ctx.fill();
-  const x = 190, y = r.lesson ? 146 : 160, w = 420, h = r.lesson ? 330 : 290;
+  const x = 190, y = r.lesson ? (r.why ? 124 : 146) : 160, w = 420, h = r.lesson ? (r.why ? 380 : 330) : 290;
   ctx.save();
   modalScale(ctx, t, 400, y + h / 2);
   panel(ctx, x, y, w, h, { alpha: 0.98 });
   const accent = r.success ? '#2ecc71' : '#e74c3c';
   ctx.fillStyle = accent; ctx.fillRect(x + 2, y + 2, w - 4, 4);
-  drawText(ctx, title, 400, y + 46, { size: 28, weight: 'bold', color: r.success ? '#2ecc71' : '#ff6b5e', align: 'center', outline: true });
+  const skillTag = skillFor(q.name);
+  if (skillTag) drawText(ctx, `SKILL: ${skillTag.toUpperCase()}`, 400, y + 27, { size: 12, weight: 'bold', color: '#8ec6ea', align: 'center' });
+  drawText(ctx, title, 400, y + 57, { size: 28, weight: 'bold', color: r.success ? '#2ecc71' : '#ff6b5e', align: 'center', outline: true });
   if (game.fiveStarsT !== null && game.fiveStarsT !== undefined) fiveStarRow(ctx, 400, y + 96, game.fiveStarsT, game.state.settings.reduceMotion);
   else starRow(ctx, 400, y + 96, stars, k);
   // score bar fills to the score; the notch marks the "good job" line
@@ -704,8 +774,11 @@ function resultCard(ctx, game) {
   ctx.fillStyle = '#f5deb3'; ctx.fillRect(bx + bw * 0.6 - 1, by - 3, 2, 20);
   drawText(ctx, `Score ${Math.round(score * k)} / 100`, 400, by + 36, { size: 15, weight: 'bold', color: '#ffffff', align: 'center' });
   lines.forEach((l, i) => drawText(ctx, l, 400, by + 62 + i * 20, { size: 14, color: '#f5deb3', align: 'center', maxWidth: w - 30 }));
-  // The why: one real-world takeaway, so the score comes with a reason (2026-10-02).
-  if (r.lesson) drawWrapped(ctx, r.lesson, 400, by + 70 + lines.length * 20, w - 44, 18, { size: 14, color: '#e8c98a', align: 'center' });
+  // The why: one real-world takeaway, so the score comes with a reason (2026-10-02). A shift game
+  // first says what decided its result (QA round 4 #3).
+  let ly = by + 70 + lines.length * 20;
+  if (r.why) ly = drawWrapped(ctx, r.why, 400, ly, w - 44, 18, { size: 14, weight: 'bold', color: r.success ? '#9fe0b5' : '#ffb3a8', align: 'center' }) + 4;
+  if (r.lesson) drawWrapped(ctx, r.lesson, 400, ly, w - 44, 18, { size: 14, color: '#e8c98a', align: 'center' });
   if (t > 0.4) drawText(ctx, 'Tap to continue', 400, y + h - 16, { size: 13, color: '#e8d9b8', align: 'center' });
   ctx.restore();
 }
@@ -747,7 +820,8 @@ export function resultsScreen(ctx, game) {
     ctx.restore();
   }
   if (r.qteResult) {
-    drawText(ctx, `Challenge ${r.qteResult.success ? 'cleared' : 'fumbled'} — score ${r.qteResult.score}`, 400, y, {
+    const label = r.qteResult.items ? `Shift ${r.qteResult.success ? 'on target' : 'below target'}` : `Challenge ${r.qteResult.success ? 'cleared' : 'fumbled'}`;
+    drawText(ctx, `${label} — score ${r.qteResult.score}`, 400, y, {
       size: 13, color: r.qteResult.success ? '#2ecc71' : '#ff6b5e', align: 'center',
     });
     y += 18;
@@ -800,11 +874,14 @@ export function eveningScreen(ctx, game) {
   for (const g2 of todays.slice(-4)) {
     y = drawWrapped(ctx, `• ${g2.title} (+$${g2.payout})`, 70, y, 300, 18, { size: 13, color: '#c9a876' }) + 1;
   }
-  if (s.unpaidRent > 0) {
-    drawWrapped(ctx, `⚠ Overdue rent $${s.unpaidRent} — eviction in ${daysToEviction(s)} days`, 70, Math.max(y, 340), 300, 18, { size: 13, color: '#ff6b5e' });
-  } else {
-    const fc = forecastFor(game);
-    if (fc) drawWrapped(ctx, fc.line, 70, Math.max(y + 4, 330), 300, 18, { size: 13, color: fc.warn ? '#ffb27a' : '#9fe3b8' });
+  // The rent forecast, labelled, at the foot of the panel (QA round 4 #13).
+  const fc = forecastFor(game);
+  if (fc) {
+    const fl = wrapLines(ctx, fc.line, 300, { size: 13 });
+    const fy = Math.max(y + 6, 392 - fl.length * 17 - 34);
+    const days = Math.max(0, s.daysUntilBills);
+    drawText(ctx, fc.overdue ? `RENT FORECAST: ${daysToEviction(s)} days to eviction` : `RENT FORECAST: bills ${days <= 0 ? 'tonight' : `in ${days} day${days === 1 ? '' : 's'}`}`, 70, fy, { size: 12, weight: 'bold', color: fc.overdue ? '#ff6b5e' : '#5dade2' });
+    drawWrapped(ctx, fc.line, 70, fy + 18, 300, 17, { size: 13, color: fc.warn ? '#ffb27a' : '#9fe3b8' });
   }
 
   // evening choice panel (right)
@@ -812,14 +889,14 @@ export function eveningScreen(ctx, game) {
 
   // After "Sleep In (skip day)" the day is over: no Back to the morning (QA round 2 #18).
   const canBack = !game.billsOpen && !game.wrapUpOpen && !game.restDay && !game.skippedDay;
-  if (!game.shopOpen) button(ctx, 60, 526, 200, 52, 'Sleep', { color: '#2c6e49', disabled: game.billsOpen || game.wrapUpOpen, onClick: () => game.sleep() });
-  if (canBack && !game.shopOpen) button(ctx, 270, 526, 110, 52, '← Back', { color: '#5d4023', onClick: () => game.backFromEvening() });
-  if (!game.shopOpen && s.unpaidRent > 0 && s.cash >= s.unpaidRent) {
-    button(ctx, 390, 526, 240, 52, `Pay Rent Debt $${s.unpaidRent}`, { color: '#7a3020', onClick: () => game.payDebt('rent') });
-  } else if (!game.shopOpen && !game.billsOpen && !game.wrapUpOpen && s.unpaidRent > 0 && game.partialRentAmount()) {
-    button(ctx, 390, 526, 240, 52, `Pay $${game.partialRentAmount()} toward rent`, { color: '#7a5a20', fontSize: 15, onClick: () => game.payRentPartial() });
+  // The bottom row lines up with the panels above it (QA round 4 #9): Back on the left panel's
+  // left edge, Sleep filling to its right edge, money actions under the right panel.
+  if (canBack && !game.shopOpen) button(ctx, 50, 526, 120, 52, '← Back', { color: '#5d4023', onClick: () => game.backFromEvening() });
+  if (!game.shopOpen) button(ctx, canBack ? 180 : 50, 526, canBack ? 210 : 340, 52, 'Sleep', { color: '#2c6e49', disabled: game.billsOpen || game.wrapUpOpen, onClick: () => game.sleep() });
+  if (!game.shopOpen && !game.billsOpen && !game.wrapUpOpen && s.unpaidRent > 0 && s.cash >= 10) {
+    button(ctx, 410, 526, 340, 52, `Pay overdue rent ($${s.unpaidRent})...`, { color: s.cash >= s.unpaidRent ? '#7a3020' : '#7a5a20', fontSize: 15, onClick: () => game.openRentPay() });
   } else if (!game.shopOpen && !game.billsOpen && !game.wrapUpOpen && game.canPayRentEarly()) {
-    button(ctx, 390, 526, 240, 52, `Pay rent early $${game.rentEarlyAmount()}`, { color: '#2c5a6e', fontSize: 15, onClick: () => game.payRentEarly() });
+    button(ctx, 410, 526, 340, 52, `Pay rent early $${game.rentEarlyAmount()}`, { color: '#2c5a6e', fontSize: 15, onClick: () => game.askPayRentEarly() });
   }
   // A late ping put off with "Decide later" waits here as a message to open again.
   if (!game.shopOpen && game.ping && !game.ping.resolved && game.ping.snoozed) {
@@ -828,6 +905,7 @@ export function eveningScreen(ctx, game) {
 
   if (game.shopOpen) shopOverlay(ctx, game);
   if (game.billsOpen) billsModal(ctx, game);
+  if (game.rentPay || game.confirmRentEarly) rentModals(ctx, game);
   else if (game.wrapUpOpen) wrapUpModal(ctx, game);
   else if (game.ping && !game.ping.resolved && !game.ping.snoozed) pingModal(ctx, game);
 }
@@ -987,6 +1065,45 @@ function shopOverlay(ctx, game) {
   button(ctx, x + w / 2 - 100, y + h - 56, 200, 44, 'Close Shop', { color: '#2c3e50', fontSize: 15, onClick: () => { game.shopOpen = false; } });
 }
 
+/** The Pay rent panel and the pay-early confirmation (QA round 4 #2, #8). Drawn last, over
+ *  whatever opened them. */
+export function rentModals(ctx, game) {
+  const s = game.state;
+  if (!game.rentPay && !game.confirmRentEarly) return;
+  if (globalThis.__textProbe) globalThis.__textProbe.push({ layer: true });
+  ctx.fillStyle = 'rgba(6, 4, 2, 0.84)';
+  ctx.fillRect(0, 0, 800, 600);
+  UI.absorb();
+  if (game.confirmRentEarly) {
+    const amt = game.rentEarlyAmount();
+    panel(ctx, 210, 170, 380, 230, { alpha: 0.98 });
+    drawText(ctx, 'PAY RENT EARLY?', 400, 210, { size: 22, weight: 'bold', color: '#f1c40f', align: 'center' });
+    drawWrapped(ctx, `$${amt} comes out of your $${Math.round(s.cash)} now. Bills are in ${s.daysUntilBills} day${s.daysUntilBills === 1 ? '' : 's'}; rent will already be ticked off.`, 400, 244, 330, 20, { size: 14, color: '#e0e0e0', align: 'center' });
+    button(ctx, 230, 324, 160, 52, `Pay $${amt}`, { color: '#2c6e49', fontSize: 16, onClick: () => game.payRentEarly() });
+    button(ctx, 410, 324, 160, 52, 'Not now', { ghost: true, fontSize: 16, onClick: () => { game.confirmRentEarly = false; } });
+    return;
+  }
+  const owed = game.rentOwedNow();
+  const most = Math.floor(Math.min(owed, s.cash));
+  const amt = game.rentPay.amount;
+  panel(ctx, 190, 110, 420, 390, { alpha: 0.98 });
+  drawText(ctx, 'PAY RENT', 400, 148, { size: 22, weight: 'bold', color: '#f1c40f', align: 'center' });
+  drawText(ctx, `Owed $${owed}   ·   Cash $${Math.round(s.cash)}`, 400, 174, { size: 14, color: '#e0e0e0', align: 'center' });
+  button(ctx, 220, 196, 64, 56, '-$10', { color: '#5d4023', fontSize: 16, onClick: () => game.adjustRentPay(-10) });
+  drawText(ctx, `$${amt}`, 400, 224, { size: 38, weight: 'bold', color: '#ffffff', align: 'center', baseline: 'middle' });
+  button(ctx, 516, 196, 64, 56, '+$10', { color: '#5d4023', fontSize: 16, onClick: () => game.adjustRentPay(10) });
+  const half = Math.ceil(owed / 2);
+  if (half <= most && half < owed) button(ctx, 220, 266, 170, 40, `Half ($${half})`, { color: '#2c5a6e', fontSize: 14, onClick: () => game.adjustRentPay(0, half) });
+  button(ctx, 410, 266, 170, 40, most >= owed ? `All ($${owed})` : `All I have ($${most})`, { color: '#2c5a6e', fontSize: 14, onClick: () => game.adjustRentPay(0, most) });
+  const note = amt >= owed ? 'Pays it in full. The eviction clock stops.'
+    : amt >= owed / 2 ? `Half or more: the landlord gives you a 7-day grace week. $${owed - amt} stays owed.`
+      : `Under half: no grace week, and $${owed - amt} stays owed. Half is $${half}.`;
+  drawWrapped(ctx, note, 400, 332, 360, 19, { size: 14, color: amt >= owed / 2 ? '#9fe3b8' : '#ffb27a', align: 'center' });
+  if (s.cash - amt < 20) drawText(ctx, `Leaves you $${Math.round(s.cash - amt)}: groceries cost $20.`, 400, 390, { size: 13, color: '#c9a876', align: 'center' });
+  button(ctx, 220, 420, 170, 52, `Pay $${amt}`, { color: '#2c6e49', fontSize: 16, onClick: () => game.confirmRentPay() });
+  button(ctx, 410, 420, 170, 52, 'Cancel', { ghost: true, fontSize: 16, onClick: () => { game.rentPay = null; } });
+}
+
 function billsModal(ctx, game) {
   const s = game.state;
   ctx.fillStyle = 'rgba(6, 4, 2, 0.82)';
@@ -1011,10 +1128,10 @@ function billsModal(ctx, game) {
     if (hint) drawWrapped(ctx, hint, 210, by + 33, 280, 13, { size: 11, weight: 'bold', color: '#ff8a7e', shadow: false });
     else if (!partHere) drawText(ctx, b.warn, 210, by + 34, { size: 11, color: '#a89878', maxWidth: 280 });
     const part = b.kind === 'rent' && !paid && s.cash < amt ? game.partialRentAmount() : 0;
-    if (part) {
-      // Short on rent: put part of it down now; half or more earns a grace week.
-      button(ctx, 500, by, 96, 40, 'Pay part', { color: '#7a5a20', fontSize: 14, onClick: () => game.payRentPartial() });
-      if (!hint) drawText(ctx, `Short. Put $${part} toward it now; half or more buys a grace week.`, 210, by + 34, { size: 11, color: '#f5c27a', maxWidth: 280 });
+    if (b.kind === 'rent' && !paid && s.cash >= 10) {
+      // Rent opens the Pay rent panel: all of it, or any part (QA round 4 #2).
+      button(ctx, 500, by, 96, 40, s.cash >= amt ? 'Pay...' : 'Pay part', { color: s.cash >= amt ? '#2c6e49' : '#7a5a20', fontSize: 14, onClick: () => game.openRentPay() });
+      if (part && !hint) drawText(ctx, 'Short. Put part down now; half or more buys a grace week.', 210, by + 34, { size: 11, color: '#f5c27a', maxWidth: 280 });
     } else if (!paid) {
       button(ctx, 500, by, 96, 40, 'Pay', {
         color: '#2c6e49',
@@ -1060,6 +1177,28 @@ function volumeRow(ctx, game, x, y, label, key) {
   button(ctx, barX + barW + 68, barY - 14, 40, 40, '+', { fontSize: 16, onClick: () => step(0.1) });
 }
 
+/** Large text is on when the player turned it on, or (until they choose) when the phone asks. */
+export function largeTextOn(settings) {
+  return settings.largeText === null || settings.largeText === undefined ? systemPrefersLargeText() : !!settings.largeText;
+}
+export function applyTextSize(settings) { setTextScale(largeTextOn(settings) ? 1.2 : 1); }
+
+function fullscreenAvailable() {
+  return typeof document !== 'undefined' && !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+}
+function isFullscreen() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+function toggleFullscreen() {
+  try {
+    if (isFullscreen()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else {
+      const el = document.documentElement;
+      const req = el.requestFullscreen || el.webkitRequestFullscreen;
+      const p = req && req.call(el, { navigationUI: 'hide' });
+      if (p && p.catch) p.catch(() => { /* refused: the game simply stays in the page */ });
+    }
+  } catch { /* unsupported */ }
+}
+
 function toggleRow(ctx, x, y, label, get, set) {
   drawText(ctx, label, x, y + 24, { size: 15, color: '#f0f0f0' });
   button(ctx, x + 280, y, 90, 40, get() ? 'ON' : 'OFF', {
@@ -1085,24 +1224,29 @@ export function settingsModal(ctx, game) {
   // A flow layout: each row starts below whatever the row above actually used, including a
   // description that wraps to two lines on a narrower font. Fixed y offsets let a wrapped line
   // run into the next button on iPhone (QA round 2 #24).
-  let y = 82;
-  volumeRow(ctx, game, 196, y, 'Master Volume', 'masterVolume'); y += 52;
-  volumeRow(ctx, game, 196, y, 'Music Volume', 'musicVolume'); y += 52;
-  volumeRow(ctx, game, 196, y, 'SFX Volume', 'sfxVolume'); y += 58;
+  let y = 76;
+  volumeRow(ctx, game, 196, y, 'Master Volume', 'masterVolume'); y += 46;
+  volumeRow(ctx, game, 196, y, 'Music Volume', 'musicVolume'); y += 46;
+  volumeRow(ctx, game, 196, y, 'SFX Volume', 'sfxVolume'); y += 52;
 
-  toggleRow(ctx, 196, y, 'Mute All', () => s.muted, (v) => { s.muted = v; applyAudioSettings(); game.state.save(); }); y += 50;
-  toggleRow(ctx, 196, y, 'Reduce Timing Pressure', () => s.reduceTimingPressure, (v) => { s.reduceTimingPressure = v; game.state.save(); }); y += 54;
-  y = drawWrapped(ctx, 'Wider timing windows and slower timers.', 196, y, 400, 16, { size: 12, color: '#b5a488' }) + 8;
-  toggleRow(ctx, 196, y, 'Reduce Motion', () => s.reduceMotion, (v) => { s.reduceMotion = v; game.state.save(); }); y += 54;
-  y = drawWrapped(ctx, 'Quick fades instead of screen transitions.', 196, y, 400, 16, { size: 12, color: '#b5a488' }) + 10;
+  toggleRow(ctx, 196, y, 'Mute All', () => s.muted, (v) => { s.muted = v; applyAudioSettings(); game.state.save(); }); y += 46;
+  toggleRow(ctx, 196, y, 'Reduce Timing Pressure', () => s.reduceTimingPressure, (v) => { s.reduceTimingPressure = v; game.state.save(); }); y += 46;
+  y = drawWrapped(ctx, 'Wider timing windows and slower timers.', 196, y, 400, 16, { size: 12, color: '#b5a488' }) + 4;
+  toggleRow(ctx, 196, y, 'Reduce Motion', () => s.reduceMotion, (v) => { s.reduceMotion = v; game.state.save(); }); y += 46;
+  y = drawWrapped(ctx, 'Quick fades instead of screen transitions.', 196, y, 400, 16, { size: 12, color: '#b5a488' }) + 4;
+  // Large text (QA round 4 #15): starts on when the phone asks for bigger text.
+  toggleRow(ctx, 196, y, 'Large Text', () => largeTextOn(s), (v) => { s.largeText = v; applyTextSize(s); game.state.save(); }); y += 46;
+  y = drawWrapped(ctx, 'Bigger reading text everywhere. Follows your phone at first.', 196, y, 400, 16, { size: 12, color: '#b5a488' }) + 8;
 
-  button(ctx, 196, y, 190, 40, 'Replay tutorial', { color: '#2c5a6e', fontSize: 13, onClick: () => game.replayTutorial() });
+  button(ctx, 196, y, 128, 40, 'Replay tutorial', { color: '#2c5a6e', fontSize: 13, onClick: () => game.replayTutorial() });
+  // Full screen hides the browser's bars, the biggest game a phone can show (QA round 4 #5).
+  if (fullscreenAvailable()) button(ctx, 336, y, 128, 40, isFullscreen() ? 'Exit full screen' : 'Full screen', { color: '#2c5a6e', fontSize: 13, onClick: () => toggleFullscreen() });
   if (game.confirmReset) {
-    button(ctx, 414, y, 190, 40, 'Start over? YES', { color: '#7a3020', fontSize: 13, onClick: () => { game.newGame(); game.settingsOpen = false; game.confirmReset = false; } });
+    button(ctx, 476, y, 128, 40, 'Start over? YES', { color: '#7a3020', fontSize: 13, onClick: () => { game.newGame(); game.settingsOpen = false; game.confirmReset = false; } });
   } else {
-    button(ctx, 414, y, 190, 40, 'Start new game', { color: '#5d4023', fontSize: 13, onClick: () => { game.confirmReset = true; } });
+    button(ctx, 476, y, 128, 40, 'Start new game', { color: '#5d4023', fontSize: 13, onClick: () => { game.confirmReset = true; } });
   }
-  y += 58;
+  y += 56;
   if (game.confirmReset) drawText(ctx, 'This deletes the current run. Settings are kept.', 400, y, { size: 12, color: '#ff8a7e', align: 'center' });
 
   button(ctx, 300, PY + PH - 50, 200, 40, 'Close', { color: '#2c6e49', onClick: close });
@@ -1198,7 +1342,19 @@ export function monthMathModal(ctx, game) {
   ctx.fillRect(0, 0, 800, 600);
   UI.absorb();
   panel(ctx, 110, 40, 580, 520, { alpha: 0.98 });
-  if (game.mathPage === 1) {
+  // Four pages: the numbers, why, your story, what you learned (QA round 4 depth pass).
+  const pages = ['The numbers', 'Why it went this way', 'Your story', 'What you learned'];
+  const page = game.mathPage || 0;
+  const nav = () => {
+    const close = () => { game.mathOpen = false; game.mathPage = 0; };
+    if (page > 0) button(ctx, 140, 490, 160, 48, `‹ ${pages[page - 1]}`, { ghost: true, fontSize: 13, onClick: () => { game.mathPage = page - 1; } });
+    if (page < pages.length - 1) button(ctx, 320, 490, 190, 48, `${pages[page + 1]} ›`, { color: '#6b4a2e', fontSize: 13, onClick: () => { game.mathPage = page + 1; } });
+    button(ctx, 530, 490, 130, 48, 'Close', { color: '#2c6e49', onClick: close });
+    drawText(ctx, `${page + 1} / ${pages.length}`, 400, 476, { size: 12, color: '#a89878', align: 'center' });
+  };
+  if (page === 2) { storyPage(ctx, game); nav(); return; }
+  if (page === 3) { debriefPage(ctx, game); nav(); return; }
+  if (page === 1) {
     // WHY IT WENT THIS WAY (2026-10-07): the month's own numbers, read back as reasons.
     drawText(ctx, 'WHY IT WENT THIS WAY', 400, 80, { size: 24, weight: 'bold', color: '#ffd700', align: 'center' });
     let y = 122;
@@ -1206,8 +1362,7 @@ export function monthMathModal(ctx, game) {
       ctx.fillStyle = '#f1c40f'; ctx.beginPath(); ctx.arc(146, y - 5, 4, 0, Math.PI * 2); ctx.fill();
       y = drawWrapped(ctx, line, 160, y, 500, 21, { size: 15, color: '#f0f0f0' }) + 12;
     }
-    button(ctx, 180, 490, 200, 48, '‹ The numbers', { ghost: true, fontSize: 15, onClick: () => { game.mathPage = 0; } });
-    button(ctx, 420, 490, 200, 48, 'Close', { color: '#2c6e49', onClick: () => { game.mathOpen = false; game.mathPage = 0; } });
+    nav();
     return;
   }
   drawText(ctx, 'THE MATH OF THE MONTH', 400, 80, { size: 24, weight: 'bold', color: '#ffd700', align: 'center' });
@@ -1229,8 +1384,56 @@ export function monthMathModal(ctx, game) {
     : "With no paid hours, a week's rent was out of reach from the start.";
   let y = drawWrapped(ctx, line, 400, 330, 520, 22, { size: 16, color: '#ffffff', align: 'center' }) + 8;
   drawWrapped(ctx, "The pay per gig, the rent, and the chance a client doesn't pay were set by the job, not by you. Your choices moved these numbers a little. They didn't set them.", 400, y, 520, 21, { size: 15, color: '#c9e4d3', align: 'center' });
-  button(ctx, 180, 490, 200, 48, 'Why it went this way ›', { color: '#6b4a2e', fontSize: 14, onClick: () => { game.mathPage = 1; } });
-  button(ctx, 420, 490, 200, 48, 'Close', { color: '#2c6e49', onClick: () => { game.mathOpen = false; game.mathPage = 0; } });
+  nav();
+}
+
+/** YOUR STORY: the background's goal, the three choices, and the ending they led to. */
+function storyPage(ctx, game) {
+  const e = storyEnding(game.state);
+  drawText(ctx, `YOUR STORY: ${e.background.toUpperCase()}`, 400, 80, { size: 22, weight: 'bold', color: '#ffd700', align: 'center' });
+  drawText(ctx, `${e.met ? '✓ Goal met' : 'Goal missed'}: ${e.goal}`, 400, 112, { size: 14, weight: 'bold', color: e.met ? '#2ecc71' : '#ffb27a', align: 'center', maxWidth: 540 });
+  drawText(ctx, `(${e.progress})`, 400, 132, { size: 13, color: '#c9a876', align: 'center' });
+  let y = drawWrapped(ctx, e.text, 400, 164, 520, 22, { size: 16, color: '#f0f0f0', align: 'center' }) + 14;
+  if (e.choices.length) {
+    drawText(ctx, 'YOUR CHOICES', 400, y, { size: 12, weight: 'bold', color: '#5dade2', align: 'center' });
+    y += 22;
+    for (const c of e.choices) {
+      drawText(ctx, `Day ${c.day}: ${c.text}`, 400, y, { size: 14, color: '#e8dcc4', align: 'center', maxWidth: 520 });
+      y += 22;
+    }
+  } else {
+    drawText(ctx, 'The story mornings come on days 6, 13 and 20.', 400, y, { size: 14, color: '#c9a876', align: 'center' });
+  }
+}
+
+/** WHAT YOU LEARNED: a self-debrief. Every takeaway this run showed, and the player picks the one
+ *  they will use this week; it opens their next month. Written reflection after play is what turns
+ *  a game's lessons into ones people carry out of it (debriefing research, Crookall 2010). */
+function debriefPage(ctx, game) {
+  const s = game.state;
+  drawText(ctx, 'WHAT YOU LEARNED', 400, 80, { size: 22, weight: 'bold', color: '#ffd700', align: 'center' });
+  const all = (s.lessonsSeen && s.lessonsSeen.length ? s.lessonsSeen : s.lessonsKnown || []);
+  const list = all.slice(-6);
+  if (!list.length) {
+    drawWrapped(ctx, 'No lessons yet this month. Every job challenge ends with one: play a few and they gather here.', 400, 140, 500, 22, { size: 15, color: '#e0e0e0', align: 'center' });
+    return;
+  }
+  drawText(ctx, 'Tap the one you will actually use this week.', 400, 106, { size: 14, color: '#c9a876', align: 'center' });
+  let y = 122;
+  for (const lesson of list) {
+    const lines = wrapLines(ctx, lesson, 480, { size: 13 });
+    const h = Math.max(36, lines.length * 17 + 12);
+    if (y + h > 462) break;
+    const pinned = s.pinnedTakeaway === lesson;
+    ctx.fillStyle = pinned ? 'rgba(46, 204, 113, 0.18)' : 'rgba(255, 255, 255, 0.05)';
+    roundRectPath(ctx, 140, y, 520, h, 8); ctx.fill();
+    ctx.strokeStyle = pinned ? '#2ecc71' : 'rgba(201, 168, 118, 0.45)'; ctx.lineWidth = pinned ? 2 : 1;
+    roundRectPath(ctx, 140, y, 520, h, 8); ctx.stroke();
+    if (pinned) drawText(ctx, '✓', 152, y + h / 2 + 5, { size: 15, weight: 'bold', color: '#2ecc71' });
+    drawWrapped(ctx, lesson, 170, y + 20, 480, 17, { size: 13, color: '#f0f0f0' });
+    UI.register(140, y, 520, h, () => { s.pinnedTakeaway = pinned ? '' : lesson; s.save(); }, `Use this week: ${lesson}`);
+    y += h + 6;
+  }
 }
 
 // ---------- SUMMARY (day 30) ----------
@@ -1264,18 +1467,20 @@ export function summaryScreen(ctx, game) {
     ['Lessons learned on the job', `${(s.lessonsSeen || []).length}`],
   ];
   if (goal) rows.push(['Side goal', (s.sideGoalDone || goal.check(s)) ? 'Done ✓' : 'Missed']);
-  const gy = 224;
-  panel(ctx, 190, gy - 26, 420, rows.length * 28 + 14, { alpha: 0.6 });
+  // The personal goal from this background's story (game/story.js).
+  rows.push(['Your goal', storyOf(s).goal.check(s) ? 'Met ✓' : 'Not this time']);
+  const gy = 220, RH = 26;
+  panel(ctx, 190, gy - 24, 420, rows.length * RH + 12, { alpha: 0.6 });
   rows.forEach(([k, v], i) => {
-    drawText(ctx, k, 214, gy + i * 28, { size: 15, color: '#c9a876' });
-    drawText(ctx, v, 586, gy + i * 28, { size: 15, weight: 'bold', color: '#f0f0f0', align: 'right', font: 'monospace' });
+    drawText(ctx, k, 214, gy + i * RH, { size: 15, color: '#c9a876' });
+    drawText(ctx, v, 586, gy + i * RH, { size: 15, weight: 'bold', color: '#f0f0f0', align: 'right', font: 'monospace' });
   });
 
   // Three equal buttons, evenly spaced INSIDE the panel (QA round 2 #27: the outer two hung past
   // the panel's edges).
   const BW = 172, GAP = 14, BX = 400 - (BW * 3 + GAP * 2) / 2;
   button(ctx, BX, 484, BW, 50, 'Free play (keep going)', { color: '#2c5a6e', fontSize: 13, onClick: () => game.startFreePlay() });
-  button(ctx, BX + BW + GAP, 484, BW, 50, 'The math of the month', { color: '#6b4a2e', fontSize: 13, onClick: () => { game.mathOpen = true; } });
+  button(ctx, BX + BW + GAP, 484, BW, 50, 'Month in review', { color: '#6b4a2e', fontSize: 14, onClick: () => { game.mathOpen = true; game.mathPage = 0; } });
   button(ctx, BX + (BW + GAP) * 2, 484, BW, 50, 'New run', { color: '#2c6e49', fontSize: 14, onClick: () => game.newGame() });
 }
 
@@ -1289,6 +1494,6 @@ export function gameOverScreen(ctx, game) {
   drawText(ctx, `Days survived: ${s.day}`, 400, 300, { size: 17, weight: 'bold', color: '#f0f0f0', align: 'center' });
   drawText(ctx, `Gigs completed: ${s.gigsCompleted}`, 400, 330, { size: 17, weight: 'bold', color: '#f0f0f0', align: 'center' });
   drawText(ctx, `Total earned: $${Math.round(s.totalEarned)}`, 400, 360, { size: 17, weight: 'bold', color: '#f0f0f0', align: 'center' });
-  button(ctx, 180, 430, 210, 56, 'The math of the month', { color: '#6b4a2e', fontSize: 14, onClick: () => { game.mathOpen = true; } });
+  button(ctx, 180, 430, 210, 56, 'Month in review', { color: '#6b4a2e', fontSize: 14, onClick: () => { game.mathOpen = true; game.mathPage = 0; } });
   button(ctx, 410, 430, 210, 56, 'New Game', { color: '#2c6e49', onClick: () => game.newGame() });
 }

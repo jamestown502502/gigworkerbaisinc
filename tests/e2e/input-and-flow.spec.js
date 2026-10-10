@@ -92,7 +92,7 @@ test('a full day: listings → gig → results → evening choice → sleep, wit
   await step(page, 1);
   expect(await phase(page)).toBe('EVENING');
   expect(await page.evaluate(() => window.__game.state.eveningDoneDay)).toBe(4);
-  await tapLogical(page, 160, 552); // Sleep
+  await tapLogical(page, 285, 552); // Sleep (right of Back since QA round 4 #9)
   await step(page, 1.5);
   expect(await phase(page)).toBe('MORNING');
   expect(await page.evaluate(() => window.__game.state.day)).toBe(5);
@@ -116,7 +116,7 @@ test('day 30 ends in the summary; free play is explicit (QA #4)', async ({ page 
   await tapLogical(page, 635, 552); // Sleep In
   await step(page, 1);
   await page.evaluate(() => { const g = window.__game; g.ping = null; g.step(1 / 60); });
-  await tapLogical(page, 160, 552); // Sleep
+  await tapLogical(page, 285, 552); // Sleep (right of Back since QA round 4 #9)
   await step(page, 1.5);
   expect(await phase(page)).toBe('SUMMARY');
   expect(await page.evaluate(() => window.__game.state.day)).toBe(30);

@@ -32,7 +32,7 @@ describe('#4 the tutorial lets real buttons through', () => {
     game.ping = null;
     expect(game.tutorialVisible()).toBe(true);
     game.render(game.ctx);
-    InputManager.clicks.push({ x: 300, y: 550, type: 'click' }); // the "← Back" button
+    InputManager.clicks.push({ x: 110, y: 550, type: 'click' }); // the "← Back" button (left edge since QA round 4 #9)
     game.render(game.ctx);
     expect(game.phase).toBe('MORNING');
     expect(game.tutorialVisible()).toBe(false);

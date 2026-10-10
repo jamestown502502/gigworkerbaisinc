@@ -13,7 +13,10 @@ import * as recall from './game/recall.js';
 import * as longform from './game/longform.js';
 import * as events from './game/events.js';
 import * as gigs from './game/gigs.js';
+import * as story from './game/story.js';
+import { focusedTarget } from './ui/a11y.js';
 import { drawText, roundRectPath } from './ui/text.js';
+import { applyTextSize } from './ui/screens.js';
 
 export { drawSprite, imageCache } from './engine/sprites.js';
 
@@ -46,6 +49,7 @@ async function boot() {
 
   const state = new GameState();
   initAudio(state.settings);
+  applyTextSize(state.settings);
   const game = new Game(state);
   game.ctx = ctx;
   window.__game = game;   // dev/e2e hook
@@ -59,6 +63,9 @@ async function boot() {
   window.__longform = longform; // e2e hook: ...and the long-form jobs
   window.__gigs = gigs;         // e2e hook: the job board generator
   window.__events = events;     // e2e hook: ...and every morning event (QA round 3 #12)
+  window.__story = story;       // e2e hook: ...and every story morning (QA round 4)
+  window.__applyTextSize = applyTextSize;   // e2e hook: the audit runs again at large text
+  window.__a11yFocus = focusedTarget;       // e2e hook: where the focus ring is drawn
 
   // Another tab or window of the game saved (the storage event only fires in the OTHER tabs): this
   // copy is now out of date. It stops saving and offers to reload onto the newer save.
@@ -81,6 +88,12 @@ async function boot() {
     });
   } catch { /* no history API: Back simply leaves */ }
 
+  const ambientEl = document.getElementById('ambient');
+  const ambientCanvas = document.createElement('canvas');   // never added to the page
+  ambientCanvas.width = 32; ambientCanvas.height = 24;
+  const ambient = ambientEl ? ambientCanvas.getContext('2d') : null;
+  let ambientAt = 0;
+
   let last = performance.now();
   let rafId = null;
   function frame(now) {
@@ -91,6 +104,11 @@ async function boot() {
     if (!window.__loopPaused) {
       game.update(dt);
       game.render(ctx);
+    }
+    // The ambient fill behind the game (index.html #ambient): a 32x24 copy, five times a second.
+    if (ambient && now - ambientAt > 200) {
+      ambientAt = now;
+      try { ambient.drawImage(canvas, 0, 0, 32, 24); ambientEl.style.backgroundImage = `url(${ambientCanvas.toDataURL()})`; } catch { /* canvas not ready */ }
     }
     // the "press back again" window closed without a second Back: re-arm the guard entry
     if (game.exitArmedAt && now - game.exitArmedAt > 2000) {
@@ -108,6 +126,9 @@ async function boot() {
   // Back from another page (bfcache) or app: the same as becoming visible again (QA round 3 #7).
   window.addEventListener('pageshow', (e) => { if (e.persisted && !document.hidden) setBackgrounded(false); });
   window.addEventListener('focus', () => { if (!document.hidden) setBackgrounded(false); });
+  // The page lost focus but is still on screen: the address bar, the notification shade, another
+  // window on a desktop. The game falls silent then too (QA round 4 #7) and picks up on return.
+  window.addEventListener('blur', () => setBackgrounded(true));
   document.addEventListener('visibilitychange', () => {
     setBackgrounded(document.hidden); // the music and SFX stop with the app, not just the frames
     if (document.hidden) {
