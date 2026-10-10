@@ -95,20 +95,66 @@ export function unlock() {
       src.connect(ctx.destination);
       src.start(0);
     }
+    if (ctx && !backgrounded) blessAll();
     startBGM();
     unlocked = (ctx && ctx.state === 'running') || unlocked;
   } catch { /* no Web Audio — the game is silent but playable */ }
   return unlocked;
 }
 
+/** Android (QA round 4 #1, no music during gigs): only the morning track was ever started inside a
+ *  tap; the work, evening and summary players were created later, from the game loop, and a phone
+ *  can refuse play() there. Inside the first real tap every player is created and started once
+ *  (silent, at zero gain) and paused again, which lets each one play later without a tap, the
+ *  usual mobile pattern for a pool of audio elements. */
+let blessed = false;
+function blessAll() {
+  if (blessed || settings.muted || musicVolume() <= 0) return;
+  blessed = true;
+  // Primed without loading: preload 'none' and a pause in the same tick, so the first tap does not
+  // fetch and decode three extra tracks while the one that should play is starting (measured: under
+  // load that starved the morning track into silence).
+  for (const name of Object.keys(MUSIC_TRACKS)) {
+    if (name === musicState || players[name]) continue;
+    const p = player(name);
+    p.el.preload = 'none';
+    if (p.gain) p.gain.gain.value = 0;
+    const was = p.el.muted;
+    p.el.muted = true;
+    const r = p.el.play();
+    p.el.pause();
+    p.el.muted = was;
+    if (r && r.catch) r.catch(() => { /* AbortError from the pause: expected */ });
+  }
+}
+
+/** Called about once a second from the game loop: music that should be playing but is not (a
+ *  refused play(), a stalled stream, a track that never faded back up) is started again. */
+export function ensureMusic() {
+  if (!unlocked || backgrounded || settings.muted || musicVolume() <= 0) return;
+  if (typeof document !== 'undefined' && document.hidden) return;
+  const p = players[musicState];
+  if (!p) { startBGM(); return; }
+  if (p.el.paused || p.el.ended) p.el.play().catch(() => { /* the next tap retries (unlock) */ });
+  if (p.gain && audioCtx && p.gain.gain.value < 0.02 && !p.fading) {
+    p.gain.gain.cancelScheduledValues?.(audioCtx.currentTime);
+    p.gain.gain.setTargetAtTime(1, audioCtx.currentTime, 0.3);
+  }
+}
+
 export function isUnlocked() { return unlocked; }
 export function contextState() { return audioCtx ? audioCtx.state : 'none'; }
 
+/** Sound only while the game is on screen. A tone scheduled while the app was away waited on the
+ *  suspended context, and every one queued burst out at once on return: the "sounds play randomly"
+ *  of QA round 4 #7. (A context that is only starting up, on the first tap, still gets its sound.) */
+function canSound(ctx) { return !!ctx && !backgrounded; }   // a context still starting up plays it as soon as it runs
+
 function tone(freq, dur, { type = 'square', vol = 0.06, when = 0, slide = 0 } = {}) {
   const v = vol * sfxVolume();
-  if (v <= 0) return;
+  if (v <= 0 || backgrounded) return;
   const ctx = ac();
-  if (!ctx) return;
+  if (!canSound(ctx)) return;
   const t0 = ctx.currentTime + when;
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -138,9 +184,9 @@ export function playSting()   { tone(140, 0.4, { type: 'sawtooth', vol: 0.05, sl
  *  Sustained (not a blip), so the out-breath can be paced by ear with the eyes closed. */
 export function playBreathGlide(rising, seconds) {
   const v = 0.03 * sfxVolume();
-  if (v <= 0) return;
+  if (v <= 0 || backgrounded) return;
   const ctx = ac();
-  if (!ctx) return;
+  if (!canSound(ctx)) return;
   const t0 = ctx.currentTime;
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -175,6 +221,13 @@ function player(name) {
     } catch { p.node = null; p.gain = null; }
   }
   if (!p.node) el.volume = musicVolume(); // no Web Audio: the element's own volume is all there is
+  // A track that fails to load (a dropped connection on the first visit) is built again the next
+  // time it is wanted, instead of staying silent for the rest of the session.
+  el.addEventListener('error', () => {
+    if (players[name] !== p) return;
+    try { p.node?.disconnect(); p.gain?.disconnect(); } catch { /* already gone */ }
+    delete players[name];
+  });
   players[name] = p;
   return p;
 }
@@ -204,7 +257,11 @@ export function setMusicState(name) {
   const next = player(name);
   bgmAudio = next.el; bgmNode = next.node;
   const t = audioCtx ? audioCtx.currentTime : 0;
-  if (next.gain) { next.gain.gain.setValueAtTime(0.0001, t); next.gain.gain.linearRampToValueAtTime(1, t + CROSSFADE); }
+  if (next.gain) {
+    next.gain.gain.cancelScheduledValues?.(t);
+    next.gain.gain.setValueAtTime(0.0001, t); next.gain.gain.linearRampToValueAtTime(1, t + CROSSFADE);
+    next.fading = true; setTimeout(() => { next.fading = false; }, CROSSFADE * 1000 + 100);
+  }
   next.el.play().catch(() => {});
   if (prev && prev !== next) {
     if (prev.gain) {

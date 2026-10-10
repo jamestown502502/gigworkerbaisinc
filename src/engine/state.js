@@ -81,6 +81,8 @@ export class GameState {
     this.contracts = [];         // standing contracts: { client, title, payout, every, nextDay }
     this.background = 'fresh';   // starting background (game/depth.js BACKGROUNDS)
     this.activeGig = null;       // the gig in progress, cleared when its receipt prints
+    this.story = {};             // your story this run: choices, flags, the advance (game/story.js)
+    this.pinnedTakeaway = '';    // the lesson the player chose at the month's debrief; kept across runs
     this.lessonsKnown = [];      // every takeaway ever shown, across runs: seen ones show compact
     this.microgamePlays = {};    // plays per challenge across runs: variants unlock after a few
     this.rentCredit = 0;         // Rent Hike: building chores knock this off the next rent
@@ -102,6 +104,7 @@ export class GameState {
       muted: false,
       reduceTimingPressure: false,
       reduceMotion: false,
+      largeText: null,   // null = follow the device (ui/text.js systemPrefersLargeText)
     };
     this.load();
   }
@@ -147,6 +150,7 @@ export class GameState {
     const tutorialSeen = this.tutorialSeen;  // someone starting over has seen it (Settings replays it)
     const seenMicrogames = this.seenMicrogames || [];
     const lessonsKnown = [...new Set([...(this.lessonsKnown || []), ...(this.lessonsSeen || [])])];
+    const pinnedTakeaway = this.pinnedTakeaway || '';
     const microgamePlays = { ...(this.microgamePlays || {}) };
     const background = this.background || 'fresh';
     const lastTwist = this.twist || this.lastTwist;
@@ -164,6 +168,7 @@ export class GameState {
     this.tutorialSeen = tutorialSeen;
     this.seenMicrogames = seenMicrogames;
     this.lessonsKnown = lessonsKnown;
+    this.pinnedTakeaway = pinnedTakeaway;
     this.microgamePlays = microgamePlays;
     this.background = background;
     this.lastTwist = lastTwist;

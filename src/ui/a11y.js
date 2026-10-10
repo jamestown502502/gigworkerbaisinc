@@ -15,6 +15,13 @@ let root = null;
 let live = null;
 const pool = new Map();   // key -> <button>
 let lastSignature = '';
+// The mirrored button that has focus, in logical units. The game draws its own ring there on the
+// canvas (QA round 4 #14: TalkBack read the labels but showed no focus box): a screen reader's
+// focus on a sized, positioned button also moves DOM focus in Chrome, and the canvas ring is
+// visible whatever the browser draws for the outline.
+let focused = null;
+/** The focused mirrored button { x, y, w, h, label } in 800x600 units, or null. */
+export function focusedTarget() { return focused; }
 
 function ensureRoot() {
   if (root || typeof document === 'undefined') return root;
@@ -23,7 +30,7 @@ function ensureRoot() {
   Object.assign(root.style, { position: 'fixed', left: '0', top: '0', width: '0', height: '0', zIndex: '5', pointerEvents: 'none' });
   const style = document.createElement('style');
   style.textContent = `#a11y-layer button{position:fixed;margin:0;padding:0;border:0;background:transparent;color:transparent;font-size:1px;pointer-events:none;opacity:1;outline:none}
-#a11y-layer button:focus-visible{outline:3px solid #f1c40f;outline-offset:2px;border-radius:8px}
+#a11y-layer button:focus,#a11y-layer button:focus-visible{outline:3px solid #f1c40f;outline-offset:2px;border-radius:8px}
 #a11y-live{position:fixed;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden}`;
   document.head.appendChild(style);
   live = document.createElement('div');
@@ -62,9 +69,14 @@ export function syncA11y(canvas, targets) {
       b = document.createElement('button');
       b.type = 'button';
       b.addEventListener('click', () => b._press?.());
+      b.addEventListener('focus', () => { focused = b._rect; });
+      b.addEventListener('blur', () => { if (focused === b._rect) focused = null; });
       pool.set(t.key, b);
     }
     b._press = t.press;
+    const wasFocused = focused && focused === b._rect;
+    b._rect = { x: t.x, y: t.y, w: t.w, h: t.h, label: t.label };
+    if (wasFocused) focused = b._rect;
     b.setAttribute('aria-label', t.label);
     b.textContent = t.label;
     Object.assign(b.style, { left: `${r.left + t.x * sx}px`, top: `${r.top + t.y * sy}px`, width: `${Math.max(1, t.w * sx)}px`, height: `${Math.max(1, t.h * sy)}px` });
@@ -73,6 +85,7 @@ export function syncA11y(canvas, targets) {
   });
   for (const [key, b] of pool) {
     if (keep.has(key)) continue;
+    if (focused === b._rect) focused = null;
     b.remove(); pool.delete(key);
   }
 }

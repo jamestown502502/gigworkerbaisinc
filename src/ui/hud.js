@@ -117,8 +117,9 @@ export function renderHUD(ctx, game) {
     drawText(ctx, `${w.emoji} ${w.name}`, RX, 29, { size: 12, weight: 'bold', color: w.color, align: 'right', baseline: 'middle', maxWidth: RW });
   }
   const prepaid = state.rentPrepaid && !state.unpaidRent;
+  // #e8d4ab, was #c9a876: that measured 4.26-4.48:1 over the busier backdrops (QA round 4 audit).
   drawText(ctx, prepaid ? 'Rent paid ✓' : rentDueLabel(Math.max(0, state.daysUntilBills)), RX, 45, {
-    size: 11, color: prepaid ? '#2ecc71' : state.daysUntilBills <= 2 ? '#ff6b5e' : '#c9a876', font: 'monospace', align: 'right', baseline: 'middle', maxWidth: RW,
+    size: 11, color: prepaid ? '#2ecc71' : state.daysUntilBills <= 2 ? '#ff8a7e' : '#e8d4ab', font: 'monospace', align: 'right', baseline: 'middle', maxWidth: RW,
   });
 
   // Mute (one tap) and Settings, top-right corner

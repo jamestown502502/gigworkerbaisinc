@@ -492,3 +492,42 @@ Before/after: `C:\Users\Jbthi\Claude Cowork\BAIS_Critique_Depth_Pass_BeforeAfter
 - **A11y:** `src/ui/a11y.js` mirrors labelled hotspots (`UI.register(..., label)`, `button()` passes its
   label) as invisible buttons + a live region. Timing challenges remain canvas-only.
 - Renamed in-game to Side Hustle City (loading screen, `<title>`).
+
+## 16. QA round 4 + depth pass (2026-10-10)
+
+Tester report: 15 rows (`GigWorkerBaisinic - Issue Report Round 4.xlsx`). Before/after:
+`C:\Users\Jbthi\Claude Cowork\BAIS_QA_Round4_BeforeAfter_2026-10-10.md`.
+
+- **Audio (#1 Android silent in gigs, #7 sounds while not in front):** `unlock()` primes every music
+  player inside the first tap (`blessAll`), `ensureMusic()` watchdog runs once a second from
+  `Game.update`, a player whose element errors is rebuilt, `sw.js` answers ranged audio requests
+  with real 206 slices from the cache, `tone()`/`playBreathGlide()` do nothing while backgrounded
+  (queued tones used to burst out on return), and window `blur` silences the game too.
+- **Rent (#2, #8):** the Pay rent panel (`openRentPay`/`adjustRentPay`/`confirmRentPay`,
+  `screens.js rentModals`) pays any amount from $10 to all of it, in the morning, the evening and on
+  the bills screen. Pay early asks first (`askPayRentEarly` → `confirmRentEarly`). Back closes both.
+- **Bills and forecast (#4, #13):** `billsCard` (morning panel) lists rent/phone/groceries and any
+  debts with status, then a labelled RENT FORECAST; with rent overdue the forecast becomes the plan
+  to clear it (`forecastFor` no longer returns null). The panel sheds the month line, then the
+  rested line, at Large Text rather than run into the buttons.
+- **RUSH! (#3):** `RUSH_TARGET` shown live; result title ON/BELOW TARGET (never FUMBLED for shift
+  games) with `result.why` counting the accepted orders under $1 a mile.
+- **Tutorial (#6):** steps carry `ready(game)`; Check Listings waits for the morning card/news; evening
+  steps wait for bills/ping. (The Day 1 month card is what it used to point past.)
+- **Layout:** evening Back left-aligned to its panel, Sleep beside it (#9); READ THE CLIENT face below
+  the hint line (#10); breathing chooser cards preview the ring/box (#11).
+- **Landscape (#5):** `#ambient` div behind the canvas, a 32x24 copy of the frame 5x/s, blurred (not a
+  second canvas: tests and probes look up THE canvas). Settings has Full screen.
+- **A11y (#14, #15):** focused mirrored button draws a ring on the canvas (`focusedTarget`) and has a
+  CSS `:focus` outline; Settings > Large Text scales 12-16 px text to max 18 px (`ui/text.js
+  scaledSize`), on by default when iOS Dynamic Type or the `text-scale` meta reports large text.
+- **#12 swipe-to-reschedule:** not a defect (the brief meant swiping the APP away); brief reworded.
+- **Depth:** `src/game/story.js` gives each background a goal, three choice mornings (days 6/13/20)
+  with an `after` lesson each, a payday-advance that comes due, and an ending; `src/game/skills.js`
+  names each challenge's skill on the count-in and the result card; month review has four pages
+  (numbers, why, YOUR STORY, WHAT YOU LEARNED); the pinned takeaway (`state.pinnedTakeaway`, kept by
+  `reset()`) opens the next run.
+- Tests: `tests/unit/qaRound4.test.js` (24), audio tests rewritten for one element per track,
+  `tests/e2e/qa-round4.spec.js` (readability of every new screen at normal AND large text, rent
+  panel and pay-early by taps, focus ring, blur silence). Coordinates updated in boot-and-layout and
+  input-and-flow for the moved Back/Sleep/rent buttons.

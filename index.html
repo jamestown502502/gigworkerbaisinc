@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <!-- Lets browsers that support it report the phone's text size through rem (Large Text, QA round 4 #15). -->
+  <meta name="text-scale" content="scale" />
   <title>Side Hustle City: Gig Sim</title>
   <meta name="theme-color" content="#1d150d" />
   <meta name="description" content="Survive 30 days of odd jobs, rising stress, and weekly rent in a gig-work sim." />
@@ -27,6 +29,16 @@
       display: flex; align-items: center; justify-content: center;
     }
     #game canvas { display: block; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+    /* Ambient fill (QA round 4 #5): the 4:3 game cannot stretch to a 20:9 phone without distorting,
+       so the bands beside (or above and below) it glow with a blurred copy of the current scene
+       instead of sitting empty. A 32x24 copy of the game canvas, five times a second (src/main.js);
+       a div, not a second canvas, so the page keeps exactly one canvas. */
+    #ambient {
+      position: fixed; inset: -8%; width: 116%; height: 116%; z-index: 0; pointer-events: none;
+      background-size: 100% 100%; background-repeat: no-repeat;
+      filter: blur(36px) brightness(0.62) saturate(1.2);
+    }
+    #game { z-index: 1; }
     /* Portrait phones: the 4:3 game is small there. A hint in the empty band above the game, never
        over it and never blocking a tap (pointer-events: none). */
     #rotate-hint {
@@ -38,6 +50,7 @@
   </style>
 </head>
 <body>
+  <div id="ambient" aria-hidden="true"></div>
   <div id="game"></div>
   <div id="rotate-hint" aria-hidden="true">&#x21bb; Turn your phone sideways for a bigger, easier view</div>
   <script type="module" src="/src/main.js"></script>

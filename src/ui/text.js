@@ -1,11 +1,39 @@
 // Shared canvas drawing helpers: crisp text, rounded rects, gradient meters.
 
+// Large text (QA round 4 #15). The game is one canvas, so the phone's font-size setting cannot
+// reach it the way it reaches a web page. Settings > Large text scales the small body text, where
+// the reading happens (12-16 px), up to 18 px; headings and numbers that are already big keep their
+// size so every layout still fits. Wrapped text grows its line height with it.
+let textScale = 1;
+export function setTextScale(k) { textScale = k > 0 ? k : 1; }
+export function getTextScale() { return textScale; }
+/** The size text of `size` is really drawn at. */
+export function scaledSize(size) {
+  return textScale === 1 || size > 16 ? size : Math.min(18, Math.round(size * textScale * 2) / 2);
+}
+
+/** True when the device asks for larger text: iOS Dynamic Type (the -apple-system-body font) or a
+ *  browser that applies the system text scale to rem (the `text-scale` meta in index.html). */
+export function systemPrefersLargeText() {
+  if (typeof document === 'undefined' || !document.body) return false;
+  try {
+    const probe = document.createElement('span');
+    probe.style.cssText = 'position:absolute;visibility:hidden;font:-apple-system-body';
+    document.body.appendChild(probe);
+    const body = parseFloat(getComputedStyle(probe).fontSize) || 0;
+    probe.style.cssText = 'position:absolute;visibility:hidden;font-size:1rem';
+    const rem = parseFloat(getComputedStyle(probe).fontSize) || 16;
+    probe.remove();
+    // iOS's default body text is 17 px; a bigger one is the Larger Text setting
+    return body > 19 || rem > 18;
+  } catch { return false; }
+}
+
 // Draw readable text with an optional drop shadow / outline.
 // baseline defaults to 'alphabetic' so existing y coordinates (which are
 // baseline positions) keep working after the migration from raw fillText.
 export function drawText(ctx, text, x, y, options = {}) {
   const {
-    size = 18,
     color = '#e0e0e0',
     font = 'system-ui, sans-serif',
     weight = '',
@@ -15,6 +43,7 @@ export function drawText(ctx, text, x, y, options = {}) {
     outline = false,
     maxWidth = undefined,
   } = options;
+  const size = scaledSize(options.size ?? 18);
 
   ctx.font = `${weight ? weight + ' ' : ''}${size}px ${font}`;
   ctx.textAlign = align;
@@ -61,7 +90,7 @@ export function wrapLines(ctx, text, maxW, options = {}) {
   const words = String(text).split(' ');
   const lines = [];
   let line = '';
-  ctx.font = `${options.size || 16}px ${options.font || 'system-ui, sans-serif'}`;
+  ctx.font = `${scaledSize(options.size || 16)}px ${options.font || 'system-ui, sans-serif'}`;
   for (const word of words) {
     const test = line ? line + ' ' + word : word;
     if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = word; } else line = test;
@@ -72,13 +101,15 @@ export function wrapLines(ctx, text, maxW, options = {}) {
 
 export function drawWrapped(ctx, text, x, y, maxW, lineH, options = {}) {
   const lines = wrapLines(ctx, text, maxW, options);
-  lines.forEach((line, i) => drawText(ctx, line, x, y + i * lineH, options));
-  return y + Math.max(1, lines.length) * lineH;
+  const base = options.size || 16;
+  const lh = lineH * scaledSize(base) / base;   // larger text gets taller lines
+  lines.forEach((line, i) => drawText(ctx, line, x, y + i * lh, options));
+  return y + Math.max(1, lines.length) * lh;
 }
 
 // Measure text width without call sites touching ctx.font directly.
 export function textWidth(ctx, text, size = 16, font = 'system-ui, sans-serif', weight = '') {
-  ctx.font = `${weight ? weight + ' ' : ''}${size}px ${font}`;
+  ctx.font = `${weight ? weight + ' ' : ''}${scaledSize(size)}px ${font}`;
   return ctx.measureText(text).width;
 }
 

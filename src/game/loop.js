@@ -23,7 +23,9 @@ import { TUTORIAL_STEPS, renderTutorial } from '../ui/tutorial.js';
 import { spawnBurst, spawnFloatingText, triggerShake, triggerTint, getShakeOffset, updateFX, renderFX, renderTint, renderTokens, spawnFlyToken } from '../ui/fx.js';
 import { effectTokens, isFiveStars, receiptState, HAPTIC } from '../ui/juice.js';
 import { createTransition, stepTransition, renderTransition } from '../ui/transition.js';
-import { syncA11y, announce } from '../ui/a11y.js';
+import { syncA11y, announce, focusedTarget } from '../ui/a11y.js';
+import { roundRectPath } from '../ui/text.js';
+import { storyIntroCard, storyBeatCard, storyDueCard } from './story.js';
 
 export const UPGRADES = [
   { name: 'Better Shoes', cost: 50, effect: 'Travel costs -1 energy', apply: (state) => { state.energyPerTravel = Math.max(1, (state.energyPerTravel || 3) - 1); } },
@@ -281,6 +283,20 @@ export class Game {
     // ...and the morning after each visit, one earlier takeaway comes back as a question (recall.js).
     const quiz = inTutorial ? null : recallCard(s);
     if (quiz) this.eventQueue.unshift(quiz);
+    // Your story (game/story.js): the background's opening the first morning out of the tutorial,
+    // its three choice mornings, and the payday advance coming due if one was taken.
+    if (!inTutorial) {
+      s.story = s.story || {};
+      const due = storyDueCard(s);
+      if (due) this.eventQueue.unshift(due);
+      const beatCard = storyBeatCard(s);
+      if (beatCard) this.eventQueue.push(beatCard);
+      if (!s.story.introShown) {
+        const intro = storyIntroCard({ ...s, day: 1 });
+        // First thing on a run's opening morning; a save from before stories existed hears it last.
+        if (intro) { if (s.day <= 2) this.eventQueue.unshift(intro); else this.eventQueue.push(intro); s.story.introShown = true; }
+      }
+    }
     // A happy client's referral or contract offer, and the Rent Hike super's chores (depth pass).
     if (!inTutorial) {
       const offer = this.clientOfferCard();
@@ -371,7 +387,7 @@ export class Game {
     if (this.settingsOpen || this.resumePrompt || this.staleTab) return false;
     if (this.state.tutorialSeen) return false;
     const step = TUTORIAL_STEPS[this.state.tutorialStep];
-    return !!step && step.phase === this.phase;
+    return !!step && step.phase === this.phase && (!step.ready || step.ready(this));
   }
 
   /** The current tutorial step has been read. A tap that also pressed a real button can move the
@@ -871,11 +887,11 @@ export class Game {
   /** Part of the rent now. Paying at least half of what is owed buys a grace week before the
    *  eviction clock moves again: landlords take partial payments, and a month should turn on
    *  choices, not on one bad week (2026-10-07). */
-  payRentPartial() {
+  payRentPartial(amount = this.partialRentAmount()) {
     const s = this.state;
-    const amt = this.partialRentAmount();
-    if (!amt) return;
-    const owed = this.billsOpen && !this.billsPaid.rent ? this.billAmount('rent') : s.unpaidRent;
+    const owed = this.rentOwedNow();
+    const amt = Math.floor(Math.min(amount || 0, owed, s.cash));
+    if (amt <= 0 || amt >= owed) return;
     s.cash -= amt;
     s.monthMath.rentPaid += amt;
     s.monthMath.partialRent += amt;
@@ -890,6 +906,40 @@ export class Game {
     s.save();
   }
 
+  /** What rent is owed right now: this week's bill while the bills screen is open, otherwise the
+   *  overdue balance. */
+  rentOwedNow() {
+    return this.billsOpen && !this.billsPaid.rent ? this.billAmount('rent') : this.state.unpaidRent;
+  }
+
+  /** The "Pay rent" panel (QA round 4 #2): the player picks the amount, from $10 up to all of it,
+   *  instead of a fixed partial sum. Opens on whatever is owed now. */
+  openRentPay() {
+    const s = this.state;
+    const owed = this.rentOwedNow();
+    if (owed <= 0 || s.cash < 10) return;
+    const most = Math.floor(Math.min(owed, s.cash));
+    this.rentPay = { amount: most };
+  }
+  /** Change the amount by `delta` (or set it, when `to` is given), kept between $10 and the most the
+   *  player can pay. */
+  adjustRentPay(delta, to = null) {
+    if (!this.rentPay) return;
+    const most = Math.floor(Math.min(this.rentOwedNow(), this.state.cash));
+    const v = to !== null ? to : this.rentPay.amount + delta;
+    this.rentPay.amount = Math.max(Math.min(10, most), Math.min(most, Math.round(v)));
+  }
+  confirmRentPay() {
+    if (!this.rentPay) return;
+    const owed = this.rentOwedNow();
+    const amt = Math.floor(Math.min(this.rentPay.amount, owed, this.state.cash));
+    this.rentPay = null;
+    if (amt <= 0) return;
+    if (amt >= owed) {
+      if (this.billsOpen && !this.billsPaid.rent) this.payBill('rent'); else this.payDebt('rent');
+    } else this.payRentPartial(amt);
+  }
+
   /** This week's rent, paid early from the apartment or the evening (QA round 3 #8). The bills
    *  screen then shows it already paid. Overdue rent is paid with payDebt('rent') instead. */
   rentEarlyAmount() { return Math.max(0, RENT + rentExtra(this.state.twist) - (this.state.rentCredit || 0)); }
@@ -897,8 +947,11 @@ export class Game {
     const s = this.state;
     return !s.rentPrepaid && s.unpaidRent === 0 && s.daysUntilBills > 0 && s.cash >= this.rentEarlyAmount();
   }
+  /** Pay early asks first (QA round 4 #8): a stray tap should not spend $180. */
+  askPayRentEarly() { if (this.canPayRentEarly()) this.confirmRentEarly = true; }
   payRentEarly() {
     const s = this.state;
+    this.confirmRentEarly = false;
     if (!this.canPayRentEarly()) return;
     const amt = this.rentEarlyAmount();
     s.cash -= amt;
@@ -1077,6 +1130,8 @@ export class Game {
   update(dt) {
     updateFX(dt);
     audio.setMusicState(this.musicStateFor());
+    this.musicCheckT = (this.musicCheckT || 0) + dt;
+    if (this.musicCheckT >= 1) { this.musicCheckT = 0; audio.ensureMusic(); }
     if (this.transition) {
       if (stepTransition(this.transition, dt)) this.transition = null;
       return; // the world holds still under the cover
@@ -1221,6 +1276,16 @@ export class Game {
     renderFX(ctx);
     renderTokens(ctx);
     if (this.tutorialVisible()) renderTutorial(ctx, this);
+    // Screen reader / keyboard focus, drawn on the canvas so it always shows (QA round 4 #14).
+    const f = focusedTarget();
+    if (f) {
+      ctx.save();
+      ctx.strokeStyle = '#f1c40f'; ctx.lineWidth = 4;
+      roundRectPath(ctx, f.x - 4, f.y - 4, f.w + 8, f.h + 8, 10); ctx.stroke();
+      ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.lineWidth = 1.5;
+      roundRectPath(ctx, f.x - 7, f.y - 7, f.w + 14, f.h + 14, 12); ctx.stroke();
+      ctx.restore();
+    }
     ctx.restore();
     renderTint(ctx); // screen-space wash, drawn outside the shake translate on purpose
     if (this.transition) { renderTransition(ctx, this.transition); UI.begin(); } // nothing is tappable mid-transition
@@ -1262,6 +1327,8 @@ export class Game {
     if (this.transition) return true;
     if (this.settingsOpen) { this.settingsOpen = false; this.confirmReset = false; return true; }
     if (this.mathOpen) { this.mathOpen = false; this.mathPage = 0; return true; }
+    if (this.rentPay) { this.rentPay = null; return true; }
+    if (this.confirmRentEarly) { this.confirmRentEarly = false; return true; }
     if (this.shopOpen) { this.shopOpen = false; return true; }
     if (this.resumePrompt) { if (this.confirmNewGame) { this.confirmNewGame = false; return true; } return false; }
     if (this.billsOpen || this.wrapUpOpen) return true;                 // a decision is waiting

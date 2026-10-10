@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures.js';
-import { boot, tapLogical, phase, settleMorning, step } from './helpers.js';
+import { boot, tapLabel, tapLogical, phase, settleMorning, step } from './helpers.js';
 
 test('boots to a rendered first frame without hanging (QA #6)', async ({ page }) => {
   await boot(page);
@@ -67,8 +67,13 @@ test('first launch opens the character creator, then the tutorial; Skip is visib
     const rect = await page.evaluate(() => window.__game.tutorialSkipRect);
     expect(rect).toBeTruthy();
     expect(rect[0]).toBeGreaterThan(600);
-    await tapLogical(page, 400, 560); // advance (below the bubble)
+    await tapLogical(page, 400, 505); // advance (below the bubble, clear of the day's buttons)
   }
+  // Day 1's month card is up now. Step 4 points at Check Listings, so it waits until the card is
+  // closed and the button is really on screen (QA round 4 #6: it used to point at an empty spot).
+  expect(await page.evaluate(() => !!window.__game.activeEvent && !window.__game.tutorialVisible())).toBe(true);
+  await page.evaluate(() => { const g = window.__game; while (g.activeEvent || g.eventQueue.length) g.startNextEvent(); g.step(1 / 60); });
+  expect(await page.evaluate(() => window.__game.tutorialVisible())).toBe(true);
   // Skip from step 4
   const rect = await page.evaluate(() => window.__game.tutorialSkipRect);
   await tapLogical(page, rect[0] + rect[2] / 2, rect[1] + rect[3] / 2);
@@ -79,7 +84,8 @@ test('debt buttons work during the morning ticker (QA #10)', async ({ page }) =>
   await boot(page, { save: { tutorialSeen: true, cash: 900, unpaidRent: 600, rentOverdueDays: 2, day: 9 } });
   await page.evaluate(() => { const g = window.__game; g.ticker = { lines: ['a', 'b', 'c'], idx: 0, t: 0 }; g.step(2 / 60); });
   expect(await page.evaluate(() => window.__game.morningReady)).toBe(false);
-  await tapLogical(page, 485, 370); // Pay Overdue Rent
+  await tapLogical(page, 485, 370); // Pay overdue rent... opens the Pay rent panel (QA round 4 #2)
+  await tapLogical(page, 305, 446); // Pay: it opens on the whole amount owed
   expect(await page.evaluate(() => window.__game.state.unpaidRent)).toBe(0);
   expect(await page.evaluate(() => window.__game.state.cash)).toBe(300);
 });
@@ -93,9 +99,10 @@ test('every screen has a way back or forward; evening has Back (QA #21)', async 
   await step(page, 1);
   await page.evaluate(() => { window.__game.ping = null; window.__game.step(1 / 60); });
   expect(await phase(page)).toBe('EVENING');
-  await tapLogical(page, 325, 552); // Back
+  await tapLogical(page, 110, 552); // Back (left edge of the row since QA round 4 #9)
   await step(page, 1);
   expect(await phase(page)).toBe('MORNING');
+  expect(await page.evaluate(() => window.__game.state.day)).toBe(1);   // went back, did not sleep
 });
 
 test('after Sleep In (skip day) the evening has no Back to the morning (QA round 2 #18)', async ({ page }) => {
@@ -105,19 +112,21 @@ test('after Sleep In (skip day) the evening has no Back to the morning (QA round
   await step(page, 1);
   await page.evaluate(() => { window.__game.ping = null; window.__game.step(1 / 60); });
   expect(await phase(page)).toBe('EVENING');
-  await tapLogical(page, 325, 552); // where Back used to be
-  await step(page, 1);
-  expect(await phase(page)).toBe('EVENING');
+  // No Back on this evening: the screen reader layer lists every button, and none of them is Back.
+  await page.evaluate(() => window.__game.step(1 / 60));
+  const labels = await page.locator('#a11y-layer button').evaluateAll((bs) => bs.map((b) => b.getAttribute('aria-label')));
+  expect(labels.some((l) => /Back/.test(l))).toBe(false);
+  expect(labels).toContain('Sleep');
 });
 
 test('settings: reset progress needs a confirm and keeps settings (QA #18)', async ({ page }) => {
   await boot(page, { save: { tutorialSeen: true, day: 7, cash: 777, settings: { muted: true } } });
   await tapLogical(page, 778, 16); // gear
   expect(await page.evaluate(() => window.__game.settingsOpen)).toBe(true);
-  await tapLogical(page, 495, 482); // Reset progress
+  await tapLabel(page, 'Start new game'); // reset progress
   expect(await page.evaluate(() => window.__game.confirmReset)).toBe(true);
   expect(await page.evaluate(() => window.__game.state.day)).toBe(7);
-  await tapLogical(page, 495, 482); // YES
+  await tapLabel(page, 'Start over? YES');
   await step(page, 1);
   expect(await page.evaluate(() => window.__game.state.day)).toBe(1);
   expect(await page.evaluate(() => window.__game.state.settings.muted)).toBe(true);
@@ -135,8 +144,8 @@ test('during the tutorial, settings open, and New game / Close inside them work'
   expect(await page.evaluate(() => window.__game.settingsOpen)).toBe(false);
   expect(await page.evaluate(() => window.__game.tutorialVisible())).toBe(true); // tutorial resumes
   await tapLogical(page, 778, 16);
-  await tapLogical(page, 495, 482); // Start new game
-  await tapLogical(page, 495, 482); // Start over? YES
+  await tapLabel(page, 'Start new game');
+  await tapLabel(page, 'Start over? YES');
   await step(page, 1);
   expect(await phase(page)).toBe('CREATE');
 });
