@@ -297,7 +297,7 @@ export class Breathe {
       c.lines.forEach((l, i) => drawText(ctx, l, b.x + b.w / 2, b.y + 100 + i * 20, { size: 13, color: '#e8dcc4', align: 'center' }));
       // A live preview of the breathing guide on each card (QA round 4 #11: the ring only appeared
       // after a choice, so the first screen read as "the ring is missing").
-      const px = b.x + 32, py = b.y + 36, pr = 16, col = c.key === 'calm' ? '#5dade2' : '#9b8cd9';
+      const px = b.x + 28, py = b.y + 30, pr = 14, col = c.key === 'calm' ? '#5dade2' : '#9b8cd9';
       const cyc = (this.chooseT % (c.key === 'calm' ? 10 : 16)) / (c.key === 'calm' ? 10 : 16);
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.18)';
       let dot;

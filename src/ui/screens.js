@@ -1238,7 +1238,7 @@ export function settingsModal(ctx, game) {
   y = drawWrapped(ctx, 'Quick fades instead of screen transitions.', 196, y, 400, 16, { size: 12, color: '#b5a488' }) + 4;
   // Large text (QA round 4 #15): starts on when the phone asks for bigger text.
   toggleRow(ctx, 196, y, 'Large Text', () => largeTextOn(s), (v) => { s.largeText = v; applyTextSize(s); game.state.save(); }); y += 46;
-  y = drawWrapped(ctx, 'Bigger reading text everywhere. Follows your phone at first.', 196, y, 400, 16, { size: 12, color: '#b5a488' }) + 8;
+  y = drawWrapped(ctx, 'Bigger reading text. On if your phone uses large text.', 196, y, 270, 16, { size: 12, color: '#b5a488' }) + 8;
 
   button(ctx, 196, y, 128, 40, 'Replay tutorial', { color: '#2c5a6e', fontSize: 13, onClick: () => game.replayTutorial() });
   // Full screen hides the browser's bars, the biggest game a phone can show (QA round 4 #5).
