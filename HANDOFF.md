@@ -531,3 +531,25 @@ Tester report: 15 rows (`GigWorkerBaisinic - Issue Report Round 4.xlsx`). Before
   `tests/e2e/qa-round4.spec.js` (readability of every new screen at normal AND large text, rent
   panel and pay-early by taps, focus ring, blur silence). Coordinates updated in boot-and-layout and
   input-and-flow for the moved Back/Sleep/rent buttons.
+
+## 17. Web pivot (2026-10-11)
+
+Google Play is shelved; the game is web-first and pitched to publishers. Live at
+**https://side-hustle-city-gig-sim.vercel.app** (the old `gigworkerbaisinc.vercel.app` 308-redirects, set as
+a Vercel domain redirect; the Vercel project itself was renamed `side-hustle-city-gig-sim`). PR #19.
+
+- **Keyboard + gamepad** (`src/engine/keys.js`, `Game.keyTargets()` / `Game.processKeys()` in loop.js): arrows/WASD/
+  D-pad/stick move a focus ring between this frame's tap targets; Enter/Space/A press there through the normal
+  pointer path (held = `InputManager.pointer.down`, release = a queued click); Esc/Backspace/B = `handleBack()`.
+  Every job challenge has `targets()`; button games use `q.buttons`; hold games (LIFT!, breathing) fall back to
+  `AREA`. A full-screen modal backdrop (`UI.absorb`) cuts off targets beneath it. The HUD (y < 56) never takes
+  default focus. The morning ticker is one "tap anywhere" target. A mirrored a11y `<button>` with DOM focus keeps
+  Enter/Space/Tab for itself (no double press). A real pointerdown hides the ring (main.js).
+- **Prompts follow the input:** `InputManager.mode` ('touch' | 'mouse' | 'keys') and `tapWord()`: "Tap / Click /
+  Enter to start". First keyboard use puts a one-time hint in the message bar.
+- **Desktop:** hand cursor over targets (main.js, 5x/s with the ambient fill).
+- **`/presskit/`** (static, `public/presskit/`): landing + press page, 13 screenshots, 3.7 MB zip. No scripts or
+  trackers. Screenshots were captured from the dev server at 1600x1200 by driving `window.__micro` games directly.
+- **Sharing:** `public/og-image.png` 1200x630; canonical + OG/Twitter tags on the new domain.
+- **Tests:** `tests/unit/keys.test.js` (19); `tests/e2e/keyboard.spec.js` (desktop-chromium; ~9 min) plays all 11
+  job challenges and both evening games keyboard-only, and checks Esc pause/resume. Gate passed on PR and main.
