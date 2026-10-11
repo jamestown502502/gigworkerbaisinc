@@ -1340,7 +1340,10 @@ export class Game {
     const screen = [this.phase, !!this.qte, !!this.qte?.done, !!this.qteIntroHold, !!this.settingsOpen, this.tutorialVisible(), !!this.activeEvent,
       !!this.pendingOutcome, !!this.resumePrompt, !!this.rentPay, !!this.shopOpen, !!this.billsOpen].join('|');
     if (screen !== this.kbScreen) { this.kbScreen = screen; this.kbPoint = null; this.kbChosen = false; }
-    let cur = (this.kbPoint && nearest(this.kbPoint, targets)) || firstTarget(targets);
+    // The HUD strip (gear, mute) holds focus only when the player put it there: when the focused
+    // target vanishes, the ring must not slide up to the gear, or the next Enter opens Settings.
+    const pool = this.kbPoint && this.kbPoint.y < 56 ? targets : targets.filter((t) => t.y >= 56 || t.h >= 600);
+    let cur = (this.kbPoint && nearest(this.kbPoint, pool)) || firstTarget(targets);
     for (const ev of events) {
       if (ev.type === 'move') {
         const n = cur ? pickInDirection(cur, targets, ev.dx, ev.dy) : targets[0]; // only the HUD: an arrow reaches it
