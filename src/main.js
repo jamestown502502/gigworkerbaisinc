@@ -1,6 +1,7 @@
 // Bootstrap: canvas init → InputManager → asset load (with a visible bar) → state.load() → loop
 import { setupGameCanvas } from './engine/canvas.js';
 import { InputManager } from './engine/input.js';
+import { Keys } from './engine/keys.js';
 import { GameState, saveLock } from './engine/state.js';
 import { Game } from './game/loop.js';
 import { initAudio, unlock as unlockAudio, contextState, setBackgrounded } from './engine/audio.js';
@@ -53,6 +54,9 @@ async function boot() {
   const game = new Game(state);
   game.ctx = ctx;
   window.__game = game;   // dev/e2e hook
+  // Keyboard and gamepad (engine/keys.js); a mouse or touch press hides the keyboard focus ring.
+  Keys.init(window);
+  canvas.addEventListener('pointerdown', () => { game.kbActive = false; });
   window.__state = state;
   window.__audioState = contextState;
   window.__qte = qte;     // e2e hook: the readability audit renders every EI scenario
@@ -109,6 +113,9 @@ async function boot() {
     if (ambient && now - ambientAt > 200) {
       ambientAt = now;
       try { ambient.drawImage(canvas, 0, 0, 32, 24); ambientEl.style.backgroundImage = `url(${ambientCanvas.toDataURL()})`; } catch { /* canvas not ready */ }
+      // Desktop: a hand cursor over anything clickable, like any web page.
+      const h = InputManager.hover;
+      canvas.style.cursor = h && game.keyTargets().some((t) => !t.anywhere && h.x >= t.x && h.x <= t.x + t.w && h.y >= t.y && h.y <= t.y + t.h) ? 'pointer' : 'default';
     }
     // the "press back again" window closed without a second Back: re-arm the guard entry
     if (game.exitArmedAt && now - game.exitArmedAt > 2000) {

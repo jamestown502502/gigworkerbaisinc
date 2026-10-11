@@ -9,6 +9,8 @@ const DRAG_THRESHOLD = 8; // logical px before a press becomes a drag instead of
 
 export const InputManager = {
   isMobile: /Android|iPhone|iPad/i.test(navigator.userAgent),
+  /** How the player last played: 'touch' | 'mouse' | 'keys' (keys set by loop.js processKeys). */
+  mode: /Android|iPhone|iPad/i.test(navigator.userAgent) ? 'touch' : 'mouse',
   clicks: [],          // { x, y, type: 'click'|'touch' }
   hover: null,         // { x, y } logical, desktop only
   pointer: { x: 0, y: 0, down: false, dragging: false },
@@ -23,6 +25,7 @@ export const InputManager = {
       if (e.isPrimary === false) return;
       const pt = this.toLogical(e.clientX, e.clientY);
       this._press = { x: pt.x, y: pt.y, type: e.pointerType === 'mouse' ? 'click' : 'touch' };
+      this.mode = e.pointerType === 'mouse' ? 'mouse' : 'touch';
       this.pointer = { x: pt.x, y: pt.y, down: true, dragging: false };
       try { canvas.setPointerCapture(e.pointerId); } catch { /* not supported */ }
     });
@@ -54,6 +57,9 @@ export const InputManager = {
     // Belt-and-suspenders on top of touch-action:none — never let a drag scroll the page.
     canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
   },
+
+  /** The word for a tap in on-screen prompts, matching how the player plays: Tap / Click / Enter. */
+  tapWord() { return this.mode === 'keys' ? 'Enter' : this.mode === 'mouse' ? 'Click' : 'Tap'; },
 
   // Map client coords to 800x600 logical space regardless of how the canvas is scaled on screen.
   toLogical(clientX, clientY) {

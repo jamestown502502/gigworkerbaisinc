@@ -8,7 +8,10 @@ import { generateDailyGigs, gigEnergyCost, travelCost, makeReferralGig, APP_GIGS
 import { applyBackgroundStart, backgroundOf, backgroundScamMultiplier, clientStanding, clientMorningOffer, contractTerms } from './depth.js';
 import { getNode, resolveChoice, fillClient } from './choices.js';
 import { clientGreeting, rememberClient } from './clients.js';
-import { createEIGame, createEveningGame, QTE_READY_DURATION } from './qte.js';
+import { createEIGame, createEveningGame, QTE_READY_DURATION, AREA } from './qte.js';
+import { Keys, nearest, firstTarget, pickInDirection, center } from '../engine/keys.js';
+
+const KEY_HINT = 'Keyboard: arrows move, Enter or Space taps (hold to hold), Esc goes back.';
 import { createQTE } from './microgames.js';
 import { rollDailyEvents, generateMorningFlavor } from './events.js';
 import { rollWeather } from './weather.js';
@@ -1128,6 +1131,7 @@ export class Game {
   }
 
   update(dt) {
+    Keys.pollGamepad(dt);
     updateFX(dt);
     audio.setMusicState(this.musicStateFor());
     this.musicCheckT = (this.musicCheckT || 0) + dt;
@@ -1291,7 +1295,82 @@ export class Game {
     if (this.transition) { renderTransition(ctx, this.transition); UI.begin(); } // nothing is tappable mid-transition
 
     this.syncAccessibility();
+    this.processKeys(ctx);
     this.processInput();
+  }
+
+  /** What a finger could tap right now, for keyboard / gamepad play (engine/keys.js). Inside a job
+   *  challenge that is the challenge's own targets; elsewhere, this frame's buttons above the topmost
+   *  modal backdrop. A screen that only waits for a tap anywhere gives one full-screen target. */
+  keyTargets() {
+    const full = [{ x: 0, y: 0, w: 800, h: 600, anywhere: true }];
+    const q = this.qte;
+    const inGame = (this.phase === 'GIG' || this.phase === 'EVENING_GAME') && q && !this.settingsOpen && !this.staleTab;
+    if (inGame && (q.done || (this.qteKind === 'skill' && this.qteIntroHold))) return full;
+    if (inGame) {
+      const own = q.targets ? q.targets() : (Array.isArray(q.buttons) && q.buttons.length ? q.buttons : [AREA]);
+      return own.length ? own : full;
+    }
+    // the morning ticker and choice-less events move on with a tap on empty space (processInput)
+    if (this.phase === 'MORNING' && !this.morningReady && !this.activeEvent?.choices && !this.settingsOpen && !this.tutorialVisible()) {
+      return [{ x: 0, y: 0, w: 800, h: 600, anywhere: true, empty: true }];
+    }
+    let cut = -1;
+    UI.hotspots.forEach((h, i) => { if (!h.onClick && h.w >= 800) cut = i; });
+    const out = UI.hotspots.slice(cut + 1).filter((h) => h.onClick);
+    if (this.tutorialVisible()) {
+      for (const r of [this.tutorialBubbleRect, this.tutorialSkipRect]) if (r) out.push({ x: r[0], y: r[1], w: r[2], h: r[3] });
+    }
+    return out.length ? out : full;
+  }
+
+  /** Keyboard / gamepad (engine/keys.js): move a focus ring between keyTargets(); a press is a finger
+   *  down there, a release is the tap. Any mouse or touch press hides the ring again (main.js). */
+  processKeys(ctx) {
+    const events = Keys.consume();
+    if (events.length && !this.kbActive) {
+      this.kbActive = true;
+      InputManager.mode = 'keys';
+      if (!this.kbHintShown && !this.message) this.message = KEY_HINT;
+      this.kbHintShown = true;
+    }
+    if (!this.kbActive) return;
+    if (this.transition) { this.kbPoint = null; this.kbScreen = null; return; } // nothing is pressable mid-transition
+    const targets = this.keyTargets();
+    const screen = [this.phase, !!this.qte, !!this.qte?.done, !!this.qteIntroHold, !!this.settingsOpen, this.tutorialVisible(), !!this.activeEvent,
+      !!this.pendingOutcome, !!this.resumePrompt, !!this.rentPay, !!this.shopOpen, !!this.billsOpen].join('|');
+    if (screen !== this.kbScreen) { this.kbScreen = screen; this.kbPoint = null; this.kbChosen = false; }
+    let cur = (this.kbPoint && nearest(this.kbPoint, targets)) || firstTarget(targets);
+    for (const ev of events) {
+      if (ev.type === 'move') {
+        const n = cur ? pickInDirection(cur, targets, ev.dx, ev.dy) : targets[0]; // only the HUD: an arrow reaches it
+        if (n) { cur = n; this.kbPoint = center(n); this.kbChosen = true; }
+      } else if (ev.type === 'down' && cur) {
+        if (cur.empty) { this.kbDown = { empty: true }; continue; }
+        const c = center(cur);
+        InputManager.pointer = { x: c.x, y: c.y, down: true, dragging: false };
+        this.kbDown = c;
+      } else if (ev.type === 'up' && this.kbDown?.empty) {
+        this.kbDown = null;
+        if (this.ticker.idx < this.ticker.lines.length) { this.ticker.idx += 1; this.ticker.t = 0; }
+        else if (this.activeEvent && !this.activeEvent.choices) this.startNextEvent();
+      } else if (ev.type === 'up' && this.kbDown) {
+        InputManager.clicks.push({ x: this.kbDown.x, y: this.kbDown.y, type: 'click' });
+        InputManager.pointer = { ...InputManager.pointer, down: false };
+        this.kbDown = null;
+      } else if (ev.type === 'back') this.handleBack();
+    }
+    if (cur && !cur.anywhere) {
+      // The HUD strip (gear, mute) keeps focus only when the player moved there: on a screen whose
+      // own buttons appear late (travel's Start Gig) the ring must not stay parked on the gear.
+      this.kbPoint = cur.y >= 56 || this.kbChosen ? center(cur) : null;
+      ctx.save();
+      ctx.strokeStyle = '#f1c40f'; ctx.lineWidth = 4;
+      roundRectPath(ctx, cur.x - 4, cur.y - 4, cur.w + 8, cur.h + 8, 10); ctx.stroke();
+      ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.lineWidth = 1.5;
+      roundRectPath(ctx, cur.x - 7, cur.y - 7, cur.w + 14, cur.h + 14, 12); ctx.stroke();
+      ctx.restore();
+    }
   }
 
   /** Mirror this frame's buttons for screen readers and keyboards, and announce what changed. */

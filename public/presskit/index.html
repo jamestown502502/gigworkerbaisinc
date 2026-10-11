@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Side Hustle City: Gig Sim · Press kit</title>
+  <meta name="description" content="Side Hustle City is a free browser game about surviving 30 days of odd jobs, rising stress and weekly rent. Press kit, screenshots and fact sheet." />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Side Hustle City: Gig Sim" />
+  <meta property="og:description" content="Survive 30 days of odd jobs, rising stress and weekly rent. Free in your browser, no ads, no sign-up." />
+  <meta property="og:image" content="https://side-hustle-city-gig-sim.vercel.app/og-image.png" />
+  <link rel="canonical" href="https://side-hustle-city-gig-sim.vercel.app/presskit/" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="icon" href="/icons/icon-192.png" type="image/png" />
+  <style>
+    /* No web fonts, no scripts, no trackers: the page keeps the game's "no data collected" promise. */
+    :root {
+      --bg: #1d150d; --panel: #2a1f14; --line: #4a3826; --ink: #f5deb3; --muted: #c9b48f;
+      --gold: #ffd700; --orange: #e07030; --green: #2c6e49; --green-hi: #3a8a5d;
+    }
+    * { box-sizing: border-box; }
+    html { background: var(--bg); }
+    body { margin: 0; color: var(--ink); font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    a { color: var(--gold); }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+    header.hero { position: relative; overflow: hidden; border-bottom: 1px solid var(--line); }
+    .hero-bg { position: absolute; inset: 0; background: url(shots/morning.jpg) center/cover; filter: blur(6px) brightness(0.35); transform: scale(1.05); }
+    .hero-in { position: relative; display: grid; grid-template-columns: 1fr 1.1fr; gap: 40px; align-items: center; padding: 64px 20px 56px; max-width: 1080px; margin: 0 auto; }
+    .eyebrow { color: var(--orange); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; font-size: 13px; margin: 0 0 8px; }
+    h1 { font-size: clamp(38px, 6vw, 60px); line-height: 1.05; margin: 0; color: var(--gold); }
+    .sub { font-size: 24px; font-weight: 700; margin: 6px 0 18px; }
+    .lede { font-size: 19px; margin: 0 0 24px; max-width: 34ch; }
+    .cta { display: inline-block; background: var(--green); color: #fff; text-decoration: none; font-weight: 800; font-size: 20px; padding: 14px 30px; border-radius: 999px; border: 2px solid #8fd1a8; }
+    .cta:hover, .cta:focus-visible { background: var(--green-hi); }
+    .cta:focus-visible, a:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
+    .facts-inline { margin: 14px 0 0; color: var(--muted); font-size: 15px; }
+    .hero-shot { width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line); box-shadow: 0 20px 60px rgba(0,0,0,.5); display: block; }
+    section { padding: 52px 0; border-bottom: 1px solid var(--line); }
+    h2 { color: var(--gold); font-size: 28px; margin: 0 0 18px; }
+    .cols { display: grid; grid-template-columns: 1.4fr 1fr; gap: 40px; }
+    ul.feat { padding-left: 20px; margin: 0; }
+    ul.feat li { margin: 0 0 8px; }
+    .gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .gallery a { display: block; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+    .gallery img { width: 100%; height: auto; display: block; aspect-ratio: 4 / 3; object-fit: cover; }
+    .gallery figcaption { font-size: 14px; color: var(--muted); padding: 6px 2px 0; }
+    dl.sheet { display: grid; grid-template-columns: max-content 1fr; gap: 8px 22px; margin: 0; }
+    dl.sheet dt { color: var(--muted); }
+    dl.sheet dd { margin: 0; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 22px 24px; }
+    .keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    kbd { background: #3a2d1f; border: 1px solid #6b5236; border-bottom-width: 3px; border-radius: 6px; padding: 1px 7px; font: 600 14px system-ui, sans-serif; }
+    .btn2 { display: inline-block; border: 2px solid var(--gold); color: var(--gold); text-decoration: none; font-weight: 700; padding: 10px 20px; border-radius: 999px; margin: 6px 10px 0 0; }
+    footer { padding: 32px 0 48px; color: var(--muted); font-size: 15px; }
+    @media (max-width: 820px) {
+      .hero-in, .cols { grid-template-columns: 1fr; gap: 28px; }
+      .gallery, .keys { grid-template-columns: 1fr 1fr; }
+      .hero-in { padding-top: 40px; }
+    }
+    @media (max-width: 480px) { .gallery, .keys { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-bg" aria-hidden="true"></div>
+    <div class="hero-in">
+      <div>
+        <p class="eyebrow">Bennett AI Solutions Inc. presents</p>
+        <h1>Side Hustle City</h1>
+        <p class="sub">Gig Sim</p>
+        <p class="lede">Survive 30 days of odd jobs, rising stress and weekly rent. Every gig is a tradeoff between making rent now and still standing next week.</p>
+        <a class="cta" href="/">Play free now</a>
+        <p class="facts-inline">Plays in any modern browser on desktop or phone · No ads · No sign-up · No data collected</p>
+      </div>
+      <img class="hero-shot" src="shots/rush-shift.jpg" alt="RUSH! delivery shift: accept or decline an order paying $5 for 6.4 miles, with real hourly pay after gas shown below." width="1600" height="1200" />
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section aria-labelledby="about">
+      <div class="cols">
+        <div>
+          <h2 id="about">About the game</h2>
+          <p>Side Hustle City is a choice-driven survival sim about the gig economy. You piece together a month of income from a classifieds-style job board: moving furniture, walking a husky with four tangled leashes, tutoring math, running a flea market stall, driving delivery for an app that pays less when you decline orders.</p>
+          <p>Every job is a short hands-on challenge built around a real skill, from lifting with your knees to reading a client's face to checking whether a delivery order beats a dollar a mile after gas. Rent is due every seven days. Stress makes your hands shake. Clients remember how you treated them.</p>
+          <p>At the end of the month, the game shows you the math: paid hours, lost pay, what the apps really paid per hour, and what you learned to carry into your next run.</p>
+        </div>
+        <div class="panel">
+          <h2 style="font-size:22px">What's inside</h2>
+          <ul class="feat">
+            <li>11 job challenges, each teaching a real-world skill</li>
+            <li>14 job types on a weather-driven job board</li>
+            <li>5 backgrounds, each with its own goal, story and ending</li>
+            <li>10 recurring clients who remember you</li>
+            <li>People skills: 12 client reads, 7 text threads, 5 check-in calls</li>
+            <li>6 month twists and 6 side goals for replay</li>
+            <li>A month review with the real numbers behind your run</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="shots">
+      <h2 id="shots">Screenshots</h2>
+      <div class="gallery">
+        <figure style="margin:0"><a href="shots/morning.jpg"><img src="shots/morning.jpg" alt="The apartment on the morning of day 9: bills due, rent forecast and the day's options." loading="lazy" width="1600" height="1200" /></a><figcaption>Every morning starts with the bills.</figcaption></figure>
+        <figure style="margin:0"><a href="shots/job-board.jpg"><img src="shots/job-board.jpg" alt="Today's listings: jobs with pay, hours, safety and energy cost." loading="lazy" width="1600" height="1200" /></a><figcaption>The job board changes with the weather.</figcaption></figure>
+        <figure style="margin:0"><a href="shots/flea-market.jpg"><img src="shots/flea-market.jpg" alt="MARKET!: pick thrift-store stock within a 30 dollar budget." loading="lazy" width="1600" height="1200" /></a><figcaption>MARKET!: buy cheap, then read each buyer.</figcaption></figure>
+        <figure style="margin:0"><a href="shots/untangle.jpg"><img src="shots/untangle.jpg" alt="UNTANGLE!: four dogs whose leashes cross; tap the one on top." loading="lazy" width="1600" height="1200" /></a><figcaption>UNTANGLE!: top of the pile first.</figcaption></figure>
+        <figure style="margin:0"><a href="shots/read-the-client.jpg"><img src="shots/read-the-client.jpg" alt="READ THE CLIENT: a client's words and body language, then a guess at how they feel." loading="lazy" width="1600" height="1200" /></a><figcaption>READ THE CLIENT: faces are clues, not proof.</figcaption></figure>
+        <figure style="margin:0"><a href="shots/text-back.jpg"><img src="shots/text-back.jpg" alt="TEXT BACK: a client message and three possible replies, with a temperature meter." loading="lazy" width="1600" height="1200" /></a><figcaption>TEXT BACK: keep the client's temperature down.</figcaption></figure>
+        <figure style="margin:0"><a href="shots/assemble.jpg"><img src="shots/assemble.jpg" alt="ASSEMBLE!: wardrobe build steps to tap in the right order." loading="lazy" width="1600" height="1200" /></a><figcaption>ASSEMBLE!: read every step first.</figcaption></figure>
+        <figure style="margin:0"><a href="shots/pack-the-car.jpg"><img src="shots/pack-the-car.jpg" alt="PACK!: a trunk grid with heavy items on the floor row." loading="lazy" width="1600" height="1200" /></a><figcaption>PACK!: heavy goes low.</figcaption></figure>
+        <figure style="margin:0"><a href="shots/sort-returns.jpg"><img src="shots/sort-returns.jpg" alt="SORT!: a returned backpack with a receipt and no tags, and three bins." loading="lazy" width="1600" height="1200" /></a><figcaption>SORT!: refund, exchange or store credit.</figcaption></figure>
+      </div>
+      <p style="margin-top:22px"><a class="btn2" href="side-hustle-city-press-kit.zip" download>Download press kit (zip, 3.7 MB)</a><span style="color:var(--muted);font-size:15px">13 screenshots at 1600×1200, logo, social image.</span></p>
+    </section>
+
+    <section aria-labelledby="play">
+      <h2 id="play">Play it your way</h2>
+      <div class="keys">
+        <div class="panel"><strong>Touch</strong><br />Tap and hold, on any phone or tablet. Turn sideways for the biggest view.</div>
+        <div class="panel"><strong>Mouse or keyboard</strong><br /><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd> move, <kbd>Enter</kbd> or <kbd>Space</kbd> taps (hold to hold), <kbd>Esc</kbd> goes back.</div>
+        <div class="panel"><strong>Gamepad</strong><br />D-pad or left stick moves, <strong>A</strong> taps, <strong>B</strong> goes back.</div>
+      </div>
+      <p style="margin-top:18px">Also built in: screen reader support, Large Text, Reduce Motion, a setting that widens every timing window, and offline play once loaded.</p>
+    </section>
+
+    <section aria-labelledby="facts">
+      <div class="cols">
+        <div>
+          <h2 id="facts">Fact sheet</h2>
+          <dl class="sheet">
+            <dt>Developer</dt><dd>Bennett AI Solutions Inc. (Kentucky, USA)</dd>
+            <dt>Publisher</dt><dd>Self-published</dd>
+            <dt>Platform</dt><dd>Web: desktop and mobile browsers</dd>
+            <dt>Release</dt><dd>Live now, free</dd>
+            <dt>Price</dt><dd>Free. No ads, no in-app purchases, no accounts.</dd>
+            <dt>Genre</dt><dd>Life sim, survival, choice-driven</dd>
+            <dt>Language</dt><dd>English</dd>
+            <dt>Tech</dt><dd>HTML5 canvas, JavaScript, no third-party SDKs</dd>
+            <dt>Play</dt><dd><a href="/">this site</a></dd>
+            <dt>Contact</dt><dd><a href="mailto:jb@bennettaisolutions.tech">jb@bennettaisolutions.tech</a></dd>
+          </dl>
+        </div>
+        <div class="panel">
+          <h2 style="font-size:22px">How it's made</h2>
+          <p>Side Hustle City is made by a solo founder-director using an AI-assisted pipeline. Code, writing, art and music were produced with AI tools under the founder's direction, and every build goes through human playtesting, including four rounds of paid external QA.</p>
+          <p style="margin-bottom:0">With publishing support, final art and audio would be remade by hired artists and composers.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap">© 2026 Bennett AI Solutions Inc. · <a href="/">Play Side Hustle City</a></footer>
+</body>
+</html>

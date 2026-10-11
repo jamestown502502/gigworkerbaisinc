@@ -444,7 +444,7 @@ export function apartmentScreen(ctx, game) {
     roundRectPath(ctx, 330, 482, 140, 30, 15); ctx.fill();
     ctx.strokeStyle = '#c9a876'; ctx.lineWidth = 1.5;
     roundRectPath(ctx, 330, 482, 140, 30, 15); ctx.stroke();
-    drawText(ctx, 'Tap to skip  >>', 400, 497, { size: 14, weight: 'bold', color: '#f5deb3', align: 'center', baseline: 'middle', shadow: false });
+    drawText(ctx, `${InputManager.tapWord()} to skip  >>`, 400, 497, { size: 14, weight: 'bold', color: '#f5deb3', align: 'center', baseline: 'middle', shadow: false });
   } else if (game.activeEvent) {
     eventModal(ctx, game);
   }
@@ -658,7 +658,7 @@ function howToCard(ctx, game) {
   ctx.fillStyle = '#2c6e49';
   roundRectPath(ctx, 300, y + h - 60, 200, 42, 21); ctx.fill();
   ctx.globalAlpha = 1;
-  drawText(ctx, 'Tap to start', 400, y + h - 39, { size: 17, weight: 'bold', color: '#ffffff', align: 'center', baseline: 'middle', outline: true });
+  drawText(ctx, `${InputManager.tapWord()} to start`, 400, y + h - 39, { size: 17, weight: 'bold', color: '#ffffff', align: 'center', baseline: 'middle', outline: true });
 }
 
 /** The count-in: GET READY plus the one-line goal, big, so a repeat play still says what to do. */
@@ -781,7 +781,7 @@ function resultCard(ctx, game) {
   if (skillTag && r.lesson) { drawText(ctx, `SKILL: ${skillTag.toUpperCase()}`, 400, ly, { size: 12, weight: 'bold', color: '#8ec6ea', align: 'center' }); ly += 20; }
   if (r.why) ly = drawWrapped(ctx, r.why, 400, ly, w - 60, 20, { size: 14, color: r.success ? '#9fe0b5' : '#ffb3a8', align: 'center' }) + 8;
   if (r.lesson) drawWrapped(ctx, r.lesson, 400, ly, w - 44, 18, { size: 14, color: '#e8c98a', align: 'center' });
-  if (t > 0.4) drawText(ctx, 'Tap to continue', 400, y + h - 16, { size: 13, color: '#e8d9b8', align: 'center' });
+  if (t > 0.4) drawText(ctx, `${InputManager.tapWord()} to continue`, 400, y + h - 16, { size: 13, color: '#e8d9b8', align: 'center' });
   ctx.restore();
 }
 
