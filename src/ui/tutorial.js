@@ -2,6 +2,7 @@
 // Rendered as a full-screen overlay with a highlight cutout; any click advances.
 // Adds zero overhead once state.tutorialSeen is true (loop skips the render call).
 import { drawText, drawWrapped, roundRectPath } from './text.js';
+import { InputManager } from '../engine/input.js';
 
 export const TUTORIAL_STEPS = [
   { phase: 'MORNING', rect: null, text: 'Welcome to the gig economy. Survive 30 days: pay rent, stay healthy, build your reputation.' },
@@ -65,7 +66,7 @@ export function renderTutorial(ctx, game) {
   roundRectPath(ctx, bx, by, bw, bh, 14); ctx.stroke();
 
   drawWrapped(ctx, step.text, bx + 30, by + 40, bw - 60, 24, { size: 17, color: '#ffffff', outline: true, shadow: false });
-  drawText(ctx, `${game.state.tutorialStep + 1} / ${TUTORIAL_STEPS.length}  •  Tap anywhere to continue`, bx + bw / 2, by + bh - 16, {
+  drawText(ctx, `${game.state.tutorialStep + 1} / ${TUTORIAL_STEPS.length}  •  ${InputManager.mode === 'keys' ? 'Enter' : `${InputManager.tapWord()} anywhere`} to continue`, bx + bw / 2, by + bh - 16, {
     size: 13, color: '#aaaaaa', align: 'center', shadow: false,
   });
 

@@ -211,6 +211,8 @@ export class UntangleLeash {
     this.timeMax = 10 / this.d; this.timeLeft = this.timeMax; this.t = 0;
     this.flash = 0; this.done = false; this.result = null;
   }
+  /** Keyboard / gamepad targets (engine/keys.js): the dogs still tangled. */
+  targets() { return this.dogs.filter((d) => !d.free).map((d) => { const p = this.dogPos(d); return { x: p.x - 34, y: p.y - 34, w: 68, h: 68, label: DOG_NAMES[d.i] }; }); }
   top() { return this.stack[this.stack.length - 1]; }
   dogPos(dog) {
     const s = shakeOffset(this.d, this.t, dog.i);
@@ -296,6 +298,12 @@ export class PackTheCar {
     this.flash = 0; this.done = false; this.result = null;
     this.preview = { x: AREA.x + 400, y: AREA.y + 100, w: 170, h: 170 };
     this.backSeat = { x: AREA.x + 400, y: AREA.y + 290, w: 170, h: 48 };
+  }
+  /** Keyboard / gamepad targets (engine/keys.js): every trunk cell, the next item (rotate), the back seat. */
+  targets() {
+    const cells = [];
+    for (let r = 0; r < GRID.rows; r++) for (let c = 0; c < GRID.cols; c++) cells.push({ x: GRID.x + c * GRID.cell, y: GRID.y + r * GRID.cell, w: GRID.cell, h: GRID.cell });
+    return [...cells, this.preview, this.backSeat];
   }
   current() { return this.queue[0]; }
   fits(piece, col, row) {
@@ -402,6 +410,11 @@ export class RakeThePile {
     this.timeMax = 16 / this.d; this.timeLeft = this.timeMax; this.t = 0; // 14 + ~2 s to read the wind
     this.last = null; this.nextGust = 3.2; this.gust = 0;
     this.done = false; this.result = null;
+  }
+  /** Keyboard / gamepad targets (engine/keys.js): the two pile spots, then every loose leaf. */
+  targets() {
+    if (!this.pile) return this.spots.map((sp) => ({ x: sp.x - 60, y: sp.y - 60, w: 120, h: 120 }));
+    return this.leaves.filter((l) => !l.inPile).map((l) => ({ x: l.x - 24, y: l.y - 24, w: 48, h: 48 }));
   }
   inPileCount() { return this.leaves.filter((l) => l.inPile).length; }
   /** Put the pile on one side: -1 left, 1 right. */
@@ -546,6 +559,8 @@ export class ProofreadFlyer {
     this.timeLeft -= dt;
     if (this.timeLeft <= 0) this.finish(false);
   }
+  /** Keyboard / gamepad targets (engine/keys.js): every word on the flyer not yet circled. */
+  targets() { return this.words.filter((w) => w.box && !w.found).map((w) => w.box); }
   handleTap(pt) {
     if (this.done) return;
     const w = this.words.find((x) => x.box && inRect(pt, x.box));
@@ -618,6 +633,8 @@ export class SortReturns {
     const bw = this.variant ? 136 : 180, gap = this.variant ? 146 : 195;
     this.bins = bins.map((b, i) => ({ ...b, x: AREA.x + 20 + i * gap, y: AREA.y + AREA.h - 110, w: bw, h: 64 }));
   }
+  /** Keyboard / gamepad targets (engine/keys.js): the bins. */
+  targets() { return this.bins; }
   judge(binId) {
     const item = this.items[this.idx];
     const right = binFor(item) === binId;
@@ -706,6 +723,8 @@ export class AssembleSteps {
     this.timeLeft -= dt;
     if (this.timeLeft <= 0) this.finish(false);
   }
+  /** Keyboard / gamepad targets (engine/keys.js): the step cards not yet placed. */
+  targets() { return this.cards.filter((c) => !c.done).map((c) => ({ ...c.box, label: c.text })); }
   handleTap(pt) {
     if (this.done) return;
     const s = shakeOffset(this.d, this.t);
@@ -895,6 +914,8 @@ export class FrameShot {
     this.done = false; this.result = null;
   }
   current() { return this.shots[Math.min(this.idx, this.shots.length - 1)]; }
+  /** Keyboard / gamepad targets (engine/keys.js): the nine framing spots. */
+  targets() { return FRAME_SPOTS.map((sp) => { const p = this.spotPos(sp); return { x: p.x - 30, y: p.y - 30, w: 60, h: 60 }; }); }
   spotPos(spot) { return { x: VF.x + (VF.w / 3) * spot.col, y: VF.y + (VF.h / 3) * spot.row }; }
   place(spotId) {
     if (this.done || this.reveal) return;
