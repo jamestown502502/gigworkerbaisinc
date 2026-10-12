@@ -1,6 +1,8 @@
 // Screen renderers + immediate-mode UI helpers.
 import { drawSprite, drawFullscreen, imageCache } from '../engine/sprites.js';
 import { BRAND } from './brand.js';
+import { perHourOf } from '../game/pay.js';
+import { weekPlan } from '../game/week.js';
 import { InputManager } from '../engine/input.js';
 import { drawCharacter, optionRow, pronounsFor, pronounPreview, randomLook, BUILDS, FACIAL_HAIR, HAIR_COLORS, HAIR_STYLES, PRONOUNS, SHIRT_COLORS, SKIN_TONES } from './character.js';
 import { travelCost } from '../game/gigs.js';
@@ -351,6 +353,7 @@ export function apartmentScreen(ctx, game) {
   if (!game.activeEvent) drawApartmentProps(ctx, game);
   drawText(ctx, `${pronounsFor(s.character).label} · ${BUILDS[s.character.body] ?? BUILDS[0]}`, 180, 392, { size: 13, color: '#c9a876', align: 'center' });
   button(ctx, 80, 410, 200, 44, 'Edit look', { fontSize: 14, onClick: () => { if (!game.activeEvent) game.openCreator(); } });
+  if (game.morningReady && !game.shopOpen) button(ctx, 80, 462, 200, 44, '📅 This week', { fontSize: 14, color: '#1c3d66', onClick: () => { game.weekOpen = true; } });
   // This run's personal goal, from the background's story (game/story.js).
   const story = storyOf(s);
   drawText(ctx, `${story.goal.check(s) ? '✓ ' : ''}Goal: ${story.goal.progress(s)}`, 180, 472, { size: 12, color: story.goal.check(s) ? '#2ecc71' : '#f5deb3', align: 'center', maxWidth: 280 });
@@ -817,6 +820,15 @@ export function resultsScreen(ctx, game) {
   ctx.strokeStyle = '#8b5a2b'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(180, y - 8); ctx.lineTo(620, y - 8); ctx.stroke();
   y += 4;
+  // What the job really paid (game/pay.js): kept after your own costs, per hour of the gig.
+  if (r.net && r.net.hours > 0) {
+    const n = r.net;
+    const line = n.costs > 0
+      ? `Kept $${n.kept} after $${n.costs} of costs  ·  about $${n.perHour}/hr for ${n.hours}h`
+      : `About $${n.perHour}/hr for ${n.hours}h of work`;
+    drawText(ctx, line, 400, y, { size: 13, weight: 'bold', color: '#a9d8f2', align: 'center', maxWidth: 460 });
+    y += 20;
+  }
   // PAID (or SHORT) stamps on once the total lands
   if (rs.stamp) {
     const k = game.state.settings.reduceMotion ? 1 : easeOutBack(Math.min(1, rs.stampT / 0.22));
@@ -1325,6 +1337,38 @@ export function staleTabModal(ctx) {
   button(ctx, 250, 340, 300, 56, 'Play here instead', { color: '#2c6e49', onClick: () => { try { location.reload(); } catch { /* test runner */ } } });
 }
 
+// ---------- THE WEEK AT A GLANCE (publisher polish 2026-10-12, game/week.js) ----------
+const WEEK_COLORS = { bill: '#ffd36b', warn: '#ff6b5e', known: '#cfe3f5' };
+export function weekModal(ctx, game) {
+  const s = game.state;
+  const rent = s.unpaidRent > 0 || s.rentPrepaid ? 0 : game.rentEarlyAmount();
+  const days = weekPlan(s, { rent, phone: PHONE, food: FOOD });
+  ctx.fillStyle = 'rgba(6, 4, 2, 0.88)';
+  ctx.fillRect(0, 0, 800, 600);
+  UI.absorb();
+  panel(ctx, 40, 50, 720, 500, { alpha: 0.98 });
+  drawText(ctx, 'THIS WEEK', 400, 86, { size: 24, weight: 'bold', color: BRAND.gold, align: 'center' });
+  drawText(ctx, 'What is already known. Pay you have not earned yet is never shown as certain.', 400, 110, { size: 12, color: '#c9a876', align: 'center' });
+  days.forEach((d, i) => {
+    const x = 56 + i * 86, y = 128, w = 82, h = 250;
+    ctx.fillStyle = d.today ? 'rgba(253,184,11,0.14)' : 'rgba(255,255,255,0.05)';
+    roundRectPath(ctx, x, y, w, h, 8); ctx.fill();
+    if (d.today) { ctx.strokeStyle = BRAND.gold; ctx.lineWidth = 2; roundRectPath(ctx, x, y, w, h, 8); ctx.stroke(); }
+    drawText(ctx, d.today ? 'TODAY' : `Day ${d.day}`, x + w / 2, y + 20, { size: 13, weight: 'bold', color: d.today ? BRAND.gold : '#f0f0f0', align: 'center' });
+    if (d.today) drawText(ctx, `Day ${d.day}`, x + w / 2, y + 36, { size: 11, color: '#e8d9b8', align: 'center' });
+    let iy = y + 58;
+    for (const it of d.items) iy = drawWrapped(ctx, it.text, x + w / 2, iy, w - 10, 15, { size: 12, color: WEEK_COLORS[it.kind], align: 'center' }) + 8;
+  });
+  const fc = forecastFor(game);
+  let y = 400;
+  drawText(ctx, `ENERGY NOW ${Math.round(s.energy)}  ·  ${s.hoursLeft}h left today`, 70, y, { size: 13, weight: 'bold', color: '#a9d8f2' });
+  if (fc) {
+    drawText(ctx, fc.overdue ? 'TO STOP EVICTION' : 'ESTIMATE, FROM YOUR RECENT PACE', 70, y + 24, { size: 12, weight: 'bold', color: '#5dade2' });
+    drawWrapped(ctx, fc.line, 70, y + 42, 660, 18, { size: 14, color: fc.warn ? '#ffb27a' : '#9fe3b8' });
+  }
+  button(ctx, 320, 486, 160, 48, 'Close', { color: '#2c6e49', onClick: () => { game.weekOpen = false; } });
+}
+
 // ---------- THE MATH OF THE MONTH ----------
 // Research on the poverty simulator Spent found that making the choices can leave players believing
 // hardship is a personal failing, while empathy grows from seeing the structural causes. So the end
@@ -1332,7 +1376,7 @@ export function staleTabModal(ctx) {
 export function monthMath(s) {
   const m = s.monthMath || {};
   const hours = m.paidHours || 0;
-  const rate = hours > 0 ? s.totalEarned / hours : 0;
+  const rate = perHourOf(s.totalEarned, hours);   // the same formula as every receipt (game/pay.js)
   return {
     hours, rate,
     earned: Math.round(s.totalEarned),

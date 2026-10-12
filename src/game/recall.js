@@ -32,6 +32,8 @@ export const RECALL_BANK = [
   { lesson: choiceLesson('creativeGig', 'Say tweaks are billable at hourly rate'), q: 'A design client keeps asking for "small tweaks". What prevents it?', options: ['Revision rounds agreed in writing', 'Doing every tweak to be nice', 'Ignoring the messages'] },
   { lesson: choiceLesson('movingHelp', 'Suggest hourly rate instead'), q: 'You cannot tell how big a job will be. Which rate protects you?', options: ['Hourly', 'A flat rate', 'Pay what you want'] },
   { lesson: choiceLesson('yardWork', 'Quote extra for the overgrowth'), q: 'The lawn is worse than the photo. When do you raise the quote?', options: ['Before you start', 'Halfway through', 'On the final bill'] },
+  { lesson: choiceLesson('otisStudio', 'Quote a price for the painting'), q: 'Mid-job, the client asks you to "throw in" two more hours of work. Your move?', options: ['Name the extra and its price first', 'Do it and hope for a tip', 'Walk off the job'] },
+  { lesson: choiceLesson('otisStudio', 'Do the painting as a favor'), q: 'You did a big extra for free last time. What will the next client likely expect?', options: ['The same extra, for free again', 'To pay more this time', 'Nothing, favors are forgotten'] },
   { lesson: choiceLesson('garageClean', 'Ask what stays and what goes first'), q: 'A cluttered garage, client watching. What do you do first?', options: ['Agree on what stays and goes', 'Start filling bags', 'Sort it all yourself later'] },
 ];
 

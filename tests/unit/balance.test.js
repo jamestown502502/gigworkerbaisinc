@@ -61,7 +61,7 @@ function playRun(seed, strategy, twist = null) {
         game.sleep();
       }
     }
-    return { evicted: game.phase === 'GAMEOVER', day: state.day, cash: state.cash, health: state.health, stress: state.stress, gigs: state.gigsCompleted, done: game.phase === 'SUMMARY' };
+    return { evicted: game.phase === 'GAMEOVER', day: state.day, cash: state.cash, health: state.health, stress: state.stress, gigs: state.gigsCompleted, done: game.phase === 'SUMMARY', otis: { ...(state.otisArc || { stage: 0 }) } };
   } finally { Math.random = orig; }
 }
 
@@ -83,6 +83,15 @@ describe('30-day balance bands (Monte Carlo)', () => {
   it('greed ends with worse balance than caution', () => {
     const avg = (arr, k) => arr.reduce((a, r) => a + r[k], 0) / arr.length;
     expect(avg(runs.greedy, 'health')).toBeLessThan(avg(runs.cautious, 'health'));
+  });
+  // Otis's three-beat story (game/otis.js, publisher polish 2026-10-12) is reachable in an ordinary
+  // month: every strategy meets him early, and the careful ones see the whole arc.
+  it('Otis: met by day 10 in nearly every run, and the arc completes in most', () => {
+    for (const strat of Object.keys(runs)) {
+      const met = runs[strat].filter((r) => r.otis.stage > 1 || (r.otis.stage === 1 && r.otis.day <= 10)).length / N;
+      expect(met, strat).toBeGreaterThan(0.9);
+    }
+    expect(runs.balanced.filter((r) => r.otis.stage === 3).length / N).toBeGreaterThan(0.6);
   });
   it('the evening loop moves outcomes measurably without deciding them', () => {
     const avg = (arr, k) => arr.reduce((a, r) => a + r[k], 0) / arr.length;
