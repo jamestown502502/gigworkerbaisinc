@@ -353,7 +353,6 @@ export function apartmentScreen(ctx, game) {
   if (!game.activeEvent) drawApartmentProps(ctx, game);
   drawText(ctx, `${pronounsFor(s.character).label} · ${BUILDS[s.character.body] ?? BUILDS[0]}`, 180, 392, { size: 13, color: '#c9a876', align: 'center' });
   button(ctx, 80, 410, 200, 44, 'Edit look', { fontSize: 14, onClick: () => { if (!game.activeEvent) game.openCreator(); } });
-  if (game.morningReady && !game.shopOpen) button(ctx, 80, 462, 200, 44, '📅 This week', { fontSize: 14, color: '#1c3d66', onClick: () => { game.weekOpen = true; } });
   // This run's personal goal, from the background's story (game/story.js).
   const story = storyOf(s);
   drawText(ctx, `${story.goal.check(s) ? '✓ ' : ''}Goal: ${story.goal.progress(s)}`, 180, 472, { size: 12, color: story.goal.check(s) ? '#2ecc71' : '#f5deb3', align: 'center', maxWidth: 280 });
@@ -405,6 +404,12 @@ export function apartmentScreen(ctx, game) {
   if (debts.length === 2) {
     button(ctx, 360, by, 250, 40, debts[0][0], { color: debts[0][1], fontSize: 14, onClick: debts[0][2] });
     button(ctx, 618, by, 152, 40, debts[1][0], { color: debts[1][1], fontSize: 14, onClick: debts[1][2] });
+  }
+  // The week at a glance (publisher polish 2026-10-12): beside the rent row under the bills panel,
+  // where the second debt button would sit (the left column holds the side goal).
+  const weekY = debts.length < 2 ? 130 + panelH : by + 48;
+  if (game.morningReady && !game.shopOpen && !game.restDay && weekY + 40 <= 516) {
+    button(ctx, 618, weekY, 152, 40, '📅 This week', { fontSize: 14, color: '#1c3d66', onClick: () => { game.weekOpen = true; } });
   }
   if (debts.length) by += 48;
   // Rent can be paid ahead of the bills screen whenever the cash is there (QA round 3 #8).

@@ -69,7 +69,7 @@ export class SafetyCheck {
       const hazards = new Set(shuffle([0, 1, 2, 3, 4, 5]).slice(0, 3));
       this.sections = picks.map((section, i) => ({ section, hazard: hazards.has(i), flagged: false }));
     }
-    this.sections.forEach((s, i) => Object.assign(s, { x: AREA.x + 20 + (i % 2) * 290, y: AREA.y + 70 + Math.floor(i / 2) * 84, w: 270, h: 74 }));
+    this.sections.forEach((s, i) => Object.assign(s, { x: AREA.x + 20 + (i % 2) * 290, y: AREA.y + 84 + Math.floor(i / 2) * 80, w: 270, h: 70 }));
     this.doneBtn = { x: AREA.x + AREA.w / 2 - 110, y: AREA.y + AREA.h - 70, w: 220, h: 50, label: 'Done: test ride' };
     this.total = 34 / this.d; this.left = this.total; this.t = 0;
     this.done = false; this.result = null;
@@ -111,7 +111,7 @@ export class SafetyCheck {
     for (const s of this.sections) {
       box(ctx, s, { edge: s.flagged ? '#ff6b5e' : EDGE, lw: s.flagged ? 4 : 2 });
       drawText(ctx, s.section.name.toUpperCase(), s.x + 14, s.y + 24, { size: 13, weight: 'bold', color: '#ffd36b' });
-      drawText(ctx, s.hazard ? s.section.bad : s.section.ok, s.x + 14, s.y + 50, { size: 15, color: '#ffffff', maxWidth: s.w - 70 });
+      drawText(ctx, s.hazard ? s.section.bad : s.section.ok, s.x + 14, s.y + 48, { size: 15, color: '#ffffff', maxWidth: s.w - 70 });
       if (s.flagged) drawText(ctx, '⚑ FAIL', s.x + s.w - 12, s.y + 24, { size: 13, weight: 'bold', color: '#ff8a7e', align: 'right' });
     }
     box(ctx, this.doneBtn, { fill: '#2c6e49', edge: '#9fe3b8' });
