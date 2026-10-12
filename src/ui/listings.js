@@ -3,6 +3,7 @@ import { UI, button, drawBackground, TYPE_COLORS } from './screens.js';
 import { drawText, roundRectPath, textWidth } from './text.js';
 import { gigEnergyCost, travelCost, weatherGigEnergyMod } from '../game/gigs.js';
 import { playError } from '../engine/audio.js';
+import { listingRate } from '../game/pay.js';
 import { InputManager } from '../engine/input.js';
 
 const CARD_H = 78;
@@ -107,6 +108,7 @@ export function renderListings(ctx, game) {
     drawText(ctx, `Energy after: ${Math.round(s.energy - check.need)}  ·  Hours after: ${s.hoursLeft - sel.hours}`, 310, 596, { size: 12, color: '#c9a876', align: 'center', font: 'monospace' });
   }
   button(ctx, 450, 526, 200, 52, 'Call It a Day', { color: '#5d4023', onClick: () => game.goEvening() });
+  button(ctx, 24, 526, 160, 52, '📅 This week', { color: '#1c3d66', fontSize: 14, onClick: () => { game.weekOpen = true; } });
   if (game.message) {
     // On a backing pill: bare text here sat on top of the last card and was hard to read.
     const mw = Math.min(700, textWidth(ctx, game.message, 13) + 32);
@@ -143,7 +145,8 @@ function drawGigCard(ctx, x, y, w, h, gig, game, s) {
 
   drawText(ctx, gig.title + (gig.isRepeat ? '  ♥' : ''), x + 20, y + 24, { size: 16, weight: 'bold', color: '#ffd700' });
 
-  let details = `💰 $${gig.payout}   ⏱ ${gig.hours}h   ${LOC_ICON[gig.location]} ${gig.location}`;
+  // Per hour if it pays as listed (game/pay.js): an estimate, so it says so in the screen reader label.
+  let details = `💰 $${gig.payout} (~$${listingRate(gig)}/h)   ⏱ ${gig.hours}h   ${LOC_ICON[gig.location]} ${gig.location}`;
   if (gig.remote) details += '   ✦ REMOTE';
   if (s.canSeeReliability) details += `   ${'★'.repeat(gig.clientReliability)}`;
   drawText(ctx, details, x + 20, y + 46, { size: 13, color: '#b8c4d0', font: 'monospace' });
@@ -185,6 +188,6 @@ function drawGigCard(ctx, x, y, w, h, gig, game, s) {
     drawText(ctx, noTime ? 'NO TIME' : 'TOO TIRED', x + w - 51, y + 62, { size: 11, weight: 'bold', color: '#ff6b5e', align: 'center' });
     UI.register(x, y, w, h, () => { playError(); game.cardFlash = { gig, at: Date.now() }; game.message = noTime ? `Needs ${gig.hours}h, you have ${s.hoursLeft}h left.` : `Needs ${cost} energy, you have ${Math.round(s.energy)}.`; }, `${gig.title}, $${gig.payout}, ${gig.hours} hours, ${noTime ? 'no time left today' : 'too tired'}`);
   } else {
-    UI.register(x, y, w, h, () => { game.selectedGig = gig; game.message = ''; }, `${selected ? 'Selected: ' : ''}${gig.title}, $${gig.payout}, ${gig.hours} hours, ${cost} energy, ${gig.risk}% scam risk${gig.client ? `, client ${gig.client}` : ''}`);
+    UI.register(x, y, w, h, () => { game.selectedGig = gig; game.message = ''; }, `${selected ? 'Selected: ' : ''}${gig.title}, $${gig.payout}, ${gig.hours} hours, about $${listingRate(gig)} an hour if paid in full, ${cost} energy, ${gig.risk}% scam risk${gig.client ? `, client ${gig.client}` : ''}`);
   }
 }

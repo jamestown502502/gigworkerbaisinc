@@ -15,15 +15,17 @@ function runIdle(g, maxSec = 120) {
 }
 
 describe('every gig with a challenge plays its own job', () => {
-  it('maps all eleven challenge gigs to a distinct microgame', () => {
+  it('maps all fourteen challenge gigs to a distinct microgame', () => {
     const withQTE = GIG_TEMPLATES.filter((g) => g.hasQTE);
     expect(withQTE.map((g) => g.title).sort()).toEqual([
       'Assemble IKEA Furniture', 'Clean Out Garage', 'Delivery Driver — Rush Shift', 'Dog Walking — Energetic Husky', 'Flea Market Stall — Weekend', 'Help Move Furniture', 'Logo Design — Small Business', 'Mystery Shopping — Review Store', 'Photography — Product Shots', 'Tutoring — High School Math', 'Yard Work — Leaves & Mowing',
+      // publisher polish 2026-10-12: the three weird gigs got their own challenges (weirdgames.js)
+      'Water Slide Tester', 'Professional Cuddler', 'Mattress Tester — Hotel Review',
     ].sort());
     for (const g of withQTE) expect(MICROGAME_BY_TREE[g.choiceTree], g.title).toBeTruthy();
     const classes = new Set(withQTE.map((g) => MICROGAME_BY_TREE[g.choiceTree]));
     expect(classes.size).toBe(withQTE.length);
-    expect(withQTE.length).toBe(11);
+    expect(withQTE.length).toBe(14);
   });
 
   it('every microgame introduces itself with one word', () => {

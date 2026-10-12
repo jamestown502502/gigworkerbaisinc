@@ -12,6 +12,7 @@ const JOBS = [
   ['furnitureAssembly', 'Assemble IKEA Furniture'], ['tutoring', 'Tutoring — High School Math'],
   ['photoGig', 'Photography — Product Shots'], ['rushShift', 'Delivery Driver — Rush Shift'],
   ['marketDay', 'Flea Market Stall — Weekend'],
+  ['waterSlide', 'Water Slide Tester'], ['cuddler', 'Professional Cuddler'], ['mattressTest', 'Mattress Tester — Hotel Review'],
 ];
 const DIRS = ['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft'];
 

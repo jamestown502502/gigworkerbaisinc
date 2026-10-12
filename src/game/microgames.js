@@ -12,6 +12,7 @@
 //   Assemble IKEA        -> ASSEMBLE!   put the build steps in the right order        (2026-10-02)
 //   Tutoring             -> PERCENT!    work the student's percent problems with them (2026-10-02)
 //   Product Photography  -> FRAME!      place the product by the rule of thirds       (2026-10-02)
+//   Water Slide, Cuddler, Mattress -> INSPECT!, BOUNDARIES!, COMPARE! (2026-10-12, weirdgames.js)
 //
 // Every result now carries a `lesson`: one real-world takeaway about doing the job well, shown on
 // the result card. Where it fit, the lesson is the rule the game is scored on (PACK's heavy-goes-
@@ -32,6 +33,7 @@ import { RushShift, MarketDay } from './longform.js';
 import { spawnBurst } from '../ui/fx.js';
 import { easeOutBack, easeOutBounce } from '../ui/juice.js';
 import { haptic } from '../engine/audio.js';
+import { SafetyCheck, BoundariesGame, CompareMattresses, WEIRD_LESSONS } from './weirdgames.js';
 
 function shuffle(arr, rand = Math.random) {
   const a = [...arr];
@@ -71,6 +73,7 @@ export const LESSONS = {
   packFragile: 'Heavy low, fragile on top: nothing should ever rest on what can break.',
   rakeShift: 'Check the wind again mid-job. A pile that was downwind an hour ago can be upwind now.',
   sortFinal: 'Final sale means no returns at all: no refund, no exchange, no credit. Say so kindly, up front.',
+  ...WEIRD_LESSONS,
 };
 
 /** Variants (2026-10-07): after a challenge has been played twice (across runs), half the time it
@@ -994,6 +997,9 @@ export const MICROGAME_BY_TREE = {
   photoGig: FrameShot,
   rushShift: RushShift,
   marketDay: MarketDay,
+  waterSlide: SafetyCheck,
+  cuddler: BoundariesGame,
+  mattressTest: CompareMattresses,
 };
 
 export function createQTE(gig, state) {

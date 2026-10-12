@@ -422,7 +422,7 @@ Before/after: `C:\Users\Jbthi\Claude Cowork\BAIS_Minigame_Polish_BeforeAfter_202
 
 Before/after: `C:\Users\Jbthi\Claude Cowork\BAIS_Minigame_Stuck_Audit_BeforeAfter_2026-10-05.md`.
 
-- `tests/e2e/playthrough.spec.js` (android-chrome only): plays all 11 job challenges, both
+- `tests/e2e/playthrough.spec.js` (android-chrome only): plays all 14 job challenges, both
   people-skills games and both evening games on the real requestAnimationFrame loop with real taps
   (choices, reaction cards, the challenge, the receipt's Continue). Fails if a challenge never
   ends, a result card never moves on, the receipt never stamps, or the player is not handed back.
@@ -553,3 +553,16 @@ a Vercel domain redirect; the Vercel project itself was renamed `side-hustle-cit
 - **Sharing:** `public/og-image.png` 1200x630; canonical + OG/Twitter tags on the new domain.
 - **Tests:** `tests/unit/keys.test.js` (19); `tests/e2e/keyboard.spec.js` (desktop-chromium; ~9 min) plays all 11
   job challenges and both evening games keyboard-only, and checks Esc pause/resume. Gate passed on PR and main.
+
+## 18. Publisher polish (2026-10-12)
+
+Spec: `Claude Cowork/BAIS_PublisherPolish_Spec_2026-10-12.md` (owner-approved; the "Reviewer's Cut" demo path was cut by the owner, do not re-propose it). Three PRs.
+
+- **Margins** (`index.html`, `src/main.js`): a still backdrop baked from the key art (`public/brand/backdrop.webp`, blur applied at build time) plus `#ambient-tint`, coloured per phase (`PHASE_MOOD` in `src/ui/brand.js`, 1 s CSS fade). The old 5x/second canvas copy into a CSS-blurred div was the reported flicker: do not bring it back.
+- **Branding**: `#splash` (banner, removed after `loadAssets`; at once under `navigator.webdriver`), wordmark on the character creator (`brandWordmark` in the asset manifest), `BRAND` colours in `src/ui/brand.js` (hover edge, stars, focus ring cyan, transition sky). Rights: `docs/publisher-upgrade/ASSET_PROVENANCE.md`.
+- **Learning rubric**: skill (`skills.js` SKILLS) + rule (lesson) + transfer (`skills.js` TRANSFER, "Off the job:" on the result card). `tests/unit/learning.test.js`.
+- **What a job really paid** (`src/game/pay.js`): `netFor(items, hours)` splits a receipt into paid / your costs (on-the-job spend, gas and wear, thrift stock; never pay cuts or short pay) / kept / per hour. Receipt line, job card `~$/h` (if paid in full), and `monthMath` all use it. Payouts unchanged.
+- **Week board** (`src/game/week.js`, `screens.weekModal`): today + 7 days (8 columns: day 1's bills fall on day 8). Only known things in cells; the pace forecast is the labelled estimate line. `game.weekOpen`; closed by Back/Escape and by every `setPhase`.
+- **Otis** (`src/game/otis.js`): `state.otisArc` stage 0-3. From day 2 one listing is Otis's until you work for him; then his studio job (`otisStudio` choice tree: quote / favor / keep to the agreement); two days later the morning answers (booking via `contractTerms`, a referral that expects free extras, or a thank-you). Balance harness reports the arc: met by day 10 in >90% of runs.
+- **Weird gigs** (`src/game/weirdgames.js`): INSPECT! (Water Slide; named one word to match the house style, the spec's working name was SAFETY CHECK!), BOUNDARIES! (Cuddler; platonic, agreement card + speech bubbles), COMPARE! (Mattress). `hasQTE: true` for the three; 14 challenges total. Lessons in `WEIRD_LESSONS` (spread into `LESSONS`), recall questions added.
+- **Tests added**: unit `pay`, `week`, `otis`, `weirdgames`, `learning`; e2e `margins.spec.js`, `publisher.spec.js`; the three jobs joined the touch and keyboard-only playthroughs.

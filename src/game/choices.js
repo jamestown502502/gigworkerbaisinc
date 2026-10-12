@@ -12,6 +12,21 @@
 // learning in games (Wouters & van Oostendorp, 2013). `{client}` is filled with the gig's client.
 // Effects and odds are unchanged from before, so the Monte Carlo balance bands are unaffected.
 export const CHOICE_TREES = {
+  // Otis's studio (publisher polish 2026-10-12, game/otis.js): scope creep, mid-job. The choice
+  // texts are game/otis.js OTIS_CHOICE (the arc keys off them).
+  otisStudio: [
+    { text: 'Halfway through the foam, Otis waves a paint roller. "While you\'re here, throw in the walls? Ten minutes." It is two hours of work.', choices: [
+      { text: 'Quote a price for the painting', result: { cash: 30, energy: -8, stress: 0, rep: 0.1 }, next: null,
+        say: '{client} blinks, then laughs. "Thirty for the paint job? Fair." You both know exactly what was agreed.',
+        lesson: 'Scope creep: when a job grows, name the extra work and its price before you start it.' },
+      { text: 'Do the painting as a favor', result: { cash: 0, energy: -12, stress: 4, rep: 0.2 }, next: null,
+        say: 'You paint until dark. {client} is delighted, and says so twice.',
+        lesson: 'A favor builds goodwill, but unpriced extras quietly become what people expect next time.' },
+      { text: 'Finish the soundproofing only', result: { cash: 0, energy: 0, stress: 0, rep: 0 }, next: null,
+        say: '"Just the foam today," you say. {client} shrugs: "Fair enough. I\'ll find a painter."',
+        lesson: 'Work outside the agreement is allowed to be a no. The deal is the job you agreed, done well.' },
+    ]},
+  ],
   movingHelp: [
     { text: 'Client shows a truck packed floor-to-ceiling.', choices: [
       { text: 'Accept the overload', result: { cash: 20, energy: -15, stress: 10, rep: 0 }, next: null,

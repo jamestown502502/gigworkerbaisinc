@@ -29,6 +29,8 @@ import { createTransition, stepTransition, renderTransition } from '../ui/transi
 import { syncA11y, announce, focusedTarget } from '../ui/a11y.js';
 import { roundRectPath } from '../ui/text.js';
 import { BRAND } from '../ui/brand.js';
+import { netFor } from './pay.js';
+import { ensureOtisListing, noteOtisGig, noteOtisChoice, otisMorningCard, otisStudioGig } from './otis.js';
 import { storyIntroCard, storyBeatCard, storyDueCard } from './story.js';
 
 export const UPGRADES = [
@@ -213,6 +215,7 @@ export class Game {
 
   /** Every phase change goes through here so it can carry a transition. `kind` null = instant. */
   setPhase(next, kind = null, meta = {}) {
+    this.weekOpen = false;   // the week board belongs to the screen it was opened on
     this.lastPhaseRequest = next;   // read by the tutorial when a tap goes through it (processInput)
     const apply = () => { this.phase = next; };
     if (!kind) { apply(); return; }
@@ -307,6 +310,8 @@ export class Game {
       if (offer) this.eventQueue.push(offer);
       const chores = this.choresCard();
       if (chores) this.eventQueue.push(chores);
+      const otis = otisMorningCard(s);
+      if (otis) this.eventQueue.push(otis);
     }
     s.save();
   }
@@ -496,6 +501,7 @@ export class Game {
   choose(choice) {
     if (this.pendingOutcome) return;
     const { effects, outcomeText, lesson, landed } = resolveChoice(this.state, choice);
+    if (this.currentGig.otisStudio) noteOtisChoice(this.state, choice.text);
     const text = fillClient(outcomeText, this.currentGig.client);
     this.outcomeTexts.push(text);
     const known = this.lessonKnown(lesson);
@@ -683,6 +689,8 @@ export class Game {
     const pleased = s.reputation >= this.snapshot.rep;
     // The client remembers: a job that left your reputation intact and paid in full went well.
     rememberClient(s, gig.client, gig.title, pleased && !scamText);
+    const otisLine = noteOtisGig(s, gig);
+    if (otisLine) this.outcomeTexts.push(otisLine);
     // A standing booking ends the first time it goes badly.
     if (gig.contract && !(pleased && !scamText)) {
       s.contracts = (s.contracts || []).filter((c) => c.client !== gig.client);
@@ -695,6 +703,7 @@ export class Game {
       payout,
       total,
       items,
+      net: netFor(items, gig.hours),
       scamText,
       qteResult,
       outcomeTexts: this.outcomeTexts,
@@ -1070,6 +1079,10 @@ export class Game {
     if (s.doublePayDays > 0) s.doublePayDays -= 1;
     s.weather = rollWeather(s.twist);
     s.todayGigs = generateDailyGigs(s);
+    // Otis's story (game/otis.js): one of his listings until the arc starts, then his own job.
+    ensureOtisListing(s, s.todayGigs);
+    const studio = otisStudioGig(s);
+    if (studio) s.todayGigs.unshift(studio);
     if (s.lateGigTomorrow) { s.todayGigs.unshift(s.lateGigTomorrow); s.lateGigTomorrow = null; }
     this.message = '';
     if (s.rentOverdueDays >= 14) {
@@ -1278,6 +1291,7 @@ export class Game {
     else if (this.settingsOpen) screens.settingsModal(ctx, this);
     else if (this.resumePrompt) screens.resumeModal(ctx, this);
     else if (this.mathOpen && (this.phase === 'SUMMARY' || this.phase === 'GAMEOVER')) screens.monthMathModal(ctx, this);
+    else if (this.weekOpen && (this.phase === 'MORNING' || this.phase === 'BROWSE')) screens.weekModal(ctx, this);
     renderFX(ctx);
     renderTokens(ctx);
     if (this.tutorialVisible()) renderTutorial(ctx, this);
@@ -1410,6 +1424,7 @@ export class Game {
     if (this.transition) return true;
     if (this.settingsOpen) { this.settingsOpen = false; this.confirmReset = false; return true; }
     if (this.mathOpen) { this.mathOpen = false; this.mathPage = 0; return true; }
+    if (this.weekOpen) { this.weekOpen = false; return true; }
     if (this.rentPay) { this.rentPay = null; return true; }
     if (this.confirmRentEarly) { this.confirmRentEarly = false; return true; }
     if (this.shopOpen) { this.shopOpen = false; return true; }
