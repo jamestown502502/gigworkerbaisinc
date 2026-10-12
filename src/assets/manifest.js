@@ -124,7 +124,9 @@ const ASSET_MANIFEST = {
     propPlant: 'media/props/plant.png',
     propPlantWilt: 'media/props/plantwilt.png',
     propFan: 'media/props/fan.png',
-    propUmbrella: 'media/props/umbrella.png'
+    propUmbrella: 'media/props/umbrella.png',
+    // The cut-out logo (publisher polish 2026-10-12; docs/publisher-upgrade/ASSET_PROVENANCE.md).
+    brandWordmark: 'brand/wordmark.webp'
   }
 };
 

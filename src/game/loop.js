@@ -28,6 +28,7 @@ import { effectTokens, isFiveStars, receiptState, HAPTIC } from '../ui/juice.js'
 import { createTransition, stepTransition, renderTransition } from '../ui/transition.js';
 import { syncA11y, announce, focusedTarget } from '../ui/a11y.js';
 import { roundRectPath } from '../ui/text.js';
+import { BRAND } from '../ui/brand.js';
 import { storyIntroCard, storyBeatCard, storyDueCard } from './story.js';
 
 export const UPGRADES = [
@@ -1284,7 +1285,7 @@ export class Game {
     const f = focusedTarget();
     if (f) {
       ctx.save();
-      ctx.strokeStyle = '#f1c40f'; ctx.lineWidth = 4;
+      ctx.strokeStyle = BRAND.cyan; ctx.lineWidth = 4;   // brand cyan: distinct from the gold hover edge
       roundRectPath(ctx, f.x - 4, f.y - 4, f.w + 8, f.h + 8, 10); ctx.stroke();
       ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.lineWidth = 1.5;
       roundRectPath(ctx, f.x - 7, f.y - 7, f.w + 14, f.h + 14, 12); ctx.stroke();

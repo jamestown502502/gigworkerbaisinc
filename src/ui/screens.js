@@ -1,5 +1,6 @@
 // Screen renderers + immediate-mode UI helpers.
-import { drawSprite, drawFullscreen } from '../engine/sprites.js';
+import { drawSprite, drawFullscreen, imageCache } from '../engine/sprites.js';
+import { BRAND } from './brand.js';
 import { InputManager } from '../engine/input.js';
 import { drawCharacter, optionRow, pronounsFor, pronounPreview, randomLook, BUILDS, FACIAL_HAIR, HAIR_COLORS, HAIR_STYLES, PRONOUNS, SHIRT_COLORS, SKIN_TONES } from './character.js';
 import { travelCost } from '../game/gigs.js';
@@ -15,7 +16,7 @@ import { easeOutBack, receiptState, heartbeat } from './juice.js';
 import { RUN_LENGTH_DAYS } from '../engine/state.js';
 import { daysToEviction, rentForecast, monthInsights, backgroundsOpen, backgroundOf, BACKGROUNDS, STANDING_LABEL } from '../game/depth.js';
 import { storyOf, storyEnding } from '../game/story.js';
-import { skillFor } from '../game/skills.js';
+import { skillFor, transferFor } from '../game/skills.js';
 
 // ---------- immediate-mode UI ----------
 export const UI = {
@@ -84,7 +85,7 @@ export function button(ctx, x, y, w, h, label, { color = '#5d4023', textColor = 
     // Secondary action: outline only, so the primary button next to it clearly leads.
     ctx.fillStyle = hov ? 'rgba(255,255,255,0.12)' : 'rgba(20,14,8,0.72)';
     roundRectPath(ctx, x, y, w, h, 9); ctx.fill();
-    ctx.strokeStyle = hov ? '#f1c40f' : '#a08560'; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = hov ? BRAND.gold : '#a08560'; ctx.lineWidth = 1.5;
     roundRectPath(ctx, x, y, w, h, 9); ctx.stroke();
     drawText(ctx, label, x + w / 2, y + h / 2, { size: fontSize, weight: 'bold', color: '#e8d9b8', align: 'center', baseline: 'middle', maxWidth: w - 12, shadow: false });
     if (flash > 0) { ctx.fillStyle = `rgba(255,236,170,${0.35 * flash})`; roundRectPath(ctx, x, y, w, h, 9); ctx.fill(); }
@@ -100,7 +101,7 @@ export function button(ctx, x, y, w, h, label, { color = '#5d4023', textColor = 
   roundRectPath(ctx, x, y, w, h, 9);
   ctx.fill();
 
-  ctx.strokeStyle = disabled ? '#5a4c3a' : (hov ? '#f1c40f' : border);
+  ctx.strokeStyle = disabled ? '#5a4c3a' : (hov ? BRAND.gold : border);
   ctx.lineWidth = 2;
   roundRectPath(ctx, x, y, w, h, 9);
   ctx.stroke();
@@ -188,6 +189,8 @@ export function creatorScreen(ctx, game) {
   const c = s.character;
   const set = (patch) => { s.character = { ...s.character, ...patch }; s.save(); };
   drawBackground(ctx, 'apartment', 0.62);
+  // The game's logo greets a new run (publisher polish 2026-10-12); the drawn title stands alone if it failed to load.
+  if (imageCache.brandWordmark) ctx.drawImage(imageCache.brandWordmark, 24, 4, 86, 74);
   drawText(ctx, game.creatorEditing ? 'CHANGE YOUR LOOK' : 'WHO IS HUSTLING?', 400, 40, { size: 24, weight: 'bold', color: '#ffffff', align: 'center', outline: true });
   drawText(ctx, 'Every option is open to everyone. Change any of it later from your apartment.', 400, 64, { size: 13, color: '#c9a876', align: 'center' });
 
@@ -702,7 +705,7 @@ function starRow(ctx, cx, y, n, k) {
     ctx.translate(sx, y);
     ctx.scale(scale, scale);
     ctx.translate(-sx, -y);
-    drawText(ctx, '★', sx, y, { size: 38, color: on && appear > 0 ? '#f1c40f' : '#a08b63', align: 'center', baseline: 'middle', shadow: false });
+    drawText(ctx, '★', sx, y, { size: 38, color: on && appear > 0 ? BRAND.gold : '#a08b63', align: 'center', baseline: 'middle', shadow: false });
     ctx.restore();
   }
 }
@@ -714,7 +717,7 @@ function fiveStarRow(ctx, cx, y, t, calm) {
     const sc = calm ? 1 : 0.4 + 0.6 * easeOutBack(appear);
     const sx = cx + (i - 2) * 44;
     ctx.save(); ctx.translate(sx, y); ctx.scale(sc, sc); ctx.translate(-sx, -y);
-    drawText(ctx, '★', sx, y, { size: 36, color: appear > 0 ? '#f1c40f' : '#a08b63', align: 'center', baseline: 'middle', shadow: false });
+    drawText(ctx, '★', sx, y, { size: 36, color: appear > 0 ? BRAND.gold : '#a08b63', align: 'center', baseline: 'middle', shadow: false });
     ctx.restore();
   }
 }
@@ -754,10 +757,13 @@ function resultCard(ctx, game) {
     else lines.push(`Support +${(r.effects && r.effects.support) || 0}  ·  Balance +2`);
   }
   if (globalThis.__textProbe) globalThis.__textProbe.push({ layer: true });
-  ctx.fillStyle = `rgba(8, 6, 4, ${0.88 * k})`;
-  roundRectPath(ctx, 92, 102, 616, 426, 12); ctx.fill();
   const skillTag = skillFor(q.name);
-  const tagH = (skillTag && r.lesson ? 20 : 0) + (r.why ? 12 : 0);
+  // Where the same rule works off the job (publisher polish 2026-10-12, skills.js TRANSFER).
+  const transfer = r.lesson ? transferFor(q.name) : '';
+  const transH = transfer ? 42 : 0;
+  ctx.fillStyle = `rgba(8, 6, 4, ${0.88 * k})`;
+  roundRectPath(ctx, 92, 102, 616, 426 + transH, 12); ctx.fill();
+  const tagH = (skillTag && r.lesson ? 20 : 0) + (r.why ? 12 : 0) + transH;
   const x = 190, y = r.lesson ? (r.why ? 116 : 138) : 160, w = 420, h = (r.lesson ? (r.why ? 380 : 330) : 290) + tagH;
   ctx.save();
   modalScale(ctx, t, 400, y + h / 2);
@@ -780,7 +786,8 @@ function resultCard(ctx, game) {
   // The skill this challenge practised, named above its lesson (QA round 4 depth pass).
   if (skillTag && r.lesson) { drawText(ctx, `SKILL: ${skillTag.toUpperCase()}`, 400, ly, { size: 12, weight: 'bold', color: '#8ec6ea', align: 'center' }); ly += 20; }
   if (r.why) ly = drawWrapped(ctx, r.why, 400, ly, w - 60, 20, { size: 14, color: r.success ? '#9fe0b5' : '#ffb3a8', align: 'center' }) + 8;
-  if (r.lesson) drawWrapped(ctx, r.lesson, 400, ly, w - 44, 18, { size: 14, color: '#e8c98a', align: 'center' });
+  if (r.lesson) ly = drawWrapped(ctx, r.lesson, 400, ly, w - 44, 18, { size: 14, color: '#e8c98a', align: 'center' });
+  if (transfer) drawWrapped(ctx, `Off the job: ${transfer}`, 400, ly + 6, w - 44, 17, { size: 13, color: '#a9d8f2', align: 'center' });
   if (t > 0.4) drawText(ctx, `${InputManager.tapWord()} to continue`, 400, y + h - 16, { size: 13, color: '#e8d9b8', align: 'center' });
   ctx.restore();
 }
