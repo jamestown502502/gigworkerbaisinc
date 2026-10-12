@@ -86,8 +86,8 @@ export function renderTransition(ctx, tr) {
     case 'dusk': {
       // Warm-to-cool wash, peaking at the cut.
       const g = ctx.createLinearGradient(0, 0, 0, 600);
-      g.addColorStop(0, `rgba(20,24,48,${0.95 * cover})`);
-      g.addColorStop(1, `rgba(224,112,48,${0.85 * cover})`);
+      g.addColorStop(0, `rgba(14,50,97,${0.95 * cover})`);   // brand navy -> gold (src/ui/brand.js)
+      g.addColorStop(1, `rgba(253,184,11,${0.85 * cover})`);
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, 800, 600);
       break;

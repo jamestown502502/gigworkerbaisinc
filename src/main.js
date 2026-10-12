@@ -18,17 +18,18 @@ import * as story from './game/story.js';
 import { focusedTarget } from './ui/a11y.js';
 import { drawText, roundRectPath } from './ui/text.js';
 import { applyTextSize } from './ui/screens.js';
+import { BRAND, PHASE_MOOD, hideSplash } from './ui/brand.js';
 
 export { drawSprite, imageCache } from './engine/sprites.js';
 
 function drawLoading(ctx, pct) {
-  ctx.fillStyle = '#1d150d';
+  ctx.fillStyle = BRAND.ink;
   ctx.fillRect(0, 0, 800, 600);
-  drawText(ctx, 'SIDE HUSTLE CITY', 400, 250, { size: 28, weight: 'bold', color: '#ffd700', align: 'center', outline: true });
-  drawText(ctx, 'Loading the neighborhood...', 400, 290, { size: 15, color: '#c9a876', align: 'center' });
-  ctx.fillStyle = '#3a2d1f';
+  drawText(ctx, 'SIDE HUSTLE CITY', 400, 250, { size: 28, weight: 'bold', color: BRAND.gold, align: 'center', outline: true });
+  drawText(ctx, 'Loading the neighborhood...', 400, 290, { size: 15, color: BRAND.cream, align: 'center' });
+  ctx.fillStyle = '#1c2c52';
   roundRectPath(ctx, 250, 320, 300, 14, 7); ctx.fill();
-  ctx.fillStyle = '#e07030';
+  ctx.fillStyle = BRAND.cyan;
   roundRectPath(ctx, 250, 320, Math.max(14, 300 * pct), 14, 7); ctx.fill();
 }
 
@@ -47,6 +48,7 @@ async function boot() {
   for (const ev of ['pointerup', 'touchend', 'click']) canvas.addEventListener(ev, activate, { passive: true });
 
   await loadAssets((pct) => drawLoading(ctx, pct));
+  hideSplash();
 
   const state = new GameState();
   initAudio(state.settings);
@@ -92,11 +94,11 @@ async function boot() {
     });
   } catch { /* no history API: Back simply leaves */ }
 
-  const ambientEl = document.getElementById('ambient');
-  const ambientCanvas = document.createElement('canvas');   // never added to the page
-  ambientCanvas.width = 32; ambientCanvas.height = 24;
-  const ambient = ambientEl ? ambientCanvas.getContext('2d') : null;
-  let ambientAt = 0;
+  // The bands around the game (index.html #ambient, #ambient-tint): a still backdrop and a tint
+  // that follows the phase's mood. Only a string compare per frame; the colour change is CSS.
+  const tintEl = document.getElementById('ambient-tint');
+  let tintPhase = '';
+  let cursorAt = 0;
 
   let last = performance.now();
   let rafId = null;
@@ -109,10 +111,12 @@ async function boot() {
       game.update(dt);
       game.render(ctx);
     }
-    // The ambient fill behind the game (index.html #ambient): a 32x24 copy, five times a second.
-    if (ambient && now - ambientAt > 200) {
-      ambientAt = now;
-      try { ambient.drawImage(canvas, 0, 0, 32, 24); ambientEl.style.backgroundImage = `url(${ambientCanvas.toDataURL()})`; } catch { /* canvas not ready */ }
+    if (tintEl && game.phase !== tintPhase) {
+      tintPhase = game.phase;
+      tintEl.style.backgroundColor = PHASE_MOOD[tintPhase] || BRAND.navy;
+    }
+    if (now - cursorAt > 200) {
+      cursorAt = now;
       // Desktop: a hand cursor over anything clickable, like any web page.
       const h = InputManager.hover;
       canvas.style.cursor = h && game.keyTargets().some((t) => !t.anywhere && h.x >= t.x && h.x <= t.x + t.w && h.y >= t.y && h.y <= t.y + t.h) ? 'pointer' : 'default';

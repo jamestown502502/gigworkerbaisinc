@@ -30,7 +30,7 @@ function ensureRoot() {
   Object.assign(root.style, { position: 'fixed', left: '0', top: '0', width: '0', height: '0', zIndex: '5', pointerEvents: 'none' });
   const style = document.createElement('style');
   style.textContent = `#a11y-layer button{position:fixed;margin:0;padding:0;border:0;background:transparent;color:transparent;font-size:1px;pointer-events:none;opacity:1;outline:none}
-#a11y-layer button:focus,#a11y-layer button:focus-visible{outline:3px solid #f1c40f;outline-offset:2px;border-radius:8px}
+#a11y-layer button:focus,#a11y-layer button:focus-visible{outline:3px solid #0FD1F6;outline-offset:2px;border-radius:8px}
 #a11y-live{position:fixed;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden}`;
   document.head.appendChild(style);
   live = document.createElement('div');
