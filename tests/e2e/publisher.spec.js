@@ -67,6 +67,7 @@ test("Otis's studio job is on the board two days after he asks", async ({ page }
   await page.evaluate(() => { const g = window.__game; if (g.billsOpen) { for (const k of ['rent', 'phone', 'food']) g.payBill(k); g.closeBills(); } if (g.wrapUpOpen) g.finishWrapUp(); g.sleep(); g.step(2); });
   await settleMorning(page);
   const board = await page.evaluate(() => { const g = window.__game; g.goBrowse(); g.step(1); return g.state.todayGigs.map((x) => x.title); });
-  expect(board[0]).toBe("Soundproof Otis's Practice Room");
+  // On the board (a morning event such as a referral can put its own gig above it).
+  expect(board).toContain("Soundproof Otis's Practice Room");
   await page.screenshot({ path: 'test-results/otis-listing.png' });
 });
