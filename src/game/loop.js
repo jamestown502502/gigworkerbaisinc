@@ -31,6 +31,7 @@ import { roundRectPath } from '../ui/text.js';
 import { BRAND } from '../ui/brand.js';
 import { netFor } from './pay.js';
 import { rentSurcharge, applyMonthStart, surpriseCard, tickMonth } from './month.js';
+import { noteAppJob, appNight, appWeekEnd } from './app.js';
 import { masteryPay, masteryLevel, noteJobDone, LEVEL_NAMES, LEVEL_PAY, TRADES } from './mastery.js';
 import { ensureOtisListing, noteOtisGig, noteOtisChoice, otisMorningCard, otisStudioGig } from './otis.js';
 import { storyIntroCard, storyBeatCard, storyDueCard } from './story.js';
@@ -674,6 +675,8 @@ export class Game {
       s.monthMath.tips += tip;
     }
     if (s.hasToolBelt && gig.type === 'physical') s.monthMath.toolBeltExtra += Math.round(base - base / 1.3);
+    // The app's streak and quest bonuses, the moment they are earned (game/app.js).
+    for (const line of noteAppJob(s, gig, payout)) { items.push(line); payout += line.amount; }
     // A job done well counts toward its trade; a new level is said on the receipt screen.
     const levelUp = noteJobDone(s, gig, !qteResult || qteResult.success);
     if (levelUp) this.outcomeTexts.push(`Level up: ${levelUp.name} at ${levelUp.trade.toLowerCase()}. These jobs now pay ${Math.round(LEVEL_PAY[levelUp.level] * 100)}% more${levelUp.level === 2 ? ', and specialist jobs will ask for you' : ''}.`);
@@ -1019,6 +1022,8 @@ export class Game {
   finishWrapUp() {
     const s = this.state;
     this.wrapUpOpen = false;
+    const questLine = appWeekEnd(s);
+    if (questLine) this.message = questLine;
     s.weekNumber += 1;
     s.weekStats = { startingCash: s.cash, gigsDone: 0, totalEarned: 0, daysWithEvents: 0, eveningsRested: 0 };
     // rotate the repeat-client pool weekly: ~30% stay loyal, the rest must be re-won
@@ -1076,6 +1081,7 @@ export class Game {
       return;
     }
     const fromDay = s.day;
+    const appLine = appNight(s, s.gigHistory.filter((g) => g.day === s.day).length);
     s.paceLog = [...(s.paceLog || []), Math.round(s.totalEarned - (s.dayStartEarned || 0))].slice(-10);
     s.day += 1;
     s.daysUntilBills -= 1;
@@ -1109,6 +1115,7 @@ export class Game {
     }
     this.beginMorning();
     if (unanswered && !this.message) this.message = "You never answered last night's ping. They found someone else.";
+    if (appLine && !this.message) this.message = appLine;
     this.setPhase('MORNING', 'sunrise', { fromDay, toDay: s.day });
     s.save();
   }

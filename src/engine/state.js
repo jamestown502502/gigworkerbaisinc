@@ -92,6 +92,7 @@ export class GameState {
     this.eveningNoteDay = 0;     // a morning choice already spoke for this evening
     this.monthType = 'steady';   // steady / tight / brutal (game/month.js); the choice is kept across runs
     this.surprisesSeen = [];     // this run's surprise costs already faced
+    this.app = null;             // the gig app's books this run (game/app.js appOf): streak, quests, what its picks paid
     this.mastery = {};           // good runs per job this month (game/mastery.js): levels, pay, the month's title
     this.runNumber = 1;          // which run this is; kept across reset()
     this.lastRun = null;         // how the previous run ended ({ day, cash, complete }), for Welcome back

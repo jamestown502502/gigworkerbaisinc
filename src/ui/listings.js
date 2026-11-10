@@ -5,6 +5,7 @@ import { gigEnergyCost, travelCost, weatherGigEnergyMod } from '../game/gigs.js'
 import { playError } from '../engine/audio.js';
 import { listingRate } from '../game/pay.js';
 import { masteryLevel, runsToNext, LEVEL_NAMES, TRADES } from '../game/mastery.js';
+import { APP_NAME, STREAK_LENGTH, STREAK_BONUS, questStatus, appOf } from '../game/app.js';
 import { InputManager } from '../engine/input.js';
 
 const CARD_H = 78;
@@ -26,7 +27,7 @@ export function renderListings(ctx, game) {
   const s = game.state;
   drawBackground(ctx, 'listingsBoard', 0.5);
 
-  drawText(ctx, `TODAY'S LISTINGS — ${s.hoursLeft}h left in the day`, 400, 78, { size: 20, weight: 'bold', color: '#ffffff', align: 'center', outline: true });
+  drawText(ctx, `${APP_NAME.toUpperCase()} · TODAY'S LISTINGS — ${s.hoursLeft}h left in the day`, 400, 78, { size: 20, weight: 'bold', color: '#ffffff', align: 'center', outline: true });
 
   // weather banner: the board visibly reacts to the day's weather
   const wthr = s.weather;
@@ -103,6 +104,12 @@ export function renderListings(ctx, game) {
     drawText(ctx, `${game.listScroll + 1}-${Math.min(gigs.length, game.listScroll + VISIBLE)} of ${gigs.length}`, 695, LIST_Y + 132, { size: 11, color: '#c9a876', align: 'center', font: 'monospace' });
   }
 
+  // The app's weekly quest, under the sort chips: all or nothing, and it says so.
+  const quest = questStatus(s);
+  drawText(ctx, `${APP_NAME.toUpperCase()} QUEST`, 726, 452, { size: 11, weight: 'bold', color: '#ffb27a', align: 'center' });
+  drawText(ctx, quest.paid ? `Done: +$${quest.bonus}` : `${quest.done} of ${quest.jobs} jobs`, 726, 470, { size: 13, weight: 'bold', color: quest.paid ? '#2ecc71' : '#f0f0f0', align: 'center' });
+  drawText(ctx, quest.paid ? 'paid this week' : `$${quest.bonus} or nothing`, 726, 487, { size: 11, color: '#c9a876', align: 'center' });
+
   // footer actions
   const sel = game.selectedGig;
   const check = sel ? game.canAffordGig(sel) : null;
@@ -175,14 +182,21 @@ function drawGigCard(ctx, x, y, w, h, gig, game, s, isBest = false) {
 
   const title = gig.title + (gig.isRepeat ? '  ♥' : '');
   drawText(ctx, title, x + 20, y + 24, { size: 16, weight: 'bold', color: '#ffd700' });
-  if (isBest) {
-    // Best pay per hour you can take right now: an estimate, like the rate itself.
-    const tx = x + 28 + textWidth(ctx, title, 16, 'system-ui, sans-serif', 'bold');
-    if (tx + 86 < x + w - 80) {
-      ctx.fillStyle = '#1c3d66';
-      roundRectPath(ctx, tx, y + 9, 86, 20, 10); ctx.fill();
-      drawText(ctx, 'BEST $/HOUR', tx + 43, y + 19, { size: 10, weight: 'bold', color: '#bfe3ff', align: 'center', baseline: 'middle', shadow: false });
-    }
+  // Badges after the title, while they fit: the app's own (its pick, its surge) in the app's
+  // orange, and the game's honest one (best pay per hour you can take right now) in blue.
+  const app = appOf(s);
+  const badges = [];
+  if (gig.appPick) badges.push([`APP PICK ${app.streak % STREAK_LENGTH}/${STREAK_LENGTH}`, '#7a3a10', '#ffd9b0']);
+  if (gig.surge) badges.push(['SURGE +30%', '#7a3a10', '#ffd9b0']);
+  if (isBest) badges.push(['BEST $/HOUR', '#1c3d66', '#bfe3ff']);
+  let tx = x + 28 + textWidth(ctx, title, 16, 'system-ui, sans-serif', 'bold');
+  for (const [label, bg, fg] of badges) {
+    const bw = textWidth(ctx, label, 10, 'system-ui, sans-serif', 'bold') + 16;
+    if (tx + bw > x + w - 80) break;
+    ctx.fillStyle = bg;
+    roundRectPath(ctx, tx, y + 9, bw, 20, 10); ctx.fill();
+    drawText(ctx, label, tx + bw / 2, y + 19, { size: 10, weight: 'bold', color: fg, align: 'center', baseline: 'middle', shadow: false });
+    tx += bw + 6;
   }
 
   // Per hour if it pays as listed (game/pay.js): an estimate, so it says so in the screen reader label.
@@ -232,6 +246,6 @@ function drawGigCard(ctx, x, y, w, h, gig, game, s, isBest = false) {
     drawText(ctx, noTime ? 'NO TIME' : 'TOO TIRED', x + w - 51, y + 62, { size: 11, weight: 'bold', color: '#ff6b5e', align: 'center' });
     UI.register(x, y, w, h, () => { playError(); game.cardFlash = { gig, at: Date.now() }; game.message = noTime ? `Needs ${gig.hours}h, you have ${s.hoursLeft}h left.` : `Needs ${cost} energy, you have ${Math.round(s.energy)}.`; }, `${gig.title}, $${gig.payout}, ${gig.hours} hours, ${noTime ? 'no time left today' : 'too tired'}`);
   } else {
-    UI.register(x, y, w, h, () => { game.selectedGig = gig; game.message = ''; }, `${selected ? 'Selected: ' : ''}${gig.title}, $${gig.payout}, ${gig.hours} hours, about $${listingRate(gig)} an hour if paid in full, ${cost} energy, ${gig.risk}% scam risk${gig.client ? `, client ${gig.client}` : ''}`);
+    UI.register(x, y, w, h, () => { game.selectedGig = gig; game.message = gig.appPick ? `${APP_NAME} picked this for you: ${STREAK_LENGTH} picks in a row pays $${STREAK_BONUS}. It is always the longest job.` : gig.surge ? `Surge: was $${gig.basePayout}. Check the pay per hour, not the badge.` : ''; }, `${selected ? 'Selected: ' : ''}${gig.appPick ? 'App pick, ' : ''}${gig.surge ? 'surge pay, ' : ''}${gig.title}, $${gig.payout}, ${gig.hours} hours, about $${listingRate(gig)} an hour if paid in full, ${cost} energy, ${gig.risk}% scam risk${gig.client ? `, client ${gig.client}` : ''}`);
   }
 }

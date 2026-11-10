@@ -3,6 +3,7 @@ import { creativeStars, backgroundPayMultiplier, clientStanding } from './depth.
 import { CLIENT_NAMES } from './clients.js';
 import { specialistGig } from './mastery.js';
 import { listingsPenalty, travelPenalty, monthPay } from './month.js';
+import { markOffers } from './app.js';
 
 export const GIG_TEMPLATES = [
   { title: 'Help Move Furniture', type: 'physical', payout: [60, 120], hours: [2, 4], risk: [10, 30], location: 'okay', skillReq: 'strength', hasQTE: true, choiceTree: 'movingHelp', outdoor: true },
@@ -65,7 +66,8 @@ export function generateDailyGigs(state) {
     const t = shuffled[i % shuffled.length];
     gigs.push(instantiate(t, state));
   }
-  return gigs;
+  // The app's pick, its surge, and a dropped priority (game/app.js).
+  return markOffers(state, gigs);
 }
 
 function instantiate(t, state) {

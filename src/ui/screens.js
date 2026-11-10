@@ -20,6 +20,7 @@ import { daysToEviction, rentForecast, monthInsights, backgroundsOpen, backgroun
 import { storyOf, storyEnding } from '../game/story.js';
 import { skillFor, transferFor } from '../game/skills.js';
 import { monthTitle } from '../game/mastery.js';
+import { APP_NAME, appReport } from '../game/app.js';
 import { MONTH_TYPES, monthTypeOf, billsMeter } from '../game/month.js';
 
 // ---------- immediate-mode UI ----------
@@ -1422,7 +1423,7 @@ export function monthMathModal(ctx, game) {
   UI.absorb();
   panel(ctx, 110, 40, 580, 520, { alpha: 0.98 });
   // Four pages: the numbers, why, your story, what you learned (QA round 4 depth pass).
-  const pages = ['The numbers', 'Why it went this way', 'Your story', 'What you learned'];
+  const pages = ['The numbers', 'Why it went this way', 'Your story', 'What you learned', 'What the app paid'];
   const page = game.mathPage || 0;
   const nav = () => {
     const close = () => { game.mathOpen = false; game.mathPage = 0; };
@@ -1433,6 +1434,18 @@ export function monthMathModal(ctx, game) {
   };
   if (page === 2) { storyPage(ctx, game); nav(); return; }
   if (page === 3) { debriefPage(ctx, game); nav(); return; }
+  if (page === 4) {
+    // WHAT THE APP PAID (game/app.js): the sum the app never shows, from this run's own jobs.
+    drawText(ctx, `WHAT ${APP_NAME.toUpperCase()} PAID`, 400, 80, { size: 24, weight: 'bold', color: '#ffd700', align: 'center' });
+    let y = 122;
+    for (const line of appReport(game.state).lines) {
+      ctx.fillStyle = '#ffb27a'; ctx.beginPath(); ctx.arc(146, y - 5, 4, 0, Math.PI * 2); ctx.fill();
+      y = drawWrapped(ctx, line, 160, y, 500, 21, { size: 15, color: '#f0f0f0' }) + 12;
+    }
+    drawWrapped(ctx, 'Picks, streaks, surge and quests are how real gig apps steer workers. Each is a nudge toward more hours; whether it pays is a sum only you can do.', 400, Math.max(y + 8, 380), 520, 20, { size: 14, color: '#c9e4d3', align: 'center' });
+    nav();
+    return;
+  }
   if (page === 1) {
     // WHY IT WENT THIS WAY (2026-10-07): the month's own numbers, read back as reasons.
     drawText(ctx, 'WHY IT WENT THIS WAY', 400, 80, { size: 24, weight: 'bold', color: '#ffd700', align: 'center' });
