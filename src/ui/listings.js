@@ -4,6 +4,7 @@ import { drawText, roundRectPath, textWidth } from './text.js';
 import { gigEnergyCost, travelCost, weatherGigEnergyMod } from '../game/gigs.js';
 import { playError } from '../engine/audio.js';
 import { listingRate } from '../game/pay.js';
+import { masteryLevel, runsToNext, LEVEL_NAMES, TRADES } from '../game/mastery.js';
 import { InputManager } from '../engine/input.js';
 
 const CARD_H = 78;
@@ -46,7 +47,10 @@ export function renderListings(ctx, game) {
     });
   }
 
-  const gigs = s.todayGigs;
+  // Sort is a view of the board, never a change to it (2026-11-10): the saved order stays the
+  // order the day rolled.
+  const gigs = sortedListings(s.todayGigs, game.listSort);
+  const best = bestPerHour(s.todayGigs, (g) => game.canAffordGig(g).ok);
   if (gigs.length === 0) {
     ctx.fillStyle = 'rgba(30, 22, 14, 0.92)';
     roundRectPath(ctx, 200, 220, 400, 120, 12); ctx.fill();
@@ -79,9 +83,18 @@ export function renderListings(ctx, game) {
   ctx.beginPath(); ctx.rect(LIST_X - 4, LIST_Y - 4, LIST_W + 8, VISIBLE * CARD_PITCH); ctx.clip();
   shown.forEach((gig, i) => {
     const y = LIST_Y + i * CARD_PITCH;
-    drawGigCard(ctx, LIST_X, y, LIST_W, CARD_H, gig, game, s);
+    drawGigCard(ctx, LIST_X, y, LIST_W, CARD_H, gig, game, s, gig === best);
   });
   ctx.restore();
+
+  // Sort chips, in the column beside the list. The one in use is lit.
+  if (gigs.length > 1) {
+    drawText(ctx, 'SORT', 726, 262, { size: 11, weight: 'bold', color: '#c9a876', align: 'center' });
+    SORTS.forEach(([id, label], i) => {
+      const on = (game.listSort || 'board') === id;
+      button(ctx, 664, 270 + i * 40, 124, 34, label, { color: on ? '#1c3d66' : '#2a2018', fontSize: 13, border: on ? '#5dade2' : '#6b5236', onClick: () => { game.listSort = id; game.listScroll = 0; } });
+    });
+  }
 
   // scroll buttons
   if (maxScroll > 0) {
@@ -120,7 +133,24 @@ export function renderListings(ctx, game) {
   }
 }
 
-function drawGigCard(ctx, x, y, w, h, gig, game, s) {
+export const SORTS = [['board', 'As posted'], ['rate', 'Best $/hour'], ['pay', 'Most pay'], ['short', 'Shortest']];
+
+/** The board in the order the player asked for. Ties keep the posted order. */
+export function sortedListings(gigs, sort = 'board') {
+  const by = { rate: (g) => -listingRate(g), pay: (g) => -g.payout, short: (g) => g.hours }[sort];
+  if (!by) return gigs;
+  return gigs.map((g, i) => [g, i]).sort((a, b) => by(a[0]) - by(b[0]) || a[1] - b[1]).map((p) => p[0]);
+}
+
+/** The job that pays the most per hour among those the player can take right now, or null when
+ *  fewer than two can be taken (a badge on the only choice says nothing). */
+export function bestPerHour(gigs, canTake) {
+  const open = gigs.filter(canTake);
+  if (open.length < 2) return null;
+  return open.reduce((a, g) => (listingRate(g) > listingRate(a) ? g : a));
+}
+
+function drawGigCard(ctx, x, y, w, h, gig, game, s, isBest = false) {
   const selected = game.selectedGig === gig;
   const cost = totalCost(gig, s);
   const tooTired = s.energy < cost;
@@ -143,7 +173,17 @@ function drawGigCard(ctx, x, y, w, h, gig, game, s) {
 
   ctx.globalAlpha = dim;
 
-  drawText(ctx, gig.title + (gig.isRepeat ? '  ♥' : ''), x + 20, y + 24, { size: 16, weight: 'bold', color: '#ffd700' });
+  const title = gig.title + (gig.isRepeat ? '  ♥' : '');
+  drawText(ctx, title, x + 20, y + 24, { size: 16, weight: 'bold', color: '#ffd700' });
+  if (isBest) {
+    // Best pay per hour you can take right now: an estimate, like the rate itself.
+    const tx = x + 28 + textWidth(ctx, title, 16, 'system-ui, sans-serif', 'bold');
+    if (tx + 86 < x + w - 80) {
+      ctx.fillStyle = '#1c3d66';
+      roundRectPath(ctx, tx, y + 9, 86, 20, 10); ctx.fill();
+      drawText(ctx, 'BEST $/HOUR', tx + 43, y + 19, { size: 10, weight: 'bold', color: '#bfe3ff', align: 'center', baseline: 'middle', shadow: false });
+    }
+  }
 
   // Per hour if it pays as listed (game/pay.js): an estimate, so it says so in the screen reader label.
   let details = `💰 $${gig.payout} (~$${listingRate(gig)}/h)   ⏱ ${gig.hours}h   ${LOC_ICON[gig.location]} ${gig.location}`;
@@ -159,6 +199,10 @@ function drawGigCard(ctx, x, y, w, h, gig, game, s) {
 
   // Who is hiring, when it matters: a regular, a wary client (pays 10% less), or a contract.
   const tag = gig.contract ? `★ ${gig.client}'s contract` : gig.standing === 'regular' ? `${gig.client} ♥ regular` : gig.standing === 'wary' ? `${gig.client} · wary, pays 10% less` : gig.standing === 'known' ? `${gig.client} · knows you` : '';
+  // Your level in this trade, or how close the next one is (game/mastery.js).
+  const lvl = masteryLevel(s, gig.choiceTree), toNext = runsToNext(s, gig.choiceTree);
+  const skill = !TRADES[gig.choiceTree] ? '' : lvl > 0 ? `${LEVEL_NAMES[lvl]} +${lvl * 10}%` : toNext === 1 ? '1 more to Steady' : '';
+  if (skill) drawText(ctx, skill, x + w - 16, y + 65, { size: 11, weight: 'bold', color: lvl > 0 ? '#9fe3b8' : '#c9a876', align: 'right' });
   drawText(ctx, tag ? `${tag} · ${gig.description}` : gig.description, x + 20, y + 65, { size: 12, color: gig.standing === 'wary' ? '#ffb27a' : '#c3ccd6', maxWidth: w - 130 });
 
   const rlabel = `⚠ ${gig.risk}%`;

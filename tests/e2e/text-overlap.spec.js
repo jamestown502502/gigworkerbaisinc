@@ -26,8 +26,8 @@ test('no two texts overlap on any screen', async ({ page }) => {
   problems.push(...await sweep(page, 'hud-tooltip'));
   await page.evaluate(() => { const g = window.__game; g.hudTooltip = null; g.state.tutorialSeen = false; g.state.tutorialStep = 0; g.step(1 / 60); });
   problems.push(...await sweep(page, 'tutorial-0'));
-  await page.evaluate(() => { const g = window.__game; g.state.tutorialStep = 2; g.step(1 / 60); });
-  problems.push(...await sweep(page, 'tutorial-2'));
+  await page.evaluate(() => { const g = window.__game; g.state.tutorialStep = 3; g.phase = 'EVENING'; g.ping = null; g.step(1 / 60); });
+  problems.push(...await sweep(page, 'tutorial-evening'));
   await page.evaluate(() => { const g = window.__game; g.state.tutorialSeen = true; g.state.phoneCut = false; g.goBrowse(); g.selectedGig = g.state.todayGigs[0]; g.step(1); });
   problems.push(...await sweep(page, 'listings'));
   await page.evaluate(() => {

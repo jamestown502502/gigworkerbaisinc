@@ -30,6 +30,8 @@ import { syncA11y, announce, focusedTarget } from '../ui/a11y.js';
 import { roundRectPath } from '../ui/text.js';
 import { BRAND } from '../ui/brand.js';
 import { netFor } from './pay.js';
+import { rentSurcharge, applyMonthStart, surpriseCard, tickMonth } from './month.js';
+import { masteryPay, masteryLevel, noteJobDone, LEVEL_NAMES, LEVEL_PAY, TRADES } from './mastery.js';
 import { ensureOtisListing, noteOtisGig, noteOtisChoice, otisMorningCard, otisStudioGig } from './otis.js';
 import { storyIntroCard, storyBeatCard, storyDueCard } from './story.js';
 
@@ -199,6 +201,7 @@ export class Game {
   finishCreator() {
     const newRun = !this.creatorEditing && !this.state.characterCreated;
     this.state.characterCreated = true;
+    if (newRun) applyMonthStart(this.state);        // the month type's starting cash (month.js)
     if (newRun) applyBackgroundStart(this.state);   // a background's one-time start (depth.js)
     this.state.save();
     if (this.creatorEditing) { this.creatorEditing = false; this.setPhase('MORNING', 'fade'); return; }
@@ -312,6 +315,9 @@ export class Game {
       if (chores) this.eventQueue.push(chores);
       const otis = otisMorningCard(s);
       if (otis) this.eventQueue.push(otis);
+      // Tight and Brutal months: this week's surprise cost, a card with three ways out (month.js).
+      const surprise = surpriseCard(s);
+      if (surprise) this.eventQueue.push(surprise);
     }
     s.save();
   }
@@ -594,6 +600,13 @@ export class Game {
     const base = gig.payout;
     items.push({ label: gig.title, amount: base });
     let payout = base;
+    // What you are good at pays more (game/mastery.js): the level you already hold in this job.
+    const skillPay = masteryPay(s, gig);
+    if (skillPay > 0) {
+      const lvl = masteryLevel(s, gig.choiceTree);
+      items.push({ label: `${LEVEL_NAMES[lvl]} at ${TRADES[gig.choiceTree].trade.toLowerCase()} (+${Math.round(LEVEL_PAY[lvl] * 100)}%)`, amount: skillPay });
+      payout += skillPay;
+    }
     if (qteResult && qteResult.items) {
       // Long-form jobs (game/longform.js): what the shift earned IS the result, line by line,
       // instead of a bonus or pay cut on the payout.
@@ -661,6 +674,9 @@ export class Game {
       s.monthMath.tips += tip;
     }
     if (s.hasToolBelt && gig.type === 'physical') s.monthMath.toolBeltExtra += Math.round(base - base / 1.3);
+    // A job done well counts toward its trade; a new level is said on the receipt screen.
+    const levelUp = noteJobDone(s, gig, !qteResult || qteResult.success);
+    if (levelUp) this.outcomeTexts.push(`Level up: ${levelUp.name} at ${levelUp.trade.toLowerCase()}. These jobs now pay ${Math.round(LEVEL_PAY[levelUp.level] * 100)}% more${levelUp.level === 2 ? ', and specialist jobs will ask for you' : ''}.`);
 
     // Money that changed hands during the job (choice-tree / EI effects already applied to state)
     const onTheJob = Math.round(s.cash - this.snapshot.cash);
@@ -861,7 +877,7 @@ export class Game {
 
   billAmount(kind) {
     const s = this.state;
-    if (kind === 'rent') return Math.max(0, RENT + rentExtra(s.twist) - (s.rentCredit || 0)) + s.unpaidRent - (this.billsPartial || 0);
+    if (kind === 'rent') return Math.max(0, RENT + rentExtra(s.twist) + rentSurcharge(s) - (s.rentCredit || 0)) + s.unpaidRent - (this.billsPartial || 0);
     if (kind === 'phone') return PHONE + s.unpaidPhone;
     return FOOD;
   }
@@ -955,7 +971,7 @@ export class Game {
 
   /** This week's rent, paid early from the apartment or the evening (QA round 3 #8). The bills
    *  screen then shows it already paid. Overdue rent is paid with payDebt('rent') instead. */
-  rentEarlyAmount() { return Math.max(0, RENT + rentExtra(this.state.twist) - (this.state.rentCredit || 0)); }
+  rentEarlyAmount() { return Math.max(0, RENT + rentExtra(this.state.twist) + rentSurcharge(this.state) - (this.state.rentCredit || 0)); }
   canPayRentEarly() {
     const s = this.state;
     return !s.rentPrepaid && s.unpaidRent === 0 && s.daysUntilBills > 0 && s.cash >= this.rentEarlyAmount();
@@ -980,7 +996,7 @@ export class Game {
   closeBills() {
     const s = this.state;
     if (!this.billsPaid.rent) {
-      let owe = Math.max(0, RENT + rentExtra(s.twist) - (s.rentCredit || 0)) - (this.billsPartial || 0);
+      let owe = Math.max(0, RENT + rentExtra(s.twist) + rentSurcharge(s) - (s.rentCredit || 0)) - (this.billsPartial || 0);
       // Tight-Knit Block / Neighborhood Kid: once a month Dee covers up to $100 of a short rent.
       if (owe > 0 && !s.deeCovered && (s.twist === 'tightKnit' || backgroundOf(s).id === 'local')) {
         const cover = Math.min(100, owe);
@@ -1068,6 +1084,7 @@ export class Game {
       else s.rentOverdueDays += 1;
     }
     applyHealthDecay(s);
+    tickMonth(s);
     s.ateYesterday = !s.hungry;
     s.energy = Math.min(100, s.energy + sleepRecovery(s));
     if (s.tiredTomorrow) { s.energy = Math.max(10, s.energy - (s.tiredTomorrow === 'light' ? 8 : 15)); s.tiredTomorrow = false; }

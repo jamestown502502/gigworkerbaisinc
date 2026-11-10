@@ -19,6 +19,8 @@ import { RUN_LENGTH_DAYS } from '../engine/state.js';
 import { daysToEviction, rentForecast, monthInsights, backgroundsOpen, backgroundOf, BACKGROUNDS, STANDING_LABEL } from '../game/depth.js';
 import { storyOf, storyEnding } from '../game/story.js';
 import { skillFor, transferFor } from '../game/skills.js';
+import { monthTitle } from '../game/mastery.js';
+import { MONTH_TYPES, monthTypeOf, billsMeter } from '../game/month.js';
 
 // ---------- immediate-mode UI ----------
 export const UI = {
@@ -249,6 +251,12 @@ export function creatorScreen(ctx, game) {
     }
   } else {
     button(ctx, 560, 500, 210, 50, 'Start Day 1  >', { color: '#2c6e49', fontSize: 17, onClick: () => game.finishCreator() });
+    // How tight the month is (game/month.js). Tapping cycles; the line under the buttons says
+    // exactly what changes, so the choice is informed.
+    const mt = monthTypeOf(s);
+    const nextType = MONTH_TYPES[(MONTH_TYPES.indexOf(mt) + 1) % MONTH_TYPES.length];
+    button(ctx, 30, 500, 270, 50, `${mt.name}  ›`, { color: mt.id === 'steady' ? '#2c5a6e' : mt.id === 'tight' ? '#7a5a20' : '#7a3020', fontSize: 15, onClick: () => { s.monthType = nextType.id; s.save(); } });
+    drawText(ctx, mt.text, 400, 578, { size: 12, color: '#e8dcc4', align: 'center', maxWidth: 740 });
   }
 }
 
@@ -275,8 +283,17 @@ export function billsCard(ctx, game, x, y, w) {
   const days = Math.max(0, s.daysUntilBills);
   const due = days <= 0 ? 'due tonight' : `due Day ${s.day + days} evening (in ${days} day${days === 1 ? '' : 's'})`;
   drawText(ctx, `BILLS: ${due}`, x, y, { size: 12, weight: 'bold', color: '#f1c40f' });
-  y += lineFor(12, 18);
+  // The bills ring (2026-11-10): how much of the next bills night your cash already covers. It
+  // fills as you earn, so the deadline reads at a glance before any number is read.
   const rent = game.rentEarlyAmount();
+  const meter = billsMeter(s.cash, (s.rentPrepaid ? 0 : rent) + s.unpaidRent + PHONE + FOOD);
+  const rx = x + w - 12, ry = y - 4;
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+  ctx.beginPath(); ctx.arc(rx, ry, 8, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = meter.share >= 1 ? '#2ecc71' : meter.share >= 0.5 ? '#f1c40f' : '#ff6b5e';
+  ctx.beginPath(); ctx.arc(rx, ry, 8, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * meter.share); ctx.stroke();
+  y += lineFor(12, 18);
   const rows = [
     ['Rent', `$${rent}`, s.rentPrepaid ? ['✓ paid early', '#2ecc71'] : ['due', '#e0e0e0']],
     ['Phone', `$${PHONE}`, ['due', '#e0e0e0']],
@@ -368,7 +385,8 @@ export function apartmentScreen(ctx, game) {
   if (s.hungry) after.push('Hungry: energy costs double. Groceries are in the Shop.');
   const twist = twistOf(s), goal = goalOf(s);
   const goalText = goal ? (s.sideGoalDone ? `Side goal done: ${goal.text}` : `Side goal: ${goal.text} (${goal.progress(s)})`) : '';
-  if (twist || goal) after.push(`This month: ${[twist && twist.name, goalText].filter(Boolean).join('. ')}`);
+  const mType = monthTypeOf(s);
+  if (twist || goal || mType.id !== 'steady') after.push(`This month: ${[mType.id !== 'steady' && mType.name, twist && twist.name, goalText].filter(Boolean).join('. ')}`);
   // The panel grows to fit (a hungry, overdue, phone-cut morning is the tallest). At Large Text the
   // month line, then the rested line, give way rather than run into the day's buttons.
   const debtRow = (s.unpaidRent > 0 && s.cash >= 10) || (s.phoneCut && s.cash >= s.unpaidPhone) ? 48 : 0;
@@ -549,6 +567,9 @@ export function travelScreen(ctx, game) {
 
   if (game.travelT >= 2) {
     button(ctx, 300, 470, 200, 52, 'Start Gig', { color: '#2c6e49', onClick: () => game.startGig() });
+  } else {
+    // A tap anywhere finishes the walk (2026-11-10): nobody should wait on a progress bar twice.
+    UI.register(0, 56, 800, 544, () => { game.travelT = 2; }, 'Skip the walk');
   }
 }
 
@@ -1512,7 +1533,9 @@ export function summaryScreen(ctx, game) {
   drawText(ctx, '30 DAYS DONE', 400, 96, { size: 34, weight: 'bold', color: '#ffd700', align: 'center', outline: true });
   const vy = drawWrapped(ctx, runVerdict(s), 400, 134, 500, 22, { size: 16, color: '#e0e0e0', align: 'center' });
   const twist = twistOf(s), goal = goalOf(s);
-  if (twist) drawText(ctx, `This month: ${twist.name}`, 400, Math.min(vy + 2, 190), { size: 13, color: '#c9a876', align: 'center' });
+  // Who the month made you (game/mastery.js), beside the month it was.
+  const became = monthTitle(s);
+  drawText(ctx, [became.title, twist && twist.name].filter(Boolean).join('  ·  '), 400, Math.min(vy + 2, 190), { size: 14, weight: 'bold', color: '#f5deb3', align: 'center', maxWidth: 540 });
 
   const rows = [
     ['Cash on hand', `$${Math.round(s.cash)}`],
@@ -1552,6 +1575,7 @@ export function gameOverScreen(ctx, game) {
   drawText(ctx, `Days survived: ${s.day}`, 400, 300, { size: 17, weight: 'bold', color: '#f0f0f0', align: 'center' });
   drawText(ctx, `Gigs completed: ${s.gigsCompleted}`, 400, 330, { size: 17, weight: 'bold', color: '#f0f0f0', align: 'center' });
   drawText(ctx, `Total earned: $${Math.round(s.totalEarned)}`, 400, 360, { size: 17, weight: 'bold', color: '#f0f0f0', align: 'center' });
+  drawText(ctx, `${monthTitle(s).title}. ${monthTitle(s).line}`, 400, 394, { size: 14, color: '#c9a876', align: 'center', maxWidth: 640 });
   button(ctx, 180, 430, 210, 56, 'Month in review', { color: '#6b4a2e', fontSize: 14, onClick: () => { game.mathOpen = true; game.mathPage = 0; } });
   button(ctx, 410, 430, 210, 56, 'New Game', { color: '#2c6e49', onClick: () => game.newGame() });
 }

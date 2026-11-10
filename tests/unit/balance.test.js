@@ -7,13 +7,15 @@ import { makeGame, seededRandom } from './helpers.js';
 import { generateDailyGigs } from '../../src/game/gigs.js';
 import { RUN_LENGTH_DAYS } from '../../src/engine/state.js';
 import { MONTH_TWISTS } from '../../src/game/twists.js';
+import { monthTitle } from '../../src/game/mastery.js';
+import { MONTH_TYPES } from '../../src/game/month.js';
 
-function playRun(seed, strategy, twist = null) {
+function playRun(seed, strategy, twist = null, extra = {}) {
   const rnd = seededRandom(seed);
   const orig = Math.random;
   Math.random = rnd;
   try {
-    const { game, state } = makeGame(twist ? { twist } : {});
+    const { game, state } = makeGame({ ...(twist ? { twist } : {}), ...extra });
     state.todayGigs = generateDailyGigs(state);
     let guard = 0;
     while (game.phase !== 'SUMMARY' && game.phase !== 'GAMEOVER' && guard++ < 5000) {
@@ -61,7 +63,7 @@ function playRun(seed, strategy, twist = null) {
         game.sleep();
       }
     }
-    return { evicted: game.phase === 'GAMEOVER', day: state.day, cash: state.cash, health: state.health, stress: state.stress, gigs: state.gigsCompleted, done: game.phase === 'SUMMARY', otis: { ...(state.otisArc || { stage: 0 }) } };
+    return { owed: state.unpaidRent, earned: state.totalEarned, firstLate: state.monthMath.firstOverdueDay || 0, title: monthTitle(state).title, evicted: game.phase === 'GAMEOVER', day: state.day, cash: state.cash, health: state.health, stress: state.stress, gigs: state.gigsCompleted, done: game.phase === 'SUMMARY', otis: { ...(state.otisArc || { stage: 0 }) } };
   } finally { Math.random = orig; }
 }
 
@@ -113,4 +115,39 @@ describe('every month twist is survivable (2026-10-02)', () => {
       expect(runs.filter((r) => r.evicted).length / N).toBeLessThan(0.45);
     });
   }
+});
+
+// Month types (game/month.js, 2026-11-10). Steady is the bands above, untouched. Tight and Brutal
+// must be harder in that order, and Tight must still be winnable by a careful player.
+describe('month types change how the month ends', () => {
+  const N = 80;
+  const rate = (id, strat) => {
+    const m = MONTH_TYPES.find((x) => x.id === id);
+    const runs = Array.from({ length: N }, (_, i) => playRun(9000 + i, strat, null, { monthType: id, cash: m.cash }));
+    for (const r of runs) expect(r.done || r.evicted).toBe(true);
+    const avg = (k) => Math.round(runs.reduce((x, r) => x + r[k], 0) / N);
+    return { evicted: runs.filter((r) => r.evicted).length / N, cash: avg('cash'), earned: avg('earned'), everLate: runs.filter((r) => r.firstLate).length / N, endOwing: runs.filter((r) => r.owed > 0).length / N };
+  };
+  const table = {};
+  for (const id of ['steady', 'tight', 'brutal']) table[id] = { balanced: rate(id, 'balanced'), cautious: rate(id, 'cautious'), greedy: rate(id, 'greedy') };
+  it('reports the rates (visible in the test output)', () => { console.log('month types', JSON.stringify(table)); });
+  it('Steady cannot be lost by a player who keeps working (the game as it shipped)', () => {
+    for (const strat of ['balanced', 'cautious', 'greedy']) expect(table.steady[strat].evicted, strat).toBe(0);
+  });
+  it('Tight: careful play still makes it, careless play falls behind on rent', () => {
+    expect(table.tight.balanced.evicted).toBeLessThan(0.15);
+    expect(table.tight.cautious.evicted).toBeLessThan(0.1);
+    expect(table.tight.greedy.everLate).toBeGreaterThan(0.3);
+  });
+  it('Brutal: even careful play is often late, and careless play is often evicted', () => {
+    expect(table.brutal.balanced.everLate).toBeGreaterThan(0.2);
+    expect(table.brutal.greedy.evicted).toBeGreaterThan(0.25);
+    expect(table.brutal.cautious.evicted).toBeLessThan(0.3);   // still winnable
+  });
+  it('each step up is harder than the last, for every way of playing', () => {
+    for (const strat of ['balanced', 'cautious', 'greedy']) {
+      expect(table.tight[strat].cash, strat).toBeLessThan(table.steady[strat].cash);
+      expect(table.brutal[strat].everLate, strat).toBeGreaterThanOrEqual(table.tight[strat].everLate);
+    }
+  });
 });
