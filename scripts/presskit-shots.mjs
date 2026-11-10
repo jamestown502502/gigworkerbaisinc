@@ -19,17 +19,20 @@ const SAVE = { tutorialSeen: true, characterCreated: true, day: 9, cash: 340, st
   mastery: { movingHelp: 5, tutoring: 2 } };
 
 const JOBS = [
-  ['rushShift', 'Delivery Driver — Rush Shift', 'RUSH!', 'rush-shift', 2.5],
-  ['marketDay', 'Flea Market Stall — Weekend', 'MARKET!', 'flea-market', 0.6],
-  ['dogWalking', 'Dog Walking — Energetic Husky', 'UNTANGLE!', 'untangle', 0.6],
-  ['furnitureAssembly', 'Assemble IKEA Furniture', 'ASSEMBLE!', 'assemble', 0.6],
-  ['garageClean', 'Clean Out Garage', 'PACK!', 'pack-the-car', 0.6],
-  ['yardWork', 'Yard Work — Leaves & Mowing', 'RAKE!', 'rake', 1.2],
-  ['photoGig', 'Photography — Product Shots', 'FRAME!', 'frame', 0.6],
-  ['creativeGig', 'Logo Design — Small Business', 'PROOFREAD!', 'proofread', 0.6],
-  ['mysteryShop', 'Mystery Shopping — Review Store', 'SORT!', 'sort-returns', 0.6],
-  ['movingHelp', 'Help Move Furniture', 'LIFT!', 'lift', 0.8],
-  ['tutoring', 'Tutoring — High School Math', 'PERCENT!', 'percent', 0.6],
+  ['rushShift', 'Delivery Driver — Rush Shift', 'RUSH!', 'rush-shift', 2.5, 'service'],
+  ['marketDay', 'Flea Market Stall — Weekend', 'MARKET!', 'flea-market', 0.6, 'service'],
+  ['dogWalking', 'Dog Walking — Energetic Husky', 'UNTANGLE!', 'untangle', 0.6, 'service'],
+  ['furnitureAssembly', 'Assemble IKEA Furniture', 'ASSEMBLE!', 'assemble', 0.6, 'service'],
+  ['garageClean', 'Clean Out Garage', 'PACK!', 'pack-the-car', 0.6, 'physical'],
+  ['yardWork', 'Yard Work — Leaves & Mowing', 'RAKE!', 'rake', 1.2, 'physical'],
+  ['photoGig', 'Photography — Product Shots', 'FRAME!', 'frame', 0.6, 'creative'],
+  ['creativeGig', 'Logo Design — Small Business', 'PROOFREAD!', 'proofread', 0.6, 'creative'],
+  ['mysteryShop', 'Mystery Shopping — Review Store', 'SORT!', 'sort-returns', 0.6, 'weird'],
+  ['movingHelp', 'Help Move Furniture', 'LIFT!', 'lift', 0.8, 'physical'],
+  ['tutoring', 'Tutoring — High School Math', 'PERCENT!', 'percent', 0.6, 'service'],
+  ['waterSlide', 'Water Slide Tester', 'INSPECT!', 'inspect', 0.6, 'weird'],
+  ['cuddler', 'Professional Cuddler', 'BOUNDARIES!', 'boundaries', 0.6, 'weird'],
+  ['mattressTest', 'Mattress Tester — Hotel Review', 'COMPARE!', 'compare', 0.6, 'weird'],
 ];
 
 const browser = await chromium.launch();
@@ -65,12 +68,12 @@ async function shot(name) {
 }
 
 /** Take a job and play its conversation forward to the named challenge, past its how-to card. */
-async function toChallenge(tree, title, name) {
-  const ok = await page.evaluate(([tree, title, name]) => {
+async function toChallenge(tree, title, name, type) {
+  const ok = await page.evaluate(([tree, title, name, type]) => {
     const g = window.__game, s = g.state;
     s.energy = 100; s.stress = 20; s.hoursLeft = 24; s.health = 100; s.seenMicrogames = [];
     g.settingsOpen = false; g.message = '';
-    const gig = { ...s.todayGigs[0], choiceTree: tree, title, hasQTE: true, remote: false, hours: 3, payout: 30, appPick: false, surge: false, client: 'Ana', clientReliability: 5 };
+    const gig = { ...s.todayGigs[0], type, choiceTree: tree, title, hasQTE: true, remote: false, hours: 3, payout: 30, appPick: false, surge: false, client: 'Ana', clientReliability: 5 };
     s.todayGigs.unshift(gig);
     if (!g.acceptGig(gig)) return 'could not accept: ' + g.message;
     const tick = (n = 12) => { for (let i = 0; i < n; i++) g.step(1 / 60); };
@@ -90,12 +93,13 @@ async function toChallenge(tree, title, name) {
       if (!g.node && !g.qte) g.afterChoices();
     }
     return 'never reached ' + name + ' (at ' + (g.qte ? g.qte.name : 'no challenge') + ')';
-  }, [tree, title, name]);
+  }, [tree, title, name, type]);
   if (ok !== 'ok') console.log('PROBLEM', tree, ok);
   return ok === 'ok';
 }
 
 // ---- the apartment and the board ----
+if (!(process.env.SHOTS_ONLY || '')) {
 await fresh();
 await settleMorning();
 await shot('morning');
@@ -105,13 +109,18 @@ await page.evaluate(() => { const g = window.__game; const gigs = g.state.todayG
   // keep the app's pick on screen with the specialist job and the surge above it where possible
   g.listScroll = Math.max(0, Math.min(gigs.indexOf(pick) - 3, gigs.length - 5)); });
 await shot('job-board');
+}
 
 // ---- every job challenge, mid-play ----
-for (const [tree, title, name, file, wait] of JOBS) {
+// SHOTS_ONLY=inspect,compare limits a run to the named job shots (and skips the other screens).
+const ONLY = (process.env.SHOTS_ONLY || '').split(',').filter(Boolean);
+for (const [tree, title, name, file, wait, type] of JOBS) {
+  if (ONLY.length && !ONLY.includes(file)) continue;
   await fresh();
   await settleMorning();
-  if (await toChallenge(tree, title, name)) { await step(wait); await shot(file); }
+  if (await toChallenge(tree, title, name, type)) { await step(wait); await shot(file); }
 }
+if (ONLY.length) { await browser.close(); process.exit(0); }
 
 // ---- the two people-skills games ----
 for (const [minigame, file] of [['readclient', 'read-the-client'], ['textback', 'text-back']]) {
