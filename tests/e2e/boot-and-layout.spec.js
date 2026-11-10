@@ -61,20 +61,14 @@ test('first launch opens the character creator, then the tutorial; Skip is visib
     await step(page, 2);
     return page.evaluate(() => window.__game.phase);
   }, { timeout: 15_000 }).toBe('MORNING');
-  const visible = await page.evaluate(() => window.__game.tutorialVisible());
-  expect(visible).toBe(true);
-  for (let i = 0; i < 3; i++) {
-    const rect = await page.evaluate(() => window.__game.tutorialSkipRect);
-    expect(rect).toBeTruthy();
-    expect(rect[0]).toBeGreaterThan(600);
-    await tapLogical(page, 400, 505); // advance (below the bubble, clear of the day's buttons)
-  }
-  // Day 1's month card is up now. Step 4 points at Check Listings, so it waits until the card is
-  // closed and the button is really on screen (QA round 4 #6: it used to point at an empty spot).
-  expect(await page.evaluate(() => !!window.__game.activeEvent && !window.__game.tutorialVisible())).toBe(true);
+  // Day 1's month card comes first. The first hint points at Check Listings, so it waits until the
+  // card is closed and the button is really on screen (QA round 4 #6: it used to point at an empty
+  // spot). Since 2026-11-10 there are five short hints, not eleven pages before the first job.
+  expect(await page.evaluate(() => !!(window.__game.activeEvent || window.__game.eventQueue.length) && !window.__game.tutorialVisible())).toBe(true);
   await page.evaluate(() => { const g = window.__game; while (g.activeEvent || g.eventQueue.length) g.startNextEvent(); g.step(1 / 60); });
   expect(await page.evaluate(() => window.__game.tutorialVisible())).toBe(true);
-  // Skip from step 4
+  expect(await page.evaluate(() => window.__game.tutorialSkipRect[0])).toBeGreaterThan(600);
+  // Skip from the first hint
   const rect = await page.evaluate(() => window.__game.tutorialSkipRect);
   await tapLogical(page, rect[0] + rect[2] / 2, rect[1] + rect[3] / 2);
   expect(await page.evaluate(() => window.__game.state.tutorialSeen)).toBe(true);

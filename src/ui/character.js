@@ -66,8 +66,14 @@ export function randomLook(character, rand = Math.random) {
   };
 }
 
-// Simple geometric pixel rep on an 8x16 unit grid scaled to w x h.
-export function drawCharacter(ctx, x, y, w, h, character = DEFAULT_CHARACTER) {
+// A pixel person on an 8x16 unit grid scaled to w x h. Redrawn 2026-11-10 with a face (eyes that
+// blink, a mouth that follows the mood), shading on hair, shirt and trousers, a collar, a belt and
+// a shadow on the floor, so the character reads as someone rather than a stack of blocks.
+// `opts.t` (seconds) drives the blink; `opts.walk` (seconds) swings the legs and arms;
+// `opts.mood` is 'ok', 'tired' or 'stressed'.
+export function drawCharacter(ctx, x, y, w, h, character = DEFAULT_CHARACTER, opts = {}) {
+  const { t = 0, walk = null, mood = 'ok' } = opts;
+  const step = walk === null ? 0 : Math.sin(walk * 10);   // -1..1, one stride every 0.6 s
   const c = { ...DEFAULT_CHARACTER, ...character };
   const u = w / 8, v = h / 16;
   const px = (gx, gy, gw, gh, color) => {
@@ -87,10 +93,34 @@ export function drawCharacter(ctx, x, y, w, h, character = DEFAULT_CHARACTER) {
     case 4: px(1, 0.2, 6, 2.3, c.hair); px(0.6, 1, 0.8, 2.6, c.hair); px(6.6, 1, 0.8, 2.6, c.hair); break; // curls
     default: break;                                                                                        // bald
   }
-  // face + eyes
+  // floor shadow first, so the feet stand on it
+  px(1.2, 15.5, 5.6, 0.5, 'rgba(0,0,0,0.28)');
+  // face: cheeks in shade, eyes with whites (closed for a blink), and a mouth for the mood
   px(2, 2, 4, 3, c.skin);
-  px(2.8, 3, 0.7, 0.7, '#1a1a1a');
-  px(4.5, 3, 0.7, 0.7, '#1a1a1a');
+  px(5.4, 2, 0.6, 3, SHADE);
+  const blink = t % 4 > 3.86;
+  if (blink || mood === 'tired') {
+    px(2.6, 3.3, 1, 0.3, '#1a1a1a');
+    px(4.4, 3.3, 1, 0.3, '#1a1a1a');
+  } else {
+    px(2.6, 2.9, 1, 0.9, '#fdfdfd');
+    px(4.4, 2.9, 1, 0.9, '#fdfdfd');
+    px(3, 3.1, 0.6, 0.7, '#1a1a1a');
+    px(4.8, 3.1, 0.6, 0.7, '#1a1a1a');
+  }
+  if (mood === 'stressed') {
+    px(2.5, 2.5, 1.2, 0.25, '#1a1a1a');          // brows drawn down
+    px(4.3, 2.5, 1.2, 0.25, '#1a1a1a');
+    px(3.3, 4.35, 1.4, 0.3, MOUTH);
+    px(3.1, 4.55, 0.3, 0.25, MOUTH); px(4.6, 4.55, 0.3, 0.25, MOUTH);
+  } else if (mood === 'tired') {
+    px(3.4, 4.35, 1.2, 0.3, MOUTH);
+  } else {
+    px(3.3, 4.4, 1.4, 0.3, MOUTH);                 // a small smile
+    px(3.1, 4.2, 0.3, 0.25, MOUTH); px(4.6, 4.2, 0.3, 0.25, MOUTH);
+  }
+  // a highlight on the hair, where there is hair
+  if (c.hairStyle !== 5 && c.hairStyle !== 1) px(2.4, 0.5, 1.6, 0.4, 'rgba(255,255,255,0.22)');
   // facial hair, in the hair color
   if (c.facialHair === 1) { ctx.save(); ctx.globalAlpha *= 0.45; px(2.2, 4.1, 3.6, 0.9, c.hair); ctx.restore(); }
   if (c.facialHair === 2) px(3, 3.95, 2, 0.45, c.hair);
@@ -100,17 +130,36 @@ export function drawCharacter(ctx, x, y, w, h, character = DEFAULT_CHARACTER) {
   // torso: shoulders at the top, hips at the bottom
   px(2 - shoulder, 5.6, 4 + shoulder * 2, 2.4, c.shirt);
   px(2 - hip, 8, 4 + hip * 2, 2, c.shirt);
-  // arms (sleeves + hands) sit outside the shoulders
-  px(1 - shoulder, 5.8, 1, 2.5, c.shirt);
-  px(6 + shoulder, 5.8, 1, 2.5, c.shirt);
-  px(1 - shoulder, 8.3, 1, 1.5, c.skin);
-  px(6 + shoulder, 8.3, 1, 1.5, c.skin);
-  // pants + shoes
-  px(2 - hip, 10, 4 + hip * 2, 1, '#34495e');
-  px(2 - hip, 11, 1.6 + hip, 3.5, '#34495e');
-  px(4.4, 11, 1.6 + hip, 3.5, '#34495e');
-  px(1.8 - hip, 14.5, 2, 1.2, '#6b4226');
-  px(4.2 + hip, 14.5, 2, 1.2, '#6b4226');
+  px(5 + shoulder * 0.5, 5.6, 1 + shoulder * 0.5, 4.4, SHADE);   // the side away from the light
+  px(3.4, 5.6, 1.2, 0.5, c.skin);                                 // open collar
+  // arms (sleeves + hands) sit outside the shoulders, and swing on a walk
+  const swing = step * 0.5;
+  px(1 - shoulder, 5.8 + swing, 1, 2.5, c.shirt);
+  px(6 + shoulder, 5.8 - swing, 1, 2.5, c.shirt);
+  px(6 + shoulder, 5.8 - swing, 1, 2.5, SHADE);
+  px(1 - shoulder, 8.3 + swing, 1, 1.5, c.skin);
+  px(6 + shoulder, 8.3 - swing, 1, 1.5, c.skin);
+  // trousers with a belt, legs that take turns on a walk, and shoes
+  const liftL = Math.max(0, step) * 0.7, liftR = Math.max(0, -step) * 0.7;
+  px(2 - hip, 10, 4 + hip * 2, 1, PANTS);
+  px(2 - hip, 10, 4 + hip * 2, 0.35, '#22303f');
+  px(3.7, 10, 0.6, 0.35, '#d9b45b');                              // buckle
+  px(2 - hip, 11, 1.6 + hip, 3.5 - liftL, PANTS);
+  px(4.4, 11, 1.6 + hip, 3.5 - liftR, PANTS);
+  px(5.2 + hip * 0.5, 11, 0.8 + hip * 0.5, 3.5 - liftR, SHADE);
+  px(1.8 - hip, 14.5 - liftL, 2, 1.2, SHOES);
+  px(4.2 + hip, 14.5 - liftR, 2, 1.2, SHOES);
+  px(1.8 - hip, 15.4 - liftL, 2, 0.3, '#3d2514');
+  px(4.2 + hip, 15.4 - liftR, 2, 0.3, '#3d2514');
+}
+
+const SHADE = 'rgba(0,0,0,0.16)', MOUTH = '#7a3b2e', PANTS = '#34495e', SHOES = '#6b4226';
+
+/** The face the character wears for how the day is going (apartment and travel screens). */
+export function moodFor(state) {
+  if ((state?.stress || 0) >= 70) return 'stressed';
+  if ((state?.energy ?? 100) < 25) return 'tired';
+  return 'ok';
 }
 
 /** A short line under the preview showing what the pronoun choice changes in the game's text. */

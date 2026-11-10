@@ -4,7 +4,7 @@ import { BRAND } from './brand.js';
 import { perHourOf } from '../game/pay.js';
 import { weekPlan } from '../game/week.js';
 import { InputManager } from '../engine/input.js';
-import { drawCharacter, optionRow, pronounsFor, pronounPreview, randomLook, BUILDS, FACIAL_HAIR, HAIR_COLORS, HAIR_STYLES, PRONOUNS, SHIRT_COLORS, SKIN_TONES } from './character.js';
+import { drawCharacter, moodFor, optionRow, pronounsFor, pronounPreview, randomLook, BUILDS, FACIAL_HAIR, HAIR_COLORS, HAIR_STYLES, PRONOUNS, SHIRT_COLORS, SKIN_TONES } from './character.js';
 import { travelCost } from '../game/gigs.js';
 import { UPGRADES, CONSUMABLES, EVENING_OPTIONS, PHONE, FOOD } from '../game/loop.js';
 import { drawText, drawWrapped, roundRectPath, wrapLines, setTextScale, systemPrefersLargeText, scaledSize } from './text.js';
@@ -19,6 +19,9 @@ import { RUN_LENGTH_DAYS } from '../engine/state.js';
 import { daysToEviction, rentForecast, monthInsights, backgroundsOpen, backgroundOf, BACKGROUNDS, STANDING_LABEL } from '../game/depth.js';
 import { storyOf, storyEnding } from '../game/story.js';
 import { skillFor, transferFor } from '../game/skills.js';
+import { monthTitle } from '../game/mastery.js';
+import { APP_NAME, appReport } from '../game/app.js';
+import { MONTH_TYPES, monthTypeOf, billsMeter } from '../game/month.js';
 
 // ---------- immediate-mode UI ----------
 export const UI = {
@@ -249,6 +252,12 @@ export function creatorScreen(ctx, game) {
     }
   } else {
     button(ctx, 560, 500, 210, 50, 'Start Day 1  >', { color: '#2c6e49', fontSize: 17, onClick: () => game.finishCreator() });
+    // How tight the month is (game/month.js). Tapping cycles; the line under the buttons says
+    // exactly what changes, so the choice is informed.
+    const mt = monthTypeOf(s);
+    const nextType = MONTH_TYPES[(MONTH_TYPES.indexOf(mt) + 1) % MONTH_TYPES.length];
+    button(ctx, 30, 500, 270, 50, `${mt.name}  ›`, { color: mt.id === 'steady' ? '#2c5a6e' : mt.id === 'tight' ? '#7a5a20' : '#7a3020', fontSize: 15, onClick: () => { s.monthType = nextType.id; s.save(); } });
+    drawText(ctx, mt.text, 400, 578, { size: 12, color: '#e8dcc4', align: 'center', maxWidth: 740 });
   }
 }
 
@@ -275,8 +284,17 @@ export function billsCard(ctx, game, x, y, w) {
   const days = Math.max(0, s.daysUntilBills);
   const due = days <= 0 ? 'due tonight' : `due Day ${s.day + days} evening (in ${days} day${days === 1 ? '' : 's'})`;
   drawText(ctx, `BILLS: ${due}`, x, y, { size: 12, weight: 'bold', color: '#f1c40f' });
-  y += lineFor(12, 18);
+  // The bills ring (2026-11-10): how much of the next bills night your cash already covers. It
+  // fills as you earn, so the deadline reads at a glance before any number is read.
   const rent = game.rentEarlyAmount();
+  const meter = billsMeter(s.cash, (s.rentPrepaid ? 0 : rent) + s.unpaidRent + PHONE + FOOD);
+  const rx = x + w - 12, ry = y - 4;
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+  ctx.beginPath(); ctx.arc(rx, ry, 8, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = meter.share >= 1 ? '#2ecc71' : meter.share >= 0.5 ? '#f1c40f' : '#ff6b5e';
+  ctx.beginPath(); ctx.arc(rx, ry, 8, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * meter.share); ctx.stroke();
+  y += lineFor(12, 18);
   const rows = [
     ['Rent', `$${rent}`, s.rentPrepaid ? ['✓ paid early', '#2ecc71'] : ['due', '#e0e0e0']],
     ['Phone', `$${PHONE}`, ['due', '#e0e0e0']],
@@ -347,9 +365,15 @@ export function apartmentScreen(ctx, game) {
   messageBar(ctx, game);
 
   // character + customizer panel (customizer is inert while an event is up — QA #14)
-  panel(ctx, 30, 120, 300, 360);
-  drawText(ctx, 'YOU', 180, 146, { size: 18, weight: 'bold', color: '#ffffff', align: 'center' });
-  drawCharacter(ctx, 130, 160, 100, 200, s.character);
+  // One look (2026-11-10): you stand in your apartment, not in a box labelled YOU. A pool of
+  // lamp light marks the spot; the two lines of text under you sit on their own small plates.
+  const pool = ctx.createRadialGradient(180, 330, 10, 180, 330, 170);
+  pool.addColorStop(0, 'rgba(255, 200, 110, 0.20)'); pool.addColorStop(1, 'rgba(255, 200, 110, 0)');
+  ctx.fillStyle = pool; ctx.fillRect(10, 150, 340, 330);
+  ctx.fillStyle = 'rgba(20, 14, 8, 0.82)';
+  roundRectPath(ctx, 60, 376, 240, 24, 12); ctx.fill();
+  roundRectPath(ctx, 36, 457, 288, 24, 12); ctx.fill();
+  drawCharacter(ctx, 130, 160, 100, 200, s.character, { mood: moodFor(s) });
   if (!game.activeEvent) drawApartmentProps(ctx, game);
   drawText(ctx, `${pronounsFor(s.character).label} · ${BUILDS[s.character.body] ?? BUILDS[0]}`, 180, 392, { size: 13, color: '#c9a876', align: 'center' });
   button(ctx, 80, 410, 200, 44, 'Edit look', { fontSize: 14, onClick: () => { if (!game.activeEvent) game.openCreator(); } });
@@ -368,7 +392,8 @@ export function apartmentScreen(ctx, game) {
   if (s.hungry) after.push('Hungry: energy costs double. Groceries are in the Shop.');
   const twist = twistOf(s), goal = goalOf(s);
   const goalText = goal ? (s.sideGoalDone ? `Side goal done: ${goal.text}` : `Side goal: ${goal.text} (${goal.progress(s)})`) : '';
-  if (twist || goal) after.push(`This month: ${[twist && twist.name, goalText].filter(Boolean).join('. ')}`);
+  const mType = monthTypeOf(s);
+  if (twist || goal || mType.id !== 'steady') after.push(`This month: ${[mType.id !== 'steady' && mType.name, twist && twist.name, goalText].filter(Boolean).join('. ')}`);
   // The panel grows to fit (a hungry, overdue, phone-cut morning is the tallest). At Large Text the
   // month line, then the rested line, give way rather than run into the day's buttons.
   const debtRow = (s.unpaidRent > 0 && s.cash >= 10) || (s.phoneCut && s.cash >= s.unpaidPhone) ? 48 : 0;
@@ -538,7 +563,7 @@ export function travelScreen(ctx, game) {
   const t = game.travelT / 2;
   const cx = 200 + t * 360;
   const bob = Math.sin(game.travelT * 12) * 3;
-  drawCharacter(ctx, cx, 300 + bob, 40, 80, s.character);
+  drawCharacter(ctx, cx, 300 + bob, 40, 80, s.character, { walk: game.travelT < 2 ? game.travelT : null, mood: moodFor(s) });
 
   ctx.fillStyle = '#161018';
   roundRectPath(ctx, 200, 396, 400, 16, 8); ctx.fill();
@@ -549,6 +574,9 @@ export function travelScreen(ctx, game) {
 
   if (game.travelT >= 2) {
     button(ctx, 300, 470, 200, 52, 'Start Gig', { color: '#2c6e49', onClick: () => game.startGig() });
+  } else {
+    // A tap anywhere finishes the walk (2026-11-10): nobody should wait on a progress bar twice.
+    UI.register(0, 56, 800, 544, () => { game.travelT = 2; }, 'Skip the walk');
   }
 }
 
@@ -1401,7 +1429,7 @@ export function monthMathModal(ctx, game) {
   UI.absorb();
   panel(ctx, 110, 40, 580, 520, { alpha: 0.98 });
   // Four pages: the numbers, why, your story, what you learned (QA round 4 depth pass).
-  const pages = ['The numbers', 'Why it went this way', 'Your story', 'What you learned'];
+  const pages = ['The numbers', 'Why it went this way', 'Your story', 'What you learned', 'What the app paid'];
   const page = game.mathPage || 0;
   const nav = () => {
     const close = () => { game.mathOpen = false; game.mathPage = 0; };
@@ -1412,6 +1440,23 @@ export function monthMathModal(ctx, game) {
   };
   if (page === 2) { storyPage(ctx, game); nav(); return; }
   if (page === 3) { debriefPage(ctx, game); nav(); return; }
+  if (page === 4) {
+    // WHAT THE APP PAID (game/app.js): the sum the app never shows, from this run's own jobs.
+    drawText(ctx, `WHAT ${APP_NAME.toUpperCase()} PAID`, 400, 80, { size: 24, weight: 'bold', color: '#ffd700', align: 'center' });
+    let y = 122;
+    for (const line of appReport(game.state).lines) {
+      ctx.fillStyle = '#ffb27a'; ctx.beginPath(); ctx.arc(146, y - 5, 4, 0, Math.PI * 2); ctx.fill();
+      y = drawWrapped(ctx, line, 160, y, 500, 21, { size: 15, color: '#f0f0f0' }) + 12;
+    }
+    // The closing note only when there is room for all of it above the page counter: a long
+    // report (every offer taken and missed) fills the page on its own.
+    const note = 'Picks, streaks, surge and quests are how real gig apps steer workers. Each is a nudge toward more hours; whether it pays is a sum only you can do.';
+    const noteY = Math.max(y + 8, 380);
+    const noteH = wrapLines(ctx, note, 520, { size: 14 }).length * lineFor(14, 20);
+    if (noteY + noteH <= 458) drawWrapped(ctx, note, 400, noteY, 520, 20, { size: 14, color: '#c9e4d3', align: 'center' });
+    nav();
+    return;
+  }
   if (page === 1) {
     // WHY IT WENT THIS WAY (2026-10-07): the month's own numbers, read back as reasons.
     drawText(ctx, 'WHY IT WENT THIS WAY', 400, 80, { size: 24, weight: 'bold', color: '#ffd700', align: 'center' });
@@ -1512,7 +1557,9 @@ export function summaryScreen(ctx, game) {
   drawText(ctx, '30 DAYS DONE', 400, 96, { size: 34, weight: 'bold', color: '#ffd700', align: 'center', outline: true });
   const vy = drawWrapped(ctx, runVerdict(s), 400, 134, 500, 22, { size: 16, color: '#e0e0e0', align: 'center' });
   const twist = twistOf(s), goal = goalOf(s);
-  if (twist) drawText(ctx, `This month: ${twist.name}`, 400, Math.min(vy + 2, 190), { size: 13, color: '#c9a876', align: 'center' });
+  // Who the month made you (game/mastery.js), beside the month it was.
+  const became = monthTitle(s);
+  drawText(ctx, [became.title, twist && twist.name].filter(Boolean).join('  ·  '), 400, Math.min(vy + 2, 190), { size: 14, weight: 'bold', color: '#f5deb3', align: 'center', maxWidth: 540 });
 
   const rows = [
     ['Cash on hand', `$${Math.round(s.cash)}`],
@@ -1552,6 +1599,7 @@ export function gameOverScreen(ctx, game) {
   drawText(ctx, `Days survived: ${s.day}`, 400, 300, { size: 17, weight: 'bold', color: '#f0f0f0', align: 'center' });
   drawText(ctx, `Gigs completed: ${s.gigsCompleted}`, 400, 330, { size: 17, weight: 'bold', color: '#f0f0f0', align: 'center' });
   drawText(ctx, `Total earned: $${Math.round(s.totalEarned)}`, 400, 360, { size: 17, weight: 'bold', color: '#f0f0f0', align: 'center' });
+  drawText(ctx, `${monthTitle(s).title}. ${monthTitle(s).line}`, 400, 394, { size: 14, color: '#c9a876', align: 'center', maxWidth: 640 });
   button(ctx, 180, 430, 210, 56, 'Month in review', { color: '#6b4a2e', fontSize: 14, onClick: () => { game.mathOpen = true; game.mathPage = 0; } });
   button(ctx, 410, 430, 210, 56, 'New Game', { color: '#2c6e49', onClick: () => game.newGame() });
 }

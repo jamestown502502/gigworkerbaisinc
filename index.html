@@ -24,6 +24,8 @@
   <link rel="preload" as="image" href="/brand/backdrop.webp" />
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png" />
   <style>
+    /* The heading face (src/ui/text.js). Self-hosted: no third-party request is ever made. */
+    @font-face { font-family: 'VT323'; font-weight: 400; font-display: swap; src: url('/fonts/vt323.woff2') format('woff2'); }
     /* The game is a full-screen app, never a scrolling page (QA round 2 #1, #6, #16): nothing is
        ever below the fold, so there is nothing to scroll to, on a landscape phone, a desktop
        window, or inside an Android WebView. #game is pinned to the visible safe area with fixed

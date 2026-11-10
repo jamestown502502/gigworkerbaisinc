@@ -90,6 +90,10 @@ export class GameState {
     this.rentGraceDays = 0;      // a partial rent payment of half or more buys 7 days off the eviction clock
     this.choresWeek = 0;         // Rent Hike: the week the super's chores were last offered
     this.eveningNoteDay = 0;     // a morning choice already spoke for this evening
+    this.monthType = 'steady';   // steady / tight / brutal (game/month.js); the choice is kept across runs
+    this.surprisesSeen = [];     // this run's surprise costs already faced
+    this.app = null;             // the gig app's books this run (game/app.js appOf): streak, quests, what its picks paid
+    this.mastery = {};           // good runs per job this month (game/mastery.js): levels, pay, the month's title
     this.runNumber = 1;          // which run this is; kept across reset()
     this.lastRun = null;         // how the previous run ended ({ day, cash, complete }), for Welcome back
     this.lastPlayed = 0;         // ms timestamp of the last save, for Welcome back
@@ -154,6 +158,7 @@ export class GameState {
     const microgamePlays = { ...(this.microgamePlays || {}) };
     const background = this.background || 'fresh';
     const lastTwist = this.twist || this.lastTwist;
+    const monthType = this.monthType || 'steady';
     // Welcome back says which run this is and how the last one ended, so a fresh Day 1 after a
     // finished month never reads as lost progress (QA round 3 #11).
     const runNumber = (this.runNumber || 1) + 1;
@@ -172,6 +177,7 @@ export class GameState {
     this.microgamePlays = microgamePlays;
     this.background = background;
     this.lastTwist = lastTwist;
+    this.monthType = monthType;
     this.runNumber = runNumber;
     this.lastRun = lastRun;
     this.save();

@@ -79,9 +79,7 @@ const ASSET_MANIFEST = {
   items: {
     file: 'media/items.png',
     procedural: null,
-    size: { w: 128, h: 32 },  // 4 icons × 32px
-    frames: 4,
-    frameWidth: 32
+    size: { w: 128, h: 128 }   // one icon: the shop's box
   },
 
   // === AUDIO (procedural) ===
