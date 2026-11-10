@@ -4,7 +4,7 @@ import { BRAND } from './brand.js';
 import { perHourOf } from '../game/pay.js';
 import { weekPlan } from '../game/week.js';
 import { InputManager } from '../engine/input.js';
-import { drawCharacter, optionRow, pronounsFor, pronounPreview, randomLook, BUILDS, FACIAL_HAIR, HAIR_COLORS, HAIR_STYLES, PRONOUNS, SHIRT_COLORS, SKIN_TONES } from './character.js';
+import { drawCharacter, moodFor, optionRow, pronounsFor, pronounPreview, randomLook, BUILDS, FACIAL_HAIR, HAIR_COLORS, HAIR_STYLES, PRONOUNS, SHIRT_COLORS, SKIN_TONES } from './character.js';
 import { travelCost } from '../game/gigs.js';
 import { UPGRADES, CONSUMABLES, EVENING_OPTIONS, PHONE, FOOD } from '../game/loop.js';
 import { drawText, drawWrapped, roundRectPath, wrapLines, setTextScale, systemPrefersLargeText, scaledSize } from './text.js';
@@ -365,9 +365,15 @@ export function apartmentScreen(ctx, game) {
   messageBar(ctx, game);
 
   // character + customizer panel (customizer is inert while an event is up — QA #14)
-  panel(ctx, 30, 120, 300, 360);
-  drawText(ctx, 'YOU', 180, 146, { size: 18, weight: 'bold', color: '#ffffff', align: 'center' });
-  drawCharacter(ctx, 130, 160, 100, 200, s.character);
+  // One look (2026-11-10): you stand in your apartment, not in a box labelled YOU. A pool of
+  // lamp light marks the spot; the two lines of text under you sit on their own small plates.
+  const pool = ctx.createRadialGradient(180, 330, 10, 180, 330, 170);
+  pool.addColorStop(0, 'rgba(255, 200, 110, 0.20)'); pool.addColorStop(1, 'rgba(255, 200, 110, 0)');
+  ctx.fillStyle = pool; ctx.fillRect(10, 150, 340, 330);
+  ctx.fillStyle = 'rgba(20, 14, 8, 0.82)';
+  roundRectPath(ctx, 60, 376, 240, 24, 12); ctx.fill();
+  roundRectPath(ctx, 36, 457, 288, 24, 12); ctx.fill();
+  drawCharacter(ctx, 130, 160, 100, 200, s.character, { mood: moodFor(s) });
   if (!game.activeEvent) drawApartmentProps(ctx, game);
   drawText(ctx, `${pronounsFor(s.character).label} · ${BUILDS[s.character.body] ?? BUILDS[0]}`, 180, 392, { size: 13, color: '#c9a876', align: 'center' });
   button(ctx, 80, 410, 200, 44, 'Edit look', { fontSize: 14, onClick: () => { if (!game.activeEvent) game.openCreator(); } });
@@ -557,7 +563,7 @@ export function travelScreen(ctx, game) {
   const t = game.travelT / 2;
   const cx = 200 + t * 360;
   const bob = Math.sin(game.travelT * 12) * 3;
-  drawCharacter(ctx, cx, 300 + bob, 40, 80, s.character);
+  drawCharacter(ctx, cx, 300 + bob, 40, 80, s.character, { walk: game.travelT < 2 ? game.travelT : null, mood: moodFor(s) });
 
   ctx.fillStyle = '#161018';
   roundRectPath(ctx, 200, 396, 400, 16, 8); ctx.fill();

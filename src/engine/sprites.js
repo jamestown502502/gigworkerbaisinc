@@ -20,7 +20,12 @@ export async function loadAssets(onProgress) {
     setTimeout(() => { if (!settled) console.warn(`Timed out: ${path}`); finish(); }, LOAD_TIMEOUT_MS);
     img.src = '/' + path;
   });
-  await Promise.all(entries.map(one));
+  // The heading font (ui/text.js DISPLAY_FONT) loads with the art, so the first frame is already
+  // in it. Never blocks the game: a missing or slow font falls back to the system face.
+  const font = typeof document !== 'undefined' && document.fonts?.load
+    ? Promise.race([document.fonts.load("26px 'VT323'").catch(() => {}), new Promise((r) => setTimeout(r, 3000))])
+    : Promise.resolve();
+  await Promise.all([...entries.map(one), font]);
 }
 
 // Draws a sprite from the manifest. Handles single images, horizontal strips,
@@ -55,6 +60,9 @@ export function drawSprite(ctx, key, x, y, w, h, frame = 0) {
 // cached copy at exactly the backing size makes each frame a 1:1 copy. The cache is rebuilt when
 // the canvas is resized (rotation, window resize).
 const fullscreenCache = new Map();
+/** Backgrounds redrawn at the pixel art's grain (logical pixels per art pixel). */
+export const PIXELATE = new Set(['workLocation', 'workPhysical', 'workService', 'workCreative', 'workWeird']);
+export const PIXEL_GRAIN = 4;
 export function drawFullscreen(ctx, key, logicalW = 800, logicalH = 600) {
   const canvas = ctx.canvas;
   const img = USE_FILE_ASSETS ? imageCache[key] : null;
@@ -72,8 +80,23 @@ export function drawFullscreen(ctx, key, logicalW = 800, logicalH = 600) {
     const c = cached.getContext('2d');
     c.imageSmoothingEnabled = true;
     c.imageSmoothingQuality = 'high';
-    c.scale(canvas.width / logicalW, canvas.height / logicalH);
-    drawSprite(c, key, 0, 0, logicalW, logicalH);
+    if (PIXELATE.has(key)) {
+      // One look (2026-11-10): the job backgrounds are smooth line art; the apartment, the board
+      // and the icons are pixel art. Drawing them through a quarter-size canvas and scaling back
+      // up with smoothing off gives them the same 4 px grain, with no new art.
+      const small = document.createElement('canvas');
+      small.width = Math.round(logicalW / PIXEL_GRAIN);
+      small.height = Math.round(logicalH / PIXEL_GRAIN);
+      const sc = small.getContext('2d');
+      sc.imageSmoothingEnabled = true;
+      sc.imageSmoothingQuality = 'high';
+      drawSprite(sc, key, 0, 0, small.width, small.height);
+      c.imageSmoothingEnabled = false;
+      c.drawImage(small, 0, 0, canvas.width, canvas.height);
+    } else {
+      c.scale(canvas.width / logicalW, canvas.height / logicalH);
+      drawSprite(c, key, 0, 0, logicalW, logicalH);
+    }
     fullscreenCache.set(id, cached);
   }
   ctx.drawImage(cached, 0, 0, logicalW, logicalH);

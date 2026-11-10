@@ -29,6 +29,11 @@ export function systemPrefersLargeText() {
   } catch { return false; }
 }
 
+const SYSTEM_FONT = 'system-ui, sans-serif';
+/** The heading face: self-hosted VT323 (public/fonts, SIL Open Font License), system text behind it. */
+export const DISPLAY_FONT = `'VT323', ${SYSTEM_FONT}`;
+export const DISPLAY_SCALE = 1.3;
+
 // Draw readable text with an optional drop shadow / outline.
 // baseline defaults to 'alphabetic' so existing y coordinates (which are
 // baseline positions) keep working after the migration from raw fillText.
@@ -45,7 +50,12 @@ export function drawText(ctx, text, x, y, options = {}) {
   } = options;
   const size = scaledSize(options.size ?? 18);
 
-  ctx.font = `${weight ? weight + ' ' : ''}${size}px ${font}`;
+  // One look (2026-11-10): headings are set in the game's pixel face, the same grain as the
+  // apartment and the icons; reading text stays in the system face. A heading is bold text of
+  // 20 px or more in the default font. VT323 is narrow and has one weight, so it is drawn 30%
+  // larger and unbolded: it never comes out wider than the bold system text it replaces.
+  const display = options.display ?? (font === SYSTEM_FONT && String(weight).includes('bold') && (options.size ?? 18) >= 20);
+  ctx.font = display ? `${Math.round(size * DISPLAY_SCALE)}px ${DISPLAY_FONT}` : `${weight ? weight + ' ' : ''}${size}px ${font}`;
   ctx.textAlign = align;
   ctx.textBaseline = baseline;
 

@@ -88,6 +88,9 @@ export function renderListings(ctx, game) {
   });
   ctx.restore();
 
+  // A plate behind the right-hand column's small text (sort label, quest), so it reads on the board.
+  ctx.fillStyle = 'rgba(20, 14, 8, 0.86)';
+  roundRectPath(ctx, 660, 246, 134, 250, 10); ctx.fill();
   // Sort chips, in the column beside the list. The one in use is lit.
   if (gigs.length > 1) {
     drawText(ctx, 'SORT', 726, 262, { size: 11, weight: 'bold', color: '#c9a876', align: 'center' });
@@ -191,11 +194,11 @@ function drawGigCard(ctx, x, y, w, h, gig, game, s, isBest = false) {
   if (isBest) badges.push(['BEST $/HOUR', '#1c3d66', '#bfe3ff']);
   let tx = x + 28 + textWidth(ctx, title, 16, 'system-ui, sans-serif', 'bold');
   for (const [label, bg, fg] of badges) {
-    const bw = textWidth(ctx, label, 10, 'system-ui, sans-serif', 'bold') + 16;
+    const bw = textWidth(ctx, label, 11, 'system-ui, sans-serif', 'bold') + 16;
     if (tx + bw > x + w - 80) break;
     ctx.fillStyle = bg;
     roundRectPath(ctx, tx, y + 9, bw, 20, 10); ctx.fill();
-    drawText(ctx, label, tx + bw / 2, y + 19, { size: 10, weight: 'bold', color: fg, align: 'center', baseline: 'middle', shadow: false });
+    drawText(ctx, label, tx + bw / 2, y + 19, { size: 11, weight: 'bold', color: fg, align: 'center', baseline: 'middle', shadow: false });
     tx += bw + 6;
   }
 
