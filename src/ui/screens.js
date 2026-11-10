@@ -1448,7 +1448,12 @@ export function monthMathModal(ctx, game) {
       ctx.fillStyle = '#ffb27a'; ctx.beginPath(); ctx.arc(146, y - 5, 4, 0, Math.PI * 2); ctx.fill();
       y = drawWrapped(ctx, line, 160, y, 500, 21, { size: 15, color: '#f0f0f0' }) + 12;
     }
-    drawWrapped(ctx, 'Picks, streaks, surge and quests are how real gig apps steer workers. Each is a nudge toward more hours; whether it pays is a sum only you can do.', 400, Math.max(y + 8, 380), 520, 20, { size: 14, color: '#c9e4d3', align: 'center' });
+    // The closing note only when there is room for all of it above the page counter: a long
+    // report (every offer taken and missed) fills the page on its own.
+    const note = 'Picks, streaks, surge and quests are how real gig apps steer workers. Each is a nudge toward more hours; whether it pays is a sum only you can do.';
+    const noteY = Math.max(y + 8, 380);
+    const noteH = wrapLines(ctx, note, 520, { size: 14 }).length * lineFor(14, 20);
+    if (noteY + noteH <= 458) drawWrapped(ctx, note, 400, noteY, 520, 20, { size: 14, color: '#c9e4d3', align: 'center' });
     nav();
     return;
   }
