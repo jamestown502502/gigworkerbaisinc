@@ -1296,7 +1296,11 @@ export function settingsModal(ctx, game) {
   y = drawWrapped(ctx, 'Quick fades instead of screen transitions.', 196, y, 400, 16, { size: 12, color: '#b5a488' }) + 4;
   // Large text (QA round 4 #15): starts on when the phone asks for bigger text.
   toggleRow(ctx, 196, y, 'Large Text', () => largeTextOn(s), (v) => { s.largeText = v; applyTextSize(s); game.state.save(); }); y += 46;
-  y = drawWrapped(ctx, 'Bigger reading text. On if your phone uses large text.', 196, y, 270, 16, { size: 12, color: '#b5a488' }) + 8;
+  // While "Start over?" is armed, its warning takes this note's place, right above the button it
+  // warns about, so the panel never needs extra height (Close follows the last row, below).
+  y = game.confirmReset
+    ? drawWrapped(ctx, 'Start over? This deletes the current run. Settings are kept.', 196, y, 400, 16, { size: 12, color: '#ff8a7e' }) + 8
+    : drawWrapped(ctx, 'Bigger reading text. On if your phone uses large text.', 196, y, 270, 16, { size: 12, color: '#b5a488' }) + 8;
 
   button(ctx, 196, y, 128, 40, 'Replay tutorial', { color: '#2c5a6e', fontSize: 13, onClick: () => game.replayTutorial() });
   // Full screen hides the browser's bars, the biggest game a phone can show (QA round 4 #5).
@@ -1307,7 +1311,6 @@ export function settingsModal(ctx, game) {
     button(ctx, 476, y, 128, 40, 'Start new game', { color: '#5d4023', fontSize: 13, onClick: () => { game.confirmReset = true; } });
   }
   y += 48;
-  if (game.confirmReset) { drawText(ctx, 'This deletes the current run. Settings are kept.', 400, y + 4, { size: 12, color: '#ff8a7e', align: 'center' }); y += 22; }
 
   // QA round 4 #7 (2026-11-19): Close sat at a fixed spot near the panel's foot, and with Large
   // Text on the rows above grew into it (the buttons overlapped). It now follows the last row.
