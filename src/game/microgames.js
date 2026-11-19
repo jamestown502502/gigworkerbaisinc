@@ -678,7 +678,7 @@ export class SortReturns {
     const card = { x: AREA.x + 150, y: AREA.y + 86, w: 300, h: 150 };
     ctx.fillStyle = 'rgba(20,14,8,0.88)'; roundRectPath(ctx, card.x, card.y, card.w, card.h, 12); ctx.fill();
     ctx.strokeStyle = '#c9a876'; ctx.lineWidth = 2; roundRectPath(ctx, card.x, card.y, card.w, card.h, 12); ctx.stroke();
-    drawText(ctx, item.name, card.x + card.w / 2, card.y + 42, { size: 24, weight: 'bold', color: '#ffffff', align: 'center' });
+    drawText(ctx, item.name, card.x + card.w / 2, card.y + 42, { size: 24, weight: 'bold', display: false, color: '#ffffff', align: 'center' });
     drawText(ctx, `Receipt: ${item.receipt ? 'yes' : 'no'}`, card.x + card.w / 2, card.y + 84, { size: 18, color: item.receipt ? '#2ecc71' : '#ff8a7e', align: 'center' });
     drawText(ctx, `Tags on: ${item.tags ? 'yes' : 'no'}`, card.x + card.w / 2, card.y + 114, { size: 18, color: item.tags ? '#2ecc71' : '#ff8a7e', align: 'center' });
     if (item.finalSale) drawText(ctx, 'FINAL SALE', card.x + card.w / 2, card.y + 140, { size: 13, weight: 'bold', color: '#ffd27a', align: 'center' });
@@ -853,7 +853,7 @@ export class PercentTutor {
   render(ctx) {
     timerBar(ctx, this.reveal ? 0 : this.qLeft / this.perQ);
     const p = this.current();
-    drawWrapped(ctx, p.q, AREA.x + AREA.w / 2, AREA.y + 98, AREA.w - 80, 26, { size: 20, weight: 'bold', color: '#ffffff', align: 'center' });
+    drawWrapped(ctx, p.q, AREA.x + AREA.w / 2, AREA.y + 98, AREA.w - 80, 26, { size: 20, weight: 'bold', display: false, color: '#ffffff', align: 'center' });
     const s = shakeOffset(this.d, this.t);
     this.buttons = p.options.map((opt, i) => ({ opt, x: AREA.x + 45 + i * 180, y: AREA.y + 170, w: 150, h: 64 }));
     for (const b of this.buttons) {
@@ -862,7 +862,7 @@ export class PercentTutor {
       else if (this.reveal && b.opt === this.reveal.picked) fill = '#7a2e26';
       ctx.fillStyle = fill; roundRectPath(ctx, b.x + s.x, b.y + s.y, b.w, b.h, 10); ctx.fill();
       ctx.strokeStyle = '#c9a876'; ctx.lineWidth = 2; roundRectPath(ctx, b.x + s.x, b.y + s.y, b.w, b.h, 10); ctx.stroke();
-      drawText(ctx, b.opt, b.x + b.w / 2 + s.x, b.y + b.h / 2 + s.y, { size: 22, weight: 'bold', color: '#ffffff', align: 'center', baseline: 'middle' });
+      drawText(ctx, b.opt, b.x + b.w / 2 + s.x, b.y + b.h / 2 + s.y, { size: 22, weight: 'bold', display: false, color: '#ffffff', align: 'center', baseline: 'middle' });
     }
     if (this.reveal) {
       drawText(ctx, this.reveal.right ? 'Right.' : this.reveal.picked ? `Not ${this.reveal.picked}. It is ${p.answer}.` : `Time. It is ${p.answer}.`, AREA.x + AREA.w / 2, AREA.y + 272, { size: 17, weight: 'bold', color: this.reveal.right ? '#2ecc71' : '#ff8a7e', align: 'center' });

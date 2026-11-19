@@ -158,6 +158,8 @@ export class GameState {
     const microgamePlays = { ...(this.microgamePlays || {}) };
     const background = this.background || 'fresh';
     const lastTwist = this.twist || this.lastTwist;
+    const lastSideGoal = this.sideGoal || this.lastSideGoal;
+    const prevTitle = this.prevTitle;
     const monthType = this.monthType || 'steady';
     // Welcome back says which run this is and how the last one ended, so a fresh Day 1 after a
     // finished month never reads as lost progress (QA round 3 #11).
@@ -177,6 +179,8 @@ export class GameState {
     this.microgamePlays = microgamePlays;
     this.background = background;
     this.lastTwist = lastTwist;
+    this.lastSideGoal = lastSideGoal;
+    this.prevTitle = prevTitle;
     this.monthType = monthType;
     this.runNumber = runNumber;
     this.lastRun = lastRun;

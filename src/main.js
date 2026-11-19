@@ -100,6 +100,29 @@ async function boot() {
   let tintPhase = '';
   let cursorAt = 0;
 
+  // QA round 4 #6 (2026-11-19): leaving the tab already froze the loop, but the player came back to
+  // a job running again at once with no sign it had ever stopped, which read as "not paused". Now a
+  // day in progress comes back to a Paused card; the first tap or key resumes and is not passed on,
+  // so it can never press a button under the card by accident.
+  let tabPaused = false;
+  const NO_PAUSE = new Set(['CREATE', 'GAMEOVER', 'SUMMARY']);
+  const resumeFromTab = (e) => {
+    if (!tabPaused) return;
+    tabPaused = false;
+    e.stopPropagation(); e.preventDefault();
+  };
+  for (const type of ['pointerdown', 'mousedown', 'touchstart', 'keydown']) window.addEventListener(type, resumeFromTab, { capture: true, passive: false });
+  window.__tabPaused = () => tabPaused;   // e2e: the card is up
+  function drawTabPause(c) {
+    c.fillStyle = 'rgba(8, 6, 4, 0.72)';
+    c.fillRect(0, 0, 800, 600);
+    c.fillStyle = 'rgba(30, 22, 14, 0.96)';
+    roundRectPath(c, 250, 230, 300, 140, 14); c.fill();
+    c.strokeStyle = BRAND.gold; c.lineWidth = 2; roundRectPath(c, 250, 230, 300, 140, 14); c.stroke();
+    drawText(c, 'PAUSED', 400, 282, { size: 28, weight: 'bold', color: BRAND.gold, align: 'center' });
+    drawText(c, 'Your day waits. Tap or press any key to go on.', 400, 330, { size: 14, color: '#f0f0f0', align: 'center', maxWidth: 280 });
+  }
+
   let last = performance.now();
   let rafId = null;
   function frame(now) {
@@ -108,8 +131,9 @@ async function boot() {
     // e2e hook: audits that drive time themselves by game.step() pause the real-time loop, so the
     // game cannot move on between two measurements (see tests/e2e/readability.spec.js).
     if (!window.__loopPaused) {
-      game.update(dt);
+      if (!tabPaused) game.update(dt);
       game.render(ctx);
+      if (tabPaused) drawTabPause(ctx);
     }
     if (tintEl && game.phase !== tintPhase) {
       tintPhase = game.phase;
@@ -143,6 +167,7 @@ async function boot() {
   document.addEventListener('visibilitychange', () => {
     setBackgrounded(document.hidden); // the music and SFX stop with the app, not just the frames
     if (document.hidden) {
+      if (!NO_PAUSE.has(game.phase)) tabPaused = true;
       if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
     } else if (rafId === null) {
       last = performance.now();

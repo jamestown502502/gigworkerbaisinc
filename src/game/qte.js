@@ -292,7 +292,7 @@ export class Breathe {
       this.buttons.push(b);
       ctx.fillStyle = 'rgba(20, 30, 44, 0.92)'; roundRectPath(ctx, b.x, b.y, b.w, b.h, 14); ctx.fill();
       ctx.strokeStyle = c.key === 'calm' ? '#5dade2' : '#9b8cd9'; ctx.lineWidth = 2; roundRectPath(ctx, b.x, b.y, b.w, b.h, 14); ctx.stroke();
-      drawText(ctx, p.label, b.x + b.w / 2, b.y + 40, { size: 24, weight: 'bold', color: '#ffffff', align: 'center' });
+      drawText(ctx, p.label, b.x + b.w / 2, b.y + 40, { size: 24, weight: 'bold', display: false, color: '#ffffff', align: 'center' });
       drawText(ctx, p.sub, b.x + b.w / 2, b.y + 70, { size: 14, color: '#c9e4f5', align: 'center', maxWidth: b.w - 20 });
       c.lines.forEach((l, i) => drawText(ctx, l, b.x + b.w / 2, b.y + 100 + i * 20, { size: 13, color: '#e8dcc4', align: 'center' }));
       // A live preview of the breathing guide on each card (QA round 4 #11: the ring only appeared

@@ -82,7 +82,7 @@ export function drawText(ctx, text, x, y, options = {}) {
     const w = ctx.measureText(text).width;
     const left = align === 'center' ? x - w / 2 : align === 'right' ? x - w : x;
     const top = baseline === 'middle' ? y - size / 2 : baseline === 'top' ? y : y - size * 0.8;
-    globalThis.__textProbe.push({ text: String(text), x: left, y: top, w, h: size, size, color, outline, bold: String(weight).includes('bold') });
+    globalThis.__textProbe.push({ text: String(text), x: left, y: top, w, h: size, size, color, outline, bold: String(weight).includes('bold'), font: ctx.font });
   }
 
   ctx.shadowColor = 'transparent';

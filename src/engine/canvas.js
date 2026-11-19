@@ -32,9 +32,15 @@ export function setupGameCanvas(canvas, logicalWidth = LOGICAL_W, logicalHeight 
     if (!isPixelArt) ctx.imageSmoothingQuality = 'low';
   };
   refit();
-  window.addEventListener('resize', refit);
-  window.addEventListener('orientationchange', refit);
-  if (window.visualViewport) window.visualViewport.addEventListener('resize', refit);
+  // QA round 4 #1 (2026-11-19): on iPhone Safari, turning to landscape fires resize and
+  // orientationchange while the page still reports the portrait size, so the canvas was fitted to
+  // the old box and stayed small after the rotate hint had done its job. Fit now and again once
+  // the rotation has settled.
+  const settle = () => { refit(); for (const ms of [120, 350, 800]) setTimeout(refit, ms); };
+  window.addEventListener('resize', settle);
+  window.addEventListener('orientationchange', settle);
+  if (window.screen?.orientation?.addEventListener) window.screen.orientation.addEventListener('change', settle);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', settle);
   return ctx;
 }
 

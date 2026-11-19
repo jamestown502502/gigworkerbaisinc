@@ -32,9 +32,10 @@ import { BRAND } from '../ui/brand.js';
 import { netFor } from './pay.js';
 import { rentSurcharge, applyMonthStart, surpriseCard, tickMonth } from './month.js';
 import { noteAppJob, appNight, appWeekEnd } from './app.js';
-import { masteryPay, masteryLevel, noteJobDone, LEVEL_NAMES, LEVEL_PAY, TRADES } from './mastery.js';
+import { masteryPay, masteryLevel, noteJobDone, LEVEL_NAMES, LEVEL_PAY, TRADES, monthTitle } from './mastery.js';
 import { ensureOtisListing, noteOtisGig, noteOtisChoice, otisMorningCard, otisStudioGig } from './otis.js';
 import { storyIntroCard, storyBeatCard, storyDueCard } from './story.js';
+import { applyMorningWorry, applySpendWorry, worryLine } from './worry.js';
 
 export const UPGRADES = [
   { name: 'Better Shoes', cost: 50, effect: 'Travel costs -1 energy', apply: (state) => { state.energyPerTravel = Math.max(1, (state.energyPerTravel || 3) - 1); } },
@@ -1052,9 +1053,16 @@ export class Game {
     s.save();
   }
 
+  /** What the next bills night needs: rent (unless paid early), anything overdue, phone and food. */
+  billsDueTotal() {
+    const s = this.state;
+    return (s.rentPrepaid ? 0 : this.rentEarlyAmount()) + (s.unpaidRent || 0) + PHONE + FOOD;
+  }
+
   buyUpgrade(up) {
     const s = this.state;
     if (s.cash < up.cost) return;
+    const cashBefore = s.cash;
     if (up.canBuy) {
       if (!up.canBuy(s)) return;
       s.cash -= up.cost;
@@ -1066,6 +1074,8 @@ export class Game {
       up.apply(s);
     }
     audio.playCashOut();
+    const worry = applySpendWorry(s, this.billsDueTotal(), cashBefore);
+    if (worry) this.message = worryLine(worry);
     s.save();
   }
 
@@ -1114,8 +1124,10 @@ export class Game {
       return;
     }
     this.beginMorning();
+    const worry = applyMorningWorry(s, this.billsDueTotal());
     if (unanswered && !this.message) this.message = "You never answered last night's ping. They found someone else.";
     if (appLine && !this.message) this.message = appLine;
+    if (worry && !this.message) this.message = worryLine(worry);
     this.setPhase('MORNING', 'sunrise', { fromDay, toDay: s.day });
     s.save();
   }
@@ -1128,6 +1140,10 @@ export class Game {
   }
 
   newGame() {
+    // Who the last month made you, kept for the next summary ("last month: The Mover").
+    const played = this.state.characterCreated && (this.state.day > 1 || this.state.gigsCompleted > 0);
+    const prevTitle = played ? monthTitle(this.state).title : this.state.prevTitle;
+    this.state.prevTitle = prevTitle;
     this.state.reset();
     rollMonth(this.state);
     this.state.weather = rollWeather(this.state.twist);

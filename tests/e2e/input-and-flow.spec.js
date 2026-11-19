@@ -44,6 +44,9 @@ test('volume bar drags on the settings screen (QA #25)', async ({ page }) => {
 });
 
 test('a full day: listings → gig → results → evening choice → sleep, with transitions', async ({ page }) => {
+  // A long multi-screen sweep: on WebKit it ran 36-47 s of the 60 s budget on a good runner and went over on
+  // slow ones (2026-11-19). The budget, not any assertion, is what changed.
+  test.setTimeout(120_000);
   await boot(page, { save: { tutorialSeen: true, energy: 100, cash: 300, day: 4 } });
   await settleMorning(page);
   await tapLogical(page, 165, 552); // Check Listings

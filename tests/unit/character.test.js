@@ -33,21 +33,21 @@ describe('character options', () => {
     expect(() => drawCharacter(fakeCtx(), 0, 0, 40, 80, { skin: '#d4a574', hair: '#4a3728', shirt: '#3498db' })).not.toThrow();
   });
 
-  it('randomize changes the look but never the pronouns', () => {
+  it('randomize rolls the pronouns too, and every set comes up (QA round 4 #3, 2026-11-19)', () => {
     const rand = seededRandom(7);
-    for (const p of Object.keys(PRONOUNS)) {
-      for (let i = 0; i < 20; i++) expect(randomLook({ ...DEFAULT_CHARACTER, pronouns: p }, rand).pronouns).toBe(p);
-    }
+    const rolled = Array.from({ length: 60 }, () => randomLook({ ...DEFAULT_CHARACTER, pronouns: 'she' }, rand).pronouns);
+    expect(new Set(rolled)).toEqual(new Set(Object.keys(PRONOUNS)));
+    for (let i = 0; i < 20; i++) expect(randomLook({ ...DEFAULT_CHARACTER, pronouns: 'he' }, rand, { keepPronouns: true }).pronouns).toBe('he');
   });
 
-  it('randomize leans toward the chosen pronouns: she/her never rolls facial hair (QA round 2 #7)', () => {
+  it('the rolled look leans toward the rolled pronouns: she/her never rolls facial hair (QA round 2 #7)', () => {
     const rand = seededRandom(11);
-    const she = Array.from({ length: 200 }, () => randomLook({ ...DEFAULT_CHARACTER, pronouns: 'she' }, rand));
+    const all = Array.from({ length: 900 }, () => randomLook({ ...DEFAULT_CHARACTER }, rand));
+    const she = all.filter((c) => c.pronouns === 'she');
     expect(she.every((c) => c.facialHair === 0)).toBe(true);
     expect(she.some((c) => c.hairStyle === 2 || c.hairStyle === 3)).toBe(true); // long / bun appear
-    const he = Array.from({ length: 200 }, () => randomLook({ ...DEFAULT_CHARACTER, pronouns: 'he' }, rand));
-    expect(he.some((c) => c.facialHair > 0)).toBe(true);
-    const they = Array.from({ length: 400 }, () => randomLook({ ...DEFAULT_CHARACTER, pronouns: 'they' }, rand));
+    expect(all.filter((c) => c.pronouns === 'he').some((c) => c.facialHair > 0)).toBe(true);
+    const they = all.filter((c) => c.pronouns === 'they');
     expect(new Set(they.map((c) => c.hairStyle)).size).toBe(HAIR_STYLES.length); // fully open
   });
 });

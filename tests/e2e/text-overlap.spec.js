@@ -11,6 +11,9 @@ async function sweep(page, label) {
 }
 
 test('no two texts overlap on any screen', async ({ page }) => {
+  // A long multi-screen sweep: on WebKit it ran 36-47 s of the 60 s budget on a good runner and went over on
+  // slow ones (2026-11-19). The budget, not any assertion, is what changed.
+  test.setTimeout(120_000);
   await boot(page, { save: { tutorialSeen: true, energy: 100, cash: 350, day: 8, unpaidRent: 600, rentOverdueDays: 3, phoneCut: true, unpaidPhone: 40, hungry: true, stress: 75 } });
   const problems = [];
   await page.evaluate(() => { window.__loopPaused = true; }); // only this test moves the clock
