@@ -32,7 +32,7 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35   # 2026-11-19: the suite grew to ~239 tests (~19 min on a good runner); 25 left no headroom on slow days
     needs: unit-and-build
     steps:
       - uses: actions/checkout@v4
