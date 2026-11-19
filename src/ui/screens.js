@@ -298,7 +298,10 @@ export function billsCard(ctx, game, x, y, w) {
   const rows = [
     ['Rent', `$${rent}`, s.rentPrepaid ? ['✓ paid early', '#2ecc71'] : ['due', '#e0e0e0']],
     ['Phone', `$${PHONE}`, ['due', '#e0e0e0']],
-    ['Groceries', `$${FOOD}`, ['due', '#e0e0e0']],
+    // QA round 4 #2 (2026-11-19): this row said "Groceries $50" while the Shop sells Groceries for
+    // $18, so the two never matched. It is the week's food bill, paid on bills night (the bills
+    // card calls it Food); the Shop item is one day's meal.
+    ['Weekly food', `$${FOOD}`, ['due', '#e0e0e0']],
   ];
   if (s.unpaidRent > 0) rows.unshift(['Overdue rent', `$${s.unpaidRent}`, [`${daysToEviction(s)} days to eviction`, '#ff6b5e']]);
   if (s.unpaidPhone > 0) rows.splice(rows.length - 1, 0, ['Phone (unpaid)', `$${s.unpaidPhone}`, ['listings cut', '#ff6b5e']]);
@@ -1095,13 +1098,16 @@ function shopPanel(ctx, game, x, y, w, h) {
     const uy = y + 50 + i * PITCH;
     if (i > 0) { ctx.strokeStyle = 'rgba(139,90,43,0.45)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x + 16, uy - 4); ctx.lineTo(x + w - 16, uy - 4); ctx.stroke(); }
     drawText(ctx, `${up.kind === 'food' ? '🍞 ' : ''}${up.name} — $${up.cost}`, x + 18, uy + 17, { size: 14, weight: 'bold', color: '#f0f0f0', maxWidth: w - 120 });
-    drawText(ctx, up.canBuyNow ? up.effect : 'Already ate today', x + 18, uy + 35, { size: 12, color: '#b5a488', maxWidth: w - 120 });
-    button(ctx, x + w - 86, uy + 4, 68, 40, 'Buy', {
+    drawText(ctx, up.canBuyNow ? up.effect : 'Already ate today. Back on the shelf tomorrow.', x + 18, uy + 35, { size: 12, color: '#b5a488', maxWidth: w - 120 });
+    // QA round 4 #5 (2026-11-19): a bought item kept its "Buy" label and answered every tap with
+    // an error buzz, so it looked buyable twice. It now reads "Bought" and ignores taps.
+    const bought = !up.canBuyNow;
+    button(ctx, x + w - 86, uy + 4, 68, 40, bought ? 'Bought ✓' : 'Buy', {
       color: '#2c6e49',
-      disabled: s.cash < up.cost || !up.canBuyNow,
+      disabled: s.cash < up.cost || bought,
       fontSize: 13,
       onClick: () => game.buyUpgrade(up),
-      onDisabled: () => { playError(); game.message = s.cash < up.cost ? `You need $${up.cost} for that.` : 'You already ate today.'; },
+      onDisabled: bought ? null : () => { playError(); game.message = `You need $${up.cost} for that.`; },
     });
   });
 }
@@ -1153,7 +1159,7 @@ export function rentModals(ctx, game) {
     : amt >= owed / 2 ? `Half or more: the landlord gives you a 7-day grace week. $${owed - amt} stays owed.`
       : `Under half: no grace week, and $${owed - amt} stays owed. Half is $${half}.`;
   drawWrapped(ctx, note, 400, 332, 360, 19, { size: 14, color: amt >= owed / 2 ? '#9fe3b8' : '#ffb27a', align: 'center' });
-  if (s.cash - amt < 20) drawText(ctx, `Leaves you $${Math.round(s.cash - amt)}: groceries cost $20.`, 400, 390, { size: 13, color: '#c9a876', align: 'center' });
+  if (s.cash - amt < 20) drawText(ctx, `Leaves you $${Math.round(s.cash - amt)}: groceries cost $${CONSUMABLES[0].cost}.`, 400, 390, { size: 13, color: '#c9a876', align: 'center' });
   button(ctx, 220, 420, 170, 52, `Pay $${amt}`, { color: '#2c6e49', fontSize: 16, onClick: () => game.confirmRentPay() });
   button(ctx, 410, 420, 170, 52, 'Cancel', { ghost: true, fontSize: 16, onClick: () => { game.rentPay = null; } });
 }
@@ -1290,7 +1296,7 @@ export function settingsModal(ctx, game) {
   y = drawWrapped(ctx, 'Quick fades instead of screen transitions.', 196, y, 400, 16, { size: 12, color: '#b5a488' }) + 4;
   // Large text (QA round 4 #15): starts on when the phone asks for bigger text.
   toggleRow(ctx, 196, y, 'Large Text', () => largeTextOn(s), (v) => { s.largeText = v; applyTextSize(s); game.state.save(); }); y += 46;
-  y = drawWrapped(ctx, 'Bigger reading text. On if your phone uses large text.', 196, y, 270, 16, { size: 12, color: '#b5a488' }) + 8;
+  y = drawWrapped(ctx, 'Bigger reading text. On if your phone uses large text.', 196, y, 400, 16, { size: 12, color: '#b5a488' }) + 8;
 
   button(ctx, 196, y, 128, 40, 'Replay tutorial', { color: '#2c5a6e', fontSize: 13, onClick: () => game.replayTutorial() });
   // Full screen hides the browser's bars, the biggest game a phone can show (QA round 4 #5).
@@ -1300,10 +1306,12 @@ export function settingsModal(ctx, game) {
   } else {
     button(ctx, 476, y, 128, 40, 'Start new game', { color: '#5d4023', fontSize: 13, onClick: () => { game.confirmReset = true; } });
   }
-  y += 56;
-  if (game.confirmReset) drawText(ctx, 'This deletes the current run. Settings are kept.', 400, y, { size: 12, color: '#ff8a7e', align: 'center' });
+  y += 48;
+  if (game.confirmReset) { drawText(ctx, 'This deletes the current run. Settings are kept.', 400, y + 4, { size: 12, color: '#ff8a7e', align: 'center' }); y += 22; }
 
-  button(ctx, 300, PY + PH - 50, 200, 40, 'Close', { color: '#2c6e49', onClick: close });
+  // QA round 4 #7 (2026-11-19): Close sat at a fixed spot near the panel's foot, and with Large
+  // Text on the rows above grew into it (the buttons overlapped). It now follows the last row.
+  button(ctx, 300, Math.min(y, PY + PH - 46), 200, 40, 'Close', { color: '#2c6e49', onClick: close });
 }
 
 // ---------- WELCOME BACK (reopening a run in progress) ----------
@@ -1559,7 +1567,9 @@ export function summaryScreen(ctx, game) {
   const twist = twistOf(s), goal = goalOf(s);
   // Who the month made you (game/mastery.js), beside the month it was.
   const became = monthTitle(s);
-  drawText(ctx, [became.title, twist && twist.name].filter(Boolean).join('  ·  '), 400, Math.min(vy + 2, 190), { size: 14, weight: 'bold', color: '#f5deb3', align: 'center', maxWidth: 540 });
+  // Fresh months (2026-11-19): set beside last month's title, so two months read as two stories.
+  const titled = !s.prevTitle ? became.title : s.prevTitle === became.title ? `${became.title} again` : `${became.title} (last month: ${s.prevTitle})`;
+  drawText(ctx, [titled, twist && twist.name].filter(Boolean).join('  ·  '), 400, Math.min(vy + 2, 190), { size: 14, weight: 'bold', color: '#f5deb3', align: 'center', maxWidth: 540 });
 
   const rows = [
     ['Cash on hand', `$${Math.round(s.cash)}`],

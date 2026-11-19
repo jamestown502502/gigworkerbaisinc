@@ -123,17 +123,20 @@ export function renderHUD(ctx, game) {
   });
 
   // Mute (one tap) and Settings, top-right corner
-  const gearX = 770, gearY = 6, gearS = 20;
+  // QA round 4 #8 (2026-11-19): the two circles overlapped by 2 px and their tap areas by 8 px, so
+  // they read as one squashed control. Each now has its own circle with a 6 px gap and its own half
+  // of the corner to tap (y 0-28 Settings, y 28-56 Sound), with no overlap.
+  const gearX = 770, gearY = 5, gearS = 18, R = gearS / 2 + 2;
   ctx.fillStyle = 'rgba(255,255,255,0.08)';
-  ctx.beginPath(); ctx.arc(gearX + gearS / 2, gearY + gearS / 2, gearS / 2 + 3, 0, Math.PI * 2); ctx.fill();
-  drawText(ctx, '⚙', gearX + gearS / 2, gearY + gearS / 2, { size: 16, align: 'center', baseline: 'middle', shadow: false });
-  UI.register(gearX - 6, gearY - 6, gearS + 12, gearS + 12, () => { game.settingsOpen = !game.settingsOpen; game.confirmReset = false; }, 'Settings');
+  ctx.beginPath(); ctx.arc(gearX + gearS / 2, gearY + gearS / 2, R, 0, Math.PI * 2); ctx.fill();
+  drawText(ctx, '⚙', gearX + gearS / 2, gearY + gearS / 2, { size: 15, align: 'center', baseline: 'middle', shadow: false });
+  UI.register(gearX - 6, 0, gearS + 12, 28, () => { game.settingsOpen = !game.settingsOpen; game.confirmReset = false; }, 'Settings');
 
-  const muteX = 770, muteY = 30;
+  const muteX = 770, muteY = 33;
   ctx.fillStyle = 'rgba(255,255,255,0.08)';
-  ctx.beginPath(); ctx.arc(muteX + gearS / 2, muteY + gearS / 2, gearS / 2 + 3, 0, Math.PI * 2); ctx.fill();
-  drawText(ctx, state.settings.muted ? '🔇' : '🔊', muteX + gearS / 2, muteY + gearS / 2, { size: 14, align: 'center', baseline: 'middle', shadow: false });
-  UI.register(muteX - 6, muteY - 6, gearS + 12, gearS + 12, () => { state.settings.muted = !state.settings.muted; applyAudioSettings(); state.save(); }, state.settings.muted ? 'Sound off. Turn sound on' : 'Sound on. Mute');
+  ctx.beginPath(); ctx.arc(muteX + gearS / 2, muteY + gearS / 2, R, 0, Math.PI * 2); ctx.fill();
+  drawText(ctx, state.settings.muted ? '🔇' : '🔊', muteX + gearS / 2, muteY + gearS / 2, { size: 13, align: 'center', baseline: 'middle', shadow: false });
+  UI.register(muteX - 6, 28, gearS + 12, 28, () => { state.settings.muted = !state.settings.muted; applyAudioSettings(); state.save(); }, state.settings.muted ? 'Sound off. Turn sound on' : 'Sound on. Mute');
 
   // Very low balance is *felt*: a breathing red frame
   if (state.health < 30) {

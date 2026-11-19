@@ -40,7 +40,9 @@ export function goalOf(state) {
 export function rollMonth(state, rand = Math.random) {
   const twists = MONTH_TWISTS.filter((t) => t.id !== state.lastTwist);
   state.twist = twists[Math.floor(rand() * twists.length)].id;
-  state.sideGoal = SIDE_GOALS[Math.floor(rand() * SIDE_GOALS.length)].id;
+  // Fresh months (2026-11-19): like the twist, the side goal never repeats last month's.
+  const goals = SIDE_GOALS.filter((g) => g.id !== state.lastSideGoal);
+  state.sideGoal = goals[Math.floor(rand() * goals.length)].id;
   state.sideGoalDone = false;
 }
 

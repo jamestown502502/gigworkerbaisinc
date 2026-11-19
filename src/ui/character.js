@@ -51,14 +51,17 @@ function weightedIndex(weights, rand) {
   return weights.length - 1;
 }
 
-/** A random look, for the creator's Randomize button. Pronouns are never randomized: they are
- *  the player's to state, not a roll of the dice; the look leans toward what those pronouns
- *  usually go with (see RANDOM_WEIGHTS). */
-export function randomLook(character, rand = Math.random) {
+/** A random character, for the creator's Randomize button. Since QA round 4 #3 (2026-11-19) the
+ *  pronouns are rolled too: testers read a Randomize that left one field alone as broken. The
+ *  pronoun buttons still set them by hand, and the look then leans toward what the rolled pronouns
+ *  usually go with (see RANDOM_WEIGHTS). `keepPronouns` restores the old behaviour. */
+export function randomLook(character, rand = Math.random, { keepPronouns = false } = {}) {
   const pick = (arr) => arr[Math.floor(rand() * arr.length)];
-  const w = RANDOM_WEIGHTS[character?.pronouns] ?? RANDOM_WEIGHTS.they;
+  const pronouns = keepPronouns ? character?.pronouns : pick(Object.keys(PRONOUNS));
+  const w = RANDOM_WEIGHTS[pronouns] ?? RANDOM_WEIGHTS.they;
   return {
     ...character,
+    pronouns,
     body: weightedIndex(w.body, rand),
     hairStyle: weightedIndex(w.hairStyle, rand),
     facialHair: weightedIndex(w.facialHair, rand),
